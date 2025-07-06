@@ -12,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -51,6 +52,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainScreen(viewModel: MainViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var isApiKeyFocused by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
             TopAppBar(title = { Text("Audio Transcriber") })
@@ -64,16 +66,27 @@ fun MainScreen(viewModel: MainViewModel) {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text("OpenAI API Key", style = MaterialTheme.typography.titleMedium)
+            Text("Google Cloud API Key", style = MaterialTheme.typography.titleMedium)
 
             // The TextField is now directly bound to the ViewModel state
             OutlinedTextField(
-                value = uiState.apiKey, // READ from ViewModel
+                // 2. Conditionally display the masked or real key
+                value = if (isApiKeyFocused || uiState.apiKey.isEmpty()) {
+                    uiState.apiKey // Show real key if focused or empty
+                } else {
+                    maskApiKey(uiState.apiKey) // Show masked key if not focused
+                },
                 onValueChange = { newText ->
-                    viewModel.onApiKeyChange(newText) // WRITE to ViewModel
+                    // This always provides the real, full text to the ViewModel
+                    viewModel.onApiKeyChange(newText)
                 },
                 label = { Text("Paste your API key here") },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // 3. Update the focus state when the user clicks in or out
+                    .onFocusChanged { focusState ->
+                        isApiKeyFocused = focusState.isFocused
+                    }
             )
 
             Button(
