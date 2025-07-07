@@ -22,10 +22,10 @@ data class UploadResponse(
 )
 
 // The request body to start the transcription
+// FIXED: Removed the problematic 'audio_end_at' parameter.
 data class TranscriptRequest(
     val audio_url: String,
-    val language_detection: Boolean = true,
-    val audio_end_at: String = Instant.now().toString()
+    val language_detection: Boolean = true
 )
 
 // The response for the transcript object, used for polling

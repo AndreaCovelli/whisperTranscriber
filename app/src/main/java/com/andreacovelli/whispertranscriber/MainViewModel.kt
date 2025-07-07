@@ -42,13 +42,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(apiKey = newKey) }
     }
 
-    // NEW: The save button will now have no parameters
     fun saveApiKey() {
         viewModelScope.launch {
-            // It saves whatever key is currently in the state
             apiKeyManager.saveApiKey(_uiState.value.apiKey)
-
-            // Optional: Give the user feedback that it's saved!
             _uiState.update { it.copy(status = "API Key Saved!") }
         }
     }
@@ -81,7 +77,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             FFmpegKit.executeAsync(command) { session ->
                 if (session.returnCode.isValueSuccess) {
                     // 3. Transcribe with Whisper API
-                    transcribe(outputFile, apiKey)
+                    if (outputFile.exists() && outputFile.length() > 0) {
+                        // Pass inputFile for proper cleanup
+                        transcribe(outputFile, apiKey, inputFile)
+                    } else {
+                        _uiState.update { it.copy(status = "Error: FFmpeg created an empty file.") }
+                        inputFile.delete() // Clean up
+                    }
                 } else {
                     _uiState.update { it.copy(status = "Error: FFmpeg conversion failed.") }
                     // Clean up
@@ -91,7 +93,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun transcribe(file: File, apiKey: String) {
+    private fun transcribe(file: File, apiKey: String, inputFile: File) {
         viewModelScope.launch {
             try {
                 _uiState.update { it.copy(status = "1/4: Uploading file...") }
@@ -112,7 +114,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update { it.copy(status = "3/4: Transcription queued. Waiting for result...") }
 
                 // Step 3: Poll for the result
-                // We will check every 5 seconds for a result, up to 10 times.
                 for (i in 1..10) {
                     transcriptResponse = api.getTranscript(apiKey, transcriptId)
                     when (transcriptResponse.status) {
@@ -128,8 +129,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 try {
                                     api.deleteTranscript(apiKey, transcriptId)
                                 } catch (e: Exception) {
-                                    // Log this error if you want, but don't bother the user
-                                    // since they already have their transcription.
+                                    // Log this error, but don't bother the user.
                                 }
                             }
                             return@launch // Exit the coroutine on success
@@ -143,10 +143,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             return@launch // Exit on error
                         }
                     }
-                    // If still processing, wait 5 seconds before checking again
                     delay(5000)
                 }
-                // If the loop finishes without a result, it timed out.
                 _uiState.update { it.copy(status = "Error: Timed out waiting for transcription.") }
 
             } catch (e: Exception) {
@@ -159,9 +157,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 _uiState.update { it.copy(status = errorMessage) }
             } finally {
-                // Clean up cache files regardless of outcome
+                // Clean up both cache files regardless of outcome
                 file.delete()
-                File(getApplication<Application>().cacheDir, "shared_audio.opus").delete()
+                inputFile.delete()
             }
         }
     }
@@ -169,7 +167,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun copyUriToCache(uri: Uri): File? {
         return try {
             val contentResolver = getApplication<Application>().contentResolver
-            val inputFile = File(getApplication<Application>().cacheDir, "shared_audio.opus")
+            // Using createTempFile is more robust: it guarantees a unique name and
+            // avoids issues with hardcoded extensions that might mislead FFmpeg.
+            val inputFile = File.createTempFile("shared_audio", null, getApplication<Application>().cacheDir)
             val inputStream = contentResolver.openInputStream(uri)
             val outputStream = FileOutputStream(inputFile)
             inputStream?.use { input ->
