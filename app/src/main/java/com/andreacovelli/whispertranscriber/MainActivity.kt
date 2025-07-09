@@ -2,17 +2,26 @@ package com.andreacovelli.whispertranscriber
 
 import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.*
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -53,6 +62,8 @@ class MainActivity : ComponentActivity() {
 fun MainScreen(viewModel: MainViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var isApiKeyFocused by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+
     Scaffold(
         topBar = {
             TopAppBar(title = { Text("Audio Transcriber") })
@@ -63,10 +74,16 @@ fun MainScreen(viewModel: MainViewModel) {
                 .padding(paddingValues)
                 .padding(16.dp)
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    focusManager.clearFocus()
+                },
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text("Google Cloud API Key", style = MaterialTheme.typography.titleMedium)
+            Text("AssemblyAi API Key", style = MaterialTheme.typography.titleMedium)
 
             // The TextField is now directly bound to the ViewModel state
             OutlinedTextField(
@@ -103,7 +120,25 @@ fun MainScreen(viewModel: MainViewModel) {
             Text(uiState.status)
 
             if (uiState.transcription.isNotEmpty()) {
-                Text("Transcription", style = MaterialTheme.typography.titleMedium)
+                val clipboardManager = LocalClipboardManager.current
+                val context = LocalContext.current
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Transcription", style = MaterialTheme.typography.titleMedium)
+                    IconButton(onClick = {
+                        clipboardManager.setText(AnnotatedString(uiState.transcription))
+                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Icon(
+                            imageVector = Icons.Filled.ContentCopy,
+                            contentDescription = "Copy Transcription"
+                        )
+                    }
+                }
                 Text(uiState.transcription)
             }
         }
@@ -142,8 +177,20 @@ fun MainScreenPreview() {
             Text("Status", style = MaterialTheme.typography.titleMedium)
             Text("Success!") // Hardcoded status for preview
 
-            Text("Transcription", style = MaterialTheme.typography.titleMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Transcription", style = MaterialTheme.typography.titleMedium)
+                IconButton(onClick = { /* No-op in preview */ }) {
+                    Icon(
+                        imageVector = Icons.Filled.ContentCopy,
+                        contentDescription = "Copy Transcription"
+                    )
+                }
+            }
             Text("This is an example of a transcribed audio file. The actual transcription from Whisper will appear here.") // Hardcoded result
         }
     }
-    }
+}
