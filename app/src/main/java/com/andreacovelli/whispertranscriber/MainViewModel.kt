@@ -5,7 +5,11 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.andreacovelli.whispertranscriber.data.AppDatabase
+import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
+import com.andreacovelli.whispertranscriber.data.TranscriptionHistoryDao
 import com.arthenica.ffmpegkit.FFmpegKit
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
@@ -15,7 +19,6 @@ import okhttp3.RequestBody.Companion.asRequestBody
 import retrofit2.HttpException
 import java.io.File
 import java.io.FileOutputStream
-import kotlinx.coroutines.delay
 
 data class UiState(
     val status: String = "Welcome! Share an audio file to begin.",
@@ -29,6 +32,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val uiState = _uiState.asStateFlow()
 
     private val apiKeyManager = ApiKeyManager(application)
+    private val historyDao: TranscriptionHistoryDao
 
     init {
         viewModelScope.launch {
@@ -36,6 +40,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update { it.copy(apiKey = key ?: "") }
             }
         }
+        val database = AppDatabase.getDatabase(application)
+        historyDao = database.transcriptionHistoryDao()
     }
 
     fun onApiKeyChange(newKey: String) {
@@ -119,10 +125,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     when (transcriptResponse.status) {
                         "completed" -> {
                             val detectedLanguage = transcriptResponse.language_code?.toString() ?: "Unknown"
+                            val newTranscription = transcriptResponse.text ?: "No text found."
+
+                            // Save to history
+                            val historyItem = TranscriptionHistory(
+                                text = newTranscription,
+                                language = detectedLanguage
+                            )
+                            historyDao.insert(historyItem)
+
                             _uiState.update {
                                 it.copy(
                                     status = "4/4: Success! (Language: $detectedLanguage)",
-                                    transcription = transcriptResponse.text ?: "No text found."
+                                    transcription = newTranscription
                                 )
                             }
                             viewModelScope.launch {
@@ -141,6 +156,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 )
                             }
                             return@launch // Exit on error
+                        }
+                        else -> {
+                            // "queued" or "processing", continue polling
                         }
                     }
                     delay(5000)
@@ -167,8 +185,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun copyUriToCache(uri: Uri): File? {
         return try {
             val contentResolver = getApplication<Application>().contentResolver
-            // Using createTempFile is more robust: it guarantees a unique name and
-            // avoids issues with hardcoded extensions that might mislead FFmpeg.
             val inputFile = File.createTempFile("shared_audio", null, getApplication<Application>().cacheDir)
             val inputStream = contentResolver.openInputStream(uri)
             val outputStream = FileOutputStream(inputFile)

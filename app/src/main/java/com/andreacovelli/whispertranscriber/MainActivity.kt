@@ -9,10 +9,15 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,10 +27,24 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.andreacovelli.whispertranscriber.ui.theme.WhisperTranscriberTheme // Change to your theme package
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
+import com.andreacovelli.whispertranscriber.ui.theme.WhisperTranscriberTheme
+import java.text.SimpleDateFormat
+import java.util.*
+
+// --- Navigation Routes ---
+object AppRoutes {
+    const val MAIN = "main"
+    const val HISTORY = "history"
+}
 
 private fun maskApiKey(apiKey: String): String {
     if (apiKey.length <= 8) {
@@ -35,9 +54,10 @@ private fun maskApiKey(apiKey: String): String {
     val lastChars = apiKey.takeLast(4)
     return "$firstChars...$lastChars"
 }
+
 class MainActivity : ComponentActivity() {
 
-    private val viewModel: MainViewModel by viewModels()
+    private val mainViewModel: MainViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,13 +65,30 @@ class MainActivity : ComponentActivity() {
         // Handle the incoming share intent
         if (intent?.action == Intent.ACTION_SEND) {
             intent.clipData?.getItemAt(0)?.uri?.let { uri ->
-                viewModel.handleAudioShare(uri)
+                mainViewModel.handleAudioShare(uri)
             }
         }
 
         setContent {
             WhisperTranscriberTheme {
-                MainScreen(viewModel = viewModel)
+                val navController = rememberNavController()
+                NavHost(navController = navController, startDestination = AppRoutes.MAIN) {
+                    composable(AppRoutes.MAIN) {
+                        MainScreen(
+                            viewModel = mainViewModel,
+                            onNavigateToHistory = {
+                                navController.navigate(AppRoutes.HISTORY)
+                            }
+                        )
+                    }
+                    composable(AppRoutes.HISTORY) {
+                        HistoryScreen(
+                            onNavigateBack = {
+                                navController.popBackStack()
+                            }
+                        )
+                    }
+                }
             }
         }
     }
@@ -59,14 +96,24 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(viewModel: MainViewModel) {
+fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var isApiKeyFocused by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Audio Transcriber") })
+            TopAppBar(
+                title = { Text("Audio Transcriber") },
+                actions = {
+                    IconButton(onClick = onNavigateToHistory) {
+                        Icon(
+                            imageVector = Icons.Default.History,
+                            contentDescription = "View Transcription History"
+                        )
+                    }
+                }
+            )
         }
     ) { paddingValues ->
         Column(
@@ -85,29 +132,23 @@ fun MainScreen(viewModel: MainViewModel) {
         ) {
             Text("AssemblyAi API Key", style = MaterialTheme.typography.titleMedium)
 
-            // The TextField is now directly bound to the ViewModel state
             OutlinedTextField(
-                // 2. Conditionally display the masked or real key
                 value = if (isApiKeyFocused || uiState.apiKey.isEmpty()) {
-                    uiState.apiKey // Show real key if focused or empty
+                    uiState.apiKey
                 } else {
-                    maskApiKey(uiState.apiKey) // Show masked key if not focused
+                    maskApiKey(uiState.apiKey)
                 },
-                onValueChange = { newText ->
-                    // This always provides the real, full text to the ViewModel
-                    viewModel.onApiKeyChange(newText)
-                },
+                onValueChange = viewModel::onApiKeyChange,
                 label = { Text("Paste your API key here") },
                 modifier = Modifier
                     .fillMaxWidth()
-                    // 3. Update the focus state when the user clicks in or out
                     .onFocusChanged { focusState ->
                         isApiKeyFocused = focusState.isFocused
                     }
             )
 
             Button(
-                onClick = { viewModel.saveApiKey() }, // The onClick is now simpler
+                onClick = viewModel::saveApiKey,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Save Key")
@@ -115,7 +156,6 @@ fun MainScreen(viewModel: MainViewModel) {
 
             HorizontalDivider()
 
-            // Status and Result Section
             Text("Status", style = MaterialTheme.typography.titleMedium)
             Text(uiState.status)
 
@@ -145,52 +185,167 @@ fun MainScreen(viewModel: MainViewModel) {
     }
 }
 
-@Preview(showBackground = true)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreenPreview() {
-    // We wrap our screen in the app's theme to see it correctly.
-    WhisperTranscriberTheme {
-        // Since the preview can't use a real ViewModel, we create a
-        // fake one on the fly. We'll pretend the user has already
-        // shared a file and we have a result.
-        Column(
-            modifier = Modifier
-                .padding(16.dp)
-                .fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // API Key Input Section
-            Text("OpenAI API Key", style = MaterialTheme.typography.titleMedium)
-            OutlinedTextField(
-                value = "sk-...",
-                onValueChange = { }, // No action in preview
-                label = { Text("Paste your API key here") },
-                modifier = Modifier.fillMaxWidth()
+fun HistoryScreen(
+    historyViewModel: HistoryViewModel = viewModel(),
+    onNavigateBack: () -> Unit
+) {
+    val historyItems by historyViewModel.historyState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Transcription History") },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back"
+                        )
+                    }
+                }
             )
-            Button(onClick = { }, modifier = Modifier.fillMaxWidth()) {
-                Text("Save Key")
-            }
-
-            HorizontalDivider(Modifier, DividerDefaults.Thickness, DividerDefaults.color)
-
-            // Status and Result Section
-            Text("Status", style = MaterialTheme.typography.titleMedium)
-            Text("Success!") // Hardcoded status for preview
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+        }
+    ) { paddingValues ->
+        if (historyItems.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                contentAlignment = Alignment.Center
             ) {
-                Text("Transcription", style = MaterialTheme.typography.titleMedium)
-                IconButton(onClick = { /* No-op in preview */ }) {
-                    Icon(
-                        imageVector = Icons.Filled.ContentCopy,
-                        contentDescription = "Copy Transcription"
+                Text("No history yet.", style = MaterialTheme.typography.bodyLarge)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                contentPadding = PaddingValues(vertical = 8.dp)
+            ) {
+                items(historyItems, key = { it.id }) { item ->
+                    HistoryItemCard(
+                        item = item,
+                        onCopy = {
+                            clipboardManager.setText(AnnotatedString(item.text))
+                            Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                        },
+                        onDelete = {
+                            historyViewModel.deleteHistoryItem(item)
+                        }
                     )
                 }
             }
-            Text("This is an example of a transcribed audio file. The actual transcription from Whisper will appear here.") // Hardcoded result
+        }
+    }
+}
+
+@Composable
+fun HistoryItemCard(
+    item: TranscriptionHistory,
+    onCopy: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val formattedDate = remember(item.timestamp) {
+        val sdf = SimpleDateFormat("MMM dd, yyyy - HH:mm", Locale.getDefault())
+        sdf.format(Date(item.timestamp))
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = formattedDate,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Language: ${item.language}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = item.text,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onCopy) {
+                    Icon(
+                        imageVector = Icons.Default.ContentCopy,
+                        contentDescription = "Copy text"
+                    )
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete item",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+    }
+}
+
+
+@Preview(showBackground = true)
+@Composable
+fun MainScreenPreview() {
+    WhisperTranscriberTheme {
+        // This is a simplified preview. The real screen uses a ViewModel.
+        MainScreen(viewModel(), onNavigateToHistory = {})
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Preview(showBackground = true)
+@Composable
+fun HistoryScreenPreview() {
+    val items = listOf(
+        TranscriptionHistory(1, "This is the first transcription. It is a bit long to see how the text overflows.", "en-US", System.currentTimeMillis() - 100000),
+        TranscriptionHistory(2, "This is a second, shorter one.", "en-US", System.currentTimeMillis()),
+    )
+    WhisperTranscriberTheme {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("Transcription History") },
+                    navigationIcon = {
+                        IconButton(onClick = {}) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back"
+                            )
+                        }
+                    }
+                )
+            }
+        ) { padding ->
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentPadding = PaddingValues(vertical = 8.dp)
+            ) {
+                items(items) { item ->
+                    HistoryItemCard(item = item, onCopy = { }, onDelete = {})
+                }
+            }
         }
     }
 }
