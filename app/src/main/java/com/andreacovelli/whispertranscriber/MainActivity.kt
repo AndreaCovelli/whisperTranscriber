@@ -28,13 +28,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.ui.theme.WhisperTranscriberTheme
 import java.text.SimpleDateFormat
@@ -44,11 +45,14 @@ import java.util.*
 object AppRoutes {
     const val MAIN = "main"
     const val HISTORY = "history"
+    const val HISTORY_DETAIL = "history_detail/{historyId}"
+
+    fun historyDetail(id: Int) = "history_detail/$id"
 }
 
 private fun maskApiKey(apiKey: String): String {
     if (apiKey.length <= 8) {
-        return "****" // Return simple asterisks if the key is too short
+        return "****"
     }
     val firstChars = apiKey.take(4)
     val lastChars = apiKey.takeLast(4)
@@ -62,7 +66,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Handle the incoming share intent
         if (intent?.action == Intent.ACTION_SEND) {
             intent.clipData?.getItemAt(0)?.uri?.let { uri ->
                 mainViewModel.handleAudioShare(uri)
@@ -83,10 +86,23 @@ class MainActivity : ComponentActivity() {
                     }
                     composable(AppRoutes.HISTORY) {
                         HistoryScreen(
-                            onNavigateBack = {
-                                navController.popBackStack()
+                            onNavigateBack = { navController.popBackStack() },
+                            onNavigateToDetail = { historyId ->
+                                navController.navigate(AppRoutes.historyDetail(historyId))
                             }
                         )
+                    }
+                    composable(
+                        route = AppRoutes.HISTORY_DETAIL,
+                        arguments = listOf(navArgument("historyId") { type = NavType.IntType })
+                    ) { backStackEntry ->
+                        val historyId = backStackEntry.arguments?.getInt("historyId")
+                        if (historyId != null) {
+                            HistoryDetailScreen(
+                                historyId = historyId,
+                                onNavigateBack = { navController.popBackStack() }
+                            )
+                        }
                     }
                 }
             }
@@ -131,38 +147,23 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text("AssemblyAi API Key", style = MaterialTheme.typography.titleMedium)
-
             OutlinedTextField(
-                value = if (isApiKeyFocused || uiState.apiKey.isEmpty()) {
-                    uiState.apiKey
-                } else {
-                    maskApiKey(uiState.apiKey)
-                },
+                value = if (isApiKeyFocused || uiState.apiKey.isEmpty()) uiState.apiKey else maskApiKey(uiState.apiKey),
                 onValueChange = viewModel::onApiKeyChange,
                 label = { Text("Paste your API key here") },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .onFocusChanged { focusState ->
-                        isApiKeyFocused = focusState.isFocused
-                    }
+                    .onFocusChanged { focusState -> isApiKeyFocused = focusState.isFocused }
             )
-
-            Button(
-                onClick = viewModel::saveApiKey,
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            Button(onClick = viewModel::saveApiKey, modifier = Modifier.fillMaxWidth()) {
                 Text("Save Key")
             }
-
             HorizontalDivider()
-
             Text("Status", style = MaterialTheme.typography.titleMedium)
             Text(uiState.status)
-
             if (uiState.transcription.isNotEmpty()) {
                 val clipboardManager = LocalClipboardManager.current
                 val context = LocalContext.current
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -173,10 +174,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit) {
                         clipboardManager.setText(AnnotatedString(uiState.transcription))
                         Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
                     }) {
-                        Icon(
-                            imageVector = Icons.Filled.ContentCopy,
-                            contentDescription = "Copy Transcription"
-                        )
+                        Icon(Icons.Filled.ContentCopy, "Copy Transcription")
                     }
                 }
                 Text(uiState.transcription)
@@ -189,11 +187,13 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit) {
 @Composable
 fun HistoryScreen(
     historyViewModel: HistoryViewModel = viewModel(),
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onNavigateToDetail: (Int) -> Unit
 ) {
     val historyItems by historyViewModel.historyState.collectAsStateWithLifecycle()
-    val context = LocalContext.current
+    // FIX: Get context-sensitive variables in the Composable's scope
     val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -201,10 +201,7 @@ fun HistoryScreen(
                 title = { Text("Transcription History") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                     }
                 }
             )
@@ -229,13 +226,13 @@ fun HistoryScreen(
                 items(historyItems, key = { it.id }) { item ->
                     HistoryItemCard(
                         item = item,
-                        onCopy = {
-                            clipboardManager.setText(AnnotatedString(item.text))
+                        onClick = { onNavigateToDetail(item.id) },
+                        onCopy = { text ->
+                            // FIX: Use the captured variables. Do not call Composable functions here.
+                            clipboardManager.setText(AnnotatedString(text))
                             Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                         },
-                        onDelete = {
-                            historyViewModel.deleteHistoryItem(item)
-                        }
+                        onDelete = { historyViewModel.deleteHistoryItem(item) }
                     )
                 }
             }
@@ -246,104 +243,106 @@ fun HistoryScreen(
 @Composable
 fun HistoryItemCard(
     item: TranscriptionHistory,
-    onCopy: () -> Unit,
+    onClick: () -> Unit,
+    onCopy: (String) -> Unit,
     onDelete: () -> Unit
 ) {
     val formattedDate = remember(item.timestamp) {
-        val sdf = SimpleDateFormat("MMM dd, yyyy - HH:mm", Locale.getDefault())
-        sdf.format(Date(item.timestamp))
+        SimpleDateFormat("MMM dd, yyyy - HH:mm", Locale.getDefault()).format(Date(item.timestamp))
     }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clickable(onClick = onClick)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = formattedDate,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Language: ${item.language}",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = item.text,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 4,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.height(8.dp))
+            Text(formattedDate, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(4.dp))
+            Text("Language: ${item.language}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(8.dp))
+            Text(item.text, style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onCopy) {
-                    Icon(
-                        imageVector = Icons.Default.ContentCopy,
-                        contentDescription = "Copy text"
-                    )
+                IconButton(onClick = { onCopy(item.text) }) {
+                    Icon(Icons.Default.ContentCopy, "Copy text")
                 }
                 IconButton(onClick = onDelete) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Delete item",
-                        tint = MaterialTheme.colorScheme.error
-                    )
+                    Icon(Icons.Default.Delete, "Delete item", tint = MaterialTheme.colorScheme.error)
                 }
             }
         }
     }
 }
 
-
-@Preview(showBackground = true)
-@Composable
-fun MainScreenPreview() {
-    WhisperTranscriberTheme {
-        // This is a simplified preview. The real screen uses a ViewModel.
-        MainScreen(viewModel(), onNavigateToHistory = {})
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
-@Preview(showBackground = true)
 @Composable
-fun HistoryScreenPreview() {
-    val items = listOf(
-        TranscriptionHistory(1, "This is the first transcription. It is a bit long to see how the text overflows.", "en-US", System.currentTimeMillis() - 100000),
-        TranscriptionHistory(2, "This is a second, shorter one.", "en-US", System.currentTimeMillis()),
-    )
-    WhisperTranscriberTheme {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text("Transcription History") },
-                    navigationIcon = {
-                        IconButton(onClick = {}) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back"
-                            )
+fun HistoryDetailScreen(
+    historyId: Int,
+    historyViewModel: HistoryViewModel = viewModel(),
+    onNavigateBack: () -> Unit
+) {
+    val historyItem by historyViewModel.getHistoryItem(historyId).collectAsStateWithLifecycle(initialValue = null)
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Transcription Detail") },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    historyItem?.let {
+                        IconButton(onClick = {
+                            clipboardManager.setText(AnnotatedString(it.text))
+                            Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                        }) {
+                            Icon(Icons.Default.ContentCopy, "Copy Transcription")
                         }
                     }
+                }
+            )
+        }
+    ) { paddingValues ->
+        val scrollState = rememberScrollState()
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp)
+                .verticalScroll(scrollState)
+        ) {
+            historyItem?.let { item ->
+                val formattedDate = remember(item.timestamp) {
+                    SimpleDateFormat.getDateTimeInstance(SimpleDateFormat.LONG, SimpleDateFormat.SHORT).format(Date(item.timestamp))
+                }
+                Text(
+                    text = "Date: $formattedDate",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
-        ) { padding ->
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentPadding = PaddingValues(vertical = 8.dp)
-            ) {
-                items(items) { item ->
-                    HistoryItemCard(item = item, onCopy = { }, onDelete = {})
+                Text(
+                    text = "Language: ${item.language}",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+                Text(
+                    text = item.text,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            } ?: run {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
                 }
             }
         }

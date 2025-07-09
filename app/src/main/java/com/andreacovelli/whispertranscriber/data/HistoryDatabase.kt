@@ -32,6 +32,9 @@ interface TranscriptionHistoryDao {
 
     @Query("SELECT * FROM transcription_history ORDER BY timestamp DESC")
     fun getAllHistory(): Flow<List<TranscriptionHistory>>
+
+    @Query("SELECT * FROM transcription_history WHERE id = :id")
+    fun getHistoryItemById(id: Int): Flow<TranscriptionHistory?>
 }
 
 @Database(entities = [TranscriptionHistory::class], version = 1, exportSchema = false)
