@@ -72,27 +72,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
 
-            // 2. Convert to MP3 using FFmpeg
-            _uiState.update { it.copy(status = "Converting to MP3...") }
-            val outputFile = File(getApplication<Application>().cacheDir, "converted.mp3")
+            // 2. Convert to WAV using FFmpeg (16 kHz mono PCM)
+            _uiState.update { it.copy(status = "Converting to WAV...") }
+            val outputFile = File(getApplication<Application>().cacheDir, "converted.wav")
             if (outputFile.exists()) {
                 outputFile.delete()
             }
 
-            val command = "-i \"${inputFile.absolutePath}\" -c:a libmp3lame \"${outputFile.absolutePath}\""
+            // Convert to 16 kHz, mono, PCM 16-bit WAV for best ASR compatibility
+            val command =
+                "-hide_banner -y -i \"${inputFile.absolutePath}\" -vn -ac 1 -ar 16000 -c:a pcm_s16le \"${outputFile.absolutePath}\""
+
             FFmpegKit.executeAsync(command) { session ->
                 if (session.returnCode.isValueSuccess) {
-                    // 3. Transcribe with Whisper API
                     if (outputFile.exists() && outputFile.length() > 0) {
-                        // Pass inputFile for proper cleanup
                         transcribe(outputFile, apiKey, inputFile)
                     } else {
                         _uiState.update { it.copy(status = "Error: FFmpeg created an empty file.") }
-                        inputFile.delete() // Clean up
+                        inputFile.delete()
                     }
                 } else {
                     _uiState.update { it.copy(status = "Error: FFmpeg conversion failed.") }
-                    // Clean up
                     inputFile.delete()
                 }
             }
