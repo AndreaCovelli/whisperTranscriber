@@ -9,6 +9,7 @@ import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistoryDao
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.FFmpegSession
+import com.arthenica.ffmpegkit.ReturnCode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -68,7 +69,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun handleAudioShare(uri: Uri) {
-        // Cancel any ongoing work before starting a new one
         currentJob?.cancel()
         currentJob = viewModelScope.launch {
             val apiKey = apiKeyManager.apiKeyFlow.firstOrNull()
@@ -101,32 +101,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             try {
                 val finished = sessionDeferred.await()
-                if (finished.returnCode.isValueSuccess) {
+                if (ReturnCode.isSuccess(finished.returnCode)) {
                     if (outputFile.exists() && outputFile.length() > 0) {
                         try {
                             transcribe(outputFile, apiKey)
                         } finally {
-                            // Always clean up files
-                            outputFile.delete()
-                            inputFile.delete()
+                            runCatching { outputFile.delete() }
+                            runCatching { inputFile.delete() }
                         }
                     } else {
                         _uiState.update { it.copy(status = "Error: FFmpeg created an empty file.") }
-                        outputFile.delete()
-                        inputFile.delete()
+                        runCatching { outputFile.delete() }
+                        runCatching { inputFile.delete() }
                     }
                 } else {
                     val logs = finished.allLogsAsString
                     _uiState.update {
                         it.copy(status = "Error: FFmpeg conversion failed.${if (logs.isNotBlank()) " Details: $logs" else ""}")
                     }
-                    outputFile.delete()
-                    inputFile.delete()
+                    runCatching { outputFile.delete() }
+                    runCatching { inputFile.delete() }
                 }
             } catch (ce: CancellationException) {
                 currentFfmpegSessionId?.let { FFmpegKit.cancel(it) }
-                outputFile.delete()
-                inputFile.delete()
+                runCatching { outputFile.delete() }
+                runCatching { inputFile.delete() }
                 throw ce
             } finally {
                 currentFfmpegSessionId = null
@@ -139,7 +138,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(status = "1/4: Uploading file...") }
             val api = RetrofitClient.api
 
-            // Proper content type for raw upload; file reading happens in OkHttp threads
             val requestFileBody = file.asRequestBody("application/octet-stream".toMediaType())
             val uploadResponse = api.uploadFile(apiKey, requestFileBody)
             val audioUrl = uploadResponse.uploadUrl
@@ -152,7 +150,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             _uiState.update { it.copy(status = "3/4: Transcription queued. Waiting for result...") }
 
-            // Poll up to ~3 minutes (36 * 5s)
             repeat(36) {
                 transcriptResponse = api.getTranscript(apiKey, transcriptId)
                 when (transcriptResponse.status) {
@@ -160,12 +157,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val detectedLanguage = transcriptResponse.languageCode ?: "Unknown"
                         val newTranscription = transcriptResponse.text ?: "No text found."
 
-                        historyDao.insert(
-                            TranscriptionHistory(
-                                text = newTranscription,
-                                language = detectedLanguage
+                        withContext(ioDispatcher) {
+                            historyDao.insert(
+                                TranscriptionHistory(
+                                    text = newTranscription,
+                                    language = detectedLanguage
+                                )
                             )
-                        )
+                        }
 
                         _uiState.update {
                             it.copy(
@@ -173,12 +172,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 transcription = newTranscription
                             )
                         }
-                        // Best-effort cleanup
                         viewModelScope.launch {
-                            try {
-                                api.deleteTranscript(apiKey, transcriptId)
-                            } catch (_: Exception) {
-                            }
+                            runCatching { api.deleteTranscript(apiKey, transcriptId) }
                         }
                         return
                     }
@@ -186,12 +181,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _uiState.update {
                             it.copy(status = "Error: Transcription failed. ${transcriptResponse.error}")
                         }
-                        // Best-effort cleanup
                         viewModelScope.launch {
-                            try {
-                                api.deleteTranscript(apiKey, transcriptId)
-                            } catch (_: Exception) {
-                            }
+                            runCatching { api.deleteTranscript(apiKey, transcriptId) }
                         }
                         return
                     }
