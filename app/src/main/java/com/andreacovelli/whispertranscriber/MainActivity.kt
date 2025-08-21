@@ -6,6 +6,11 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -73,18 +78,52 @@ class MainActivity : ComponentActivity() {
             WhisperTranscriberTheme {
                 val navController = rememberNavController()
                 NavHost(navController = navController, startDestination = AppRoutes.MAIN) {
-                    composable(AppRoutes.MAIN) {
+                    composable(
+                        route = AppRoutes.MAIN,
+                        enterTransition = { null }, // no animation on first entry
+                        exitTransition = {
+                            slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Left,
+                                animationSpec = tween(300)
+                            )
+                        },
+                        popEnterTransition = {
+                            slideIntoContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Right,
+                                animationSpec = tween(300)
+                            )
+                        },
+                        popExitTransition = { null }
+                    ) {
                         MainScreen(
                             viewModel = mainViewModel,
-                            onNavigateToHistory = {
-                                navController.navigate(AppRoutes.HISTORY)
-                            }
+                            onNavigateToHistory = { navController.navigate(AppRoutes.HISTORY) }
                         )
                     }
-                    composable(AppRoutes.HISTORY) {
-                        HistoryScreen(
-                            onNavigateBack = { navController.popBackStack() }
-                        )
+
+                    composable(
+                        route = AppRoutes.HISTORY,
+                        enterTransition = {
+                            slideIntoContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Left,
+                                animationSpec = tween(300)
+                            )
+                        },
+                        exitTransition = {
+                            slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Left,
+                                animationSpec = tween(300)
+                            )
+                        },
+                        popEnterTransition = { null },
+                        popExitTransition = {
+                            slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Right,
+                                animationSpec = tween(300)
+                            )
+                        }
+                    ) {
+                        HistoryScreen(onNavigateBack = { navController.popBackStack() })
                     }
                 }
             }
@@ -244,7 +283,15 @@ fun HistoryItemCard(
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .clickable(onClick = onToggleExpand)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(
+            modifier = Modifier
+                .padding(16.dp)
+                .animateContentSize(
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    )
+                )) {
             Text(formattedDate, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(4.dp))
             Text("Language: ${item.language}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
