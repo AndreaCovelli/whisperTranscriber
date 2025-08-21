@@ -1,5 +1,7 @@
 package com.andreacovelli.whispertranscriber
 
+import android.net.Uri
+import android.os.Build
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
@@ -16,7 +18,9 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -32,6 +36,9 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -52,27 +59,40 @@ object AppRoutes {
     const val HISTORY = "history"
 }
 
-private fun maskApiKey(apiKey: String): String {
-    if (apiKey.length <= 8) {
-        return "****"
-    }
-    val firstChars = apiKey.take(4)
-    val lastChars = apiKey.takeLast(4)
-    return "$firstChars...$lastChars"
-}
-
 class MainActivity : ComponentActivity() {
 
     private val mainViewModel: MainViewModel by viewModels()
 
+    private fun extractSharedUri(intent: Intent?): Uri? {
+        intent ?: return null
+        return when (intent.action) {
+            Intent.ACTION_SEND -> {
+                intent.clipData?.getItemAt(0)?.uri
+                    ?: if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+                    }
+            }
+            Intent.ACTION_SEND_MULTIPLE -> {
+                val fromClip = intent.clipData?.let { clip ->
+                    if (clip.itemCount > 0) clip.getItemAt(0).uri else null
+                }
+                fromClip ?: if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)?.firstOrNull()
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.firstOrNull()
+                }
+            }
+            else -> null
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        if (intent?.action == Intent.ACTION_SEND) {
-            intent.clipData?.getItemAt(0)?.uri?.let { uri ->
-                mainViewModel.handleAudioShare(uri)
-            }
-        }
+        extractSharedUri(intent)?.let { mainViewModel.handleAudioShare(it) }
 
         setContent {
             WhisperTranscriberTheme {
@@ -129,6 +149,12 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        extractSharedUri(intent)?.let { mainViewModel.handleAudioShare(it) }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -167,14 +193,16 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit) {
                 },
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text("AssemblyAi API Key", style = MaterialTheme.typography.titleMedium)
+            Text("AssemblyAI API Key", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(
-                value = if (isApiKeyFocused || uiState.apiKey.isEmpty()) uiState.apiKey else maskApiKey(uiState.apiKey),
+                value = uiState.apiKey,
                 onValueChange = viewModel::onApiKeyChange,
                 label = { Text("Paste your API key here") },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .onFocusChanged { focusState -> isApiKeyFocused = focusState.isFocused }
+                    .onFocusChanged { focusState -> isApiKeyFocused = focusState.isFocused },
+                visualTransformation = if (isApiKeyFocused) VisualTransformation.None else PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
             )
             Button(onClick = viewModel::saveApiKey, modifier = Modifier.fillMaxWidth()) {
                 Text("Save Key")
@@ -198,7 +226,13 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit) {
                         Icon(Icons.Filled.ContentCopy, "Copy Transcription")
                     }
                 }
-                Text(uiState.transcription)
+                // Make the transcription text selectable (supports partial selection)
+                SelectionContainer {
+                    Text(
+                        uiState.transcription,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
     }

@@ -1,3 +1,5 @@
+package com.andreacovelli.whispertranscriber
+
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -15,14 +17,12 @@ class ApiKeyManager(private val context: Context) {
         private val API_KEY = stringPreferencesKey("openai_api_key")
     }
 
-    // Save the API key
     suspend fun saveApiKey(key: String) {
         context.dataStore.edit { settings ->
-            settings[API_KEY] = key
+            settings[API_KEY] = key.trim()
         }
     }
 
-    // Retrieve the API key as a Flow
     val apiKeyFlow: Flow<String?> = context.dataStore.data
         .map { preferences ->
             preferences[API_KEY]

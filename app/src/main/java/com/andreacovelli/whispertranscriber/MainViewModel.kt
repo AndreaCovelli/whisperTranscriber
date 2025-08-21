@@ -1,6 +1,5 @@
 package com.andreacovelli.whispertranscriber
 
-import ApiKeyManager
 import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
@@ -9,12 +8,20 @@ import com.andreacovelli.whispertranscriber.data.AppDatabase
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistoryDao
 import com.arthenica.ffmpegkit.FFmpegKit
+import com.arthenica.ffmpegkit.FFmpegSession
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.asRequestBody
 import retrofit2.HttpException
 import java.io.File
@@ -33,6 +40,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val apiKeyManager = ApiKeyManager(application)
     private val historyDao: TranscriptionHistoryDao
+
+    // New: control concurrency and cancellation
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private var currentJob: Job? = null
+    @Volatile private var currentFfmpegSessionId: Long? = null
 
     init {
         viewModelScope.launch {
@@ -56,7 +68,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun handleAudioShare(uri: Uri) {
-        viewModelScope.launch {
+        // Cancel any ongoing work before starting a new one
+        currentJob?.cancel()
+        currentJob = viewModelScope.launch {
             val apiKey = apiKeyManager.apiKeyFlow.firstOrNull()
             if (apiKey.isNullOrBlank()) {
                 _uiState.update { it.copy(status = "Error: API Key is not set.") }
@@ -65,137 +79,161 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             _uiState.update { it.copy(status = "Processing file...", transcription = "") }
 
-            // 1. Copy the file from content URI to a local cache file
             val inputFile = copyUriToCache(uri)
             if (inputFile == null) {
                 _uiState.update { it.copy(status = "Error: Could not read shared file.") }
                 return@launch
             }
 
-            // 2. Convert to WAV using FFmpeg (16 kHz mono PCM)
             _uiState.update { it.copy(status = "Converting to WAV...") }
-            val outputFile = File(getApplication<Application>().cacheDir, "converted.wav")
-            if (outputFile.exists()) {
-                outputFile.delete()
+            val outputFile = withContext(ioDispatcher) {
+                File.createTempFile("converted_", ".wav", getApplication<Application>().cacheDir)
             }
 
-            // Convert to 16 kHz, mono, PCM 16-bit WAV for best ASR compatibility
             val command =
                 "-hide_banner -y -i \"${inputFile.absolutePath}\" -vn -ac 1 -ar 16000 -c:a pcm_s16le \"${outputFile.absolutePath}\""
 
-            FFmpegKit.executeAsync(command) { session ->
-                if (session.returnCode.isValueSuccess) {
+            val sessionDeferred = CompletableDeferred<FFmpegSession>()
+            val session = FFmpegKit.executeAsync(command) { s ->
+                if (!sessionDeferred.isCompleted) sessionDeferred.complete(s)
+            }
+            currentFfmpegSessionId = session.sessionId
+
+            try {
+                val finished = sessionDeferred.await()
+                if (finished.returnCode.isValueSuccess) {
                     if (outputFile.exists() && outputFile.length() > 0) {
-                        transcribe(outputFile, apiKey, inputFile)
+                        try {
+                            transcribe(outputFile, apiKey)
+                        } finally {
+                            // Always clean up files
+                            outputFile.delete()
+                            inputFile.delete()
+                        }
                     } else {
                         _uiState.update { it.copy(status = "Error: FFmpeg created an empty file.") }
+                        outputFile.delete()
                         inputFile.delete()
                     }
                 } else {
-                    _uiState.update { it.copy(status = "Error: FFmpeg conversion failed.") }
+                    val logs = finished.allLogsAsString
+                    _uiState.update {
+                        it.copy(status = "Error: FFmpeg conversion failed.${if (logs.isNotBlank()) " Details: $logs" else ""}")
+                    }
+                    outputFile.delete()
                     inputFile.delete()
                 }
+            } catch (ce: CancellationException) {
+                currentFfmpegSessionId?.let { FFmpegKit.cancel(it) }
+                outputFile.delete()
+                inputFile.delete()
+                throw ce
+            } finally {
+                currentFfmpegSessionId = null
             }
         }
     }
 
-    private fun transcribe(file: File, apiKey: String, inputFile: File) {
-        viewModelScope.launch {
-            try {
-                _uiState.update { it.copy(status = "1/4: Uploading file...") }
-                val api = RetrofitClient.create()
+    private suspend fun transcribe(file: File, apiKey: String) {
+        try {
+            _uiState.update { it.copy(status = "1/4: Uploading file...") }
+            val api = RetrofitClient.api
 
-                // Step 1: Upload the file
-                val requestFileBody = file.asRequestBody()
-                val uploadResponse = api.uploadFile(apiKey, requestFileBody)
-                val audioUrl = uploadResponse.upload_url
+            // Proper content type for raw upload; file reading happens in OkHttp threads
+            val requestFileBody = file.asRequestBody("application/octet-stream".toMediaType())
+            val uploadResponse = api.uploadFile(apiKey, requestFileBody)
+            val audioUrl = uploadResponse.uploadUrl
 
-                _uiState.update { it.copy(status = "2/4: File uploaded. Creating transcript...") }
+            _uiState.update { it.copy(status = "2/4: File uploaded. Creating transcript...") }
 
-                // Step 2: Request the transcription
-                val transcriptRequest = TranscriptRequest(audio_url = audioUrl)
-                var transcriptResponse = api.createTranscript(apiKey, transcriptRequest)
-                val transcriptId = transcriptResponse.id
+            val transcriptRequest = TranscriptRequest(audioUrl = audioUrl)
+            var transcriptResponse = api.createTranscript(apiKey, transcriptRequest)
+            val transcriptId = transcriptResponse.id
 
-                _uiState.update { it.copy(status = "3/4: Transcription queued. Waiting for result...") }
+            _uiState.update { it.copy(status = "3/4: Transcription queued. Waiting for result...") }
 
-                // Step 3: Poll for the result
-                for (i in 1..10) {
-                    transcriptResponse = api.getTranscript(apiKey, transcriptId)
-                    when (transcriptResponse.status) {
-                        "completed" -> {
-                            val detectedLanguage = transcriptResponse.language_code?.toString() ?: "Unknown"
-                            val newTranscription = transcriptResponse.text ?: "No text found."
+            // Poll up to ~3 minutes (36 * 5s)
+            repeat(36) {
+                transcriptResponse = api.getTranscript(apiKey, transcriptId)
+                when (transcriptResponse.status) {
+                    "completed" -> {
+                        val detectedLanguage = transcriptResponse.languageCode ?: "Unknown"
+                        val newTranscription = transcriptResponse.text ?: "No text found."
 
-                            // Save to history
-                            val historyItem = TranscriptionHistory(
+                        historyDao.insert(
+                            TranscriptionHistory(
                                 text = newTranscription,
                                 language = detectedLanguage
                             )
-                            historyDao.insert(historyItem)
+                        )
 
-                            _uiState.update {
-                                it.copy(
-                                    status = "4/4: Success! (Language: $detectedLanguage)",
-                                    transcription = newTranscription
-                                )
-                            }
-                            viewModelScope.launch {
-                                try {
-                                    api.deleteTranscript(apiKey, transcriptId)
-                                } catch (e: Exception) {
-                                    // Log this error, but don't bother the user.
-                                }
-                            }
-                            return@launch // Exit the coroutine on success
+                        _uiState.update {
+                            it.copy(
+                                status = "4/4: Success! (Language: $detectedLanguage)",
+                                transcription = newTranscription
+                            )
                         }
-                        "error" -> {
-                            _uiState.update {
-                                it.copy(
-                                    status = "Error: Transcription failed. ${transcriptResponse.error}"
-                                )
+                        // Best-effort cleanup
+                        viewModelScope.launch {
+                            try {
+                                api.deleteTranscript(apiKey, transcriptId)
+                            } catch (_: Exception) {
                             }
-                            return@launch // Exit on error
                         }
-                        else -> {
-                            // "queued" or "processing", continue polling
-                        }
+                        return
                     }
-                    delay(5000)
-                }
-                _uiState.update { it.copy(status = "Error: Timed out waiting for transcription.") }
-
-            } catch (e: Exception) {
-                val errorMessage = when (e) {
-                    is HttpException -> when (e.code()) {
-                        401 -> "Error: Unauthorized. Check your AssemblyAI API Key."
-                        else -> "Error: HTTP ${e.code()} ${e.message()}"
+                    "error" -> {
+                        _uiState.update {
+                            it.copy(status = "Error: Transcription failed. ${transcriptResponse.error}")
+                        }
+                        // Best-effort cleanup
+                        viewModelScope.launch {
+                            try {
+                                api.deleteTranscript(apiKey, transcriptId)
+                            } catch (_: Exception) {
+                            }
+                        }
+                        return
                     }
-                    else -> "Error: Network request failed: ${e.message}"
+                    else -> { /* queued or processing */ }
                 }
-                _uiState.update { it.copy(status = errorMessage) }
-            } finally {
-                // Clean up both cache files regardless of outcome
-                file.delete()
-                inputFile.delete()
+                delay(5_000L)
             }
+            _uiState.update { it.copy(status = "Error: Timed out waiting for transcription.") }
+
+        } catch (e: Exception) {
+            val errorMessage = when (e) {
+                is HttpException -> when (e.code()) {
+                    401 -> "Error: Unauthorized. Check your AssemblyAI API Key."
+                    else -> "Error: HTTP ${e.code()} ${e.message()}"
+                }
+                is CancellationException -> throw e
+                else -> "Error: Network request failed: ${e.message}"
+            }
+            _uiState.update { it.copy(status = errorMessage) }
         }
     }
 
-    private fun copyUriToCache(uri: Uri): File? {
-        return try {
-            val contentResolver = getApplication<Application>().contentResolver
-            val inputFile = File.createTempFile("shared_audio", null, getApplication<Application>().cacheDir)
-            val inputStream = contentResolver.openInputStream(uri)
-            val outputStream = FileOutputStream(inputFile)
-            inputStream?.use { input ->
-                outputStream.use { output ->
+    private suspend fun copyUriToCache(uri: Uri): File? = withContext(ioDispatcher) {
+        try {
+            val app = getApplication<Application>()
+            val inputStream = app.contentResolver.openInputStream(uri) ?: return@withContext null
+            val inputFile = File.createTempFile("shared_audio", null, app.cacheDir)
+            inputStream.use { input ->
+                FileOutputStream(inputFile).use { output ->
                     input.copyTo(output)
                 }
             }
             inputFile
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        currentJob?.cancel()
+        currentFfmpegSessionId?.let { FFmpegKit.cancel(it) }
+        currentFfmpegSessionId = null
     }
 }

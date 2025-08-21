@@ -1,6 +1,6 @@
 package com.andreacovelli.whispertranscriber
 
-import okhttp3.MultipartBody
+import com.google.gson.annotations.SerializedName
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody
 import okhttp3.logging.HttpLoggingInterceptor
@@ -12,50 +12,38 @@ import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.Path
-import java.time.Instant
+import java.util.concurrent.TimeUnit
 
-// --- Data Classes for AssemblyAI's JSON responses ---
-
-// The response from uploading the file
 data class UploadResponse(
-    val upload_url: String
+    @SerializedName("upload_url") val uploadUrl: String
 )
 
-// The request body to start the transcription
-// FIXED: Removed the problematic 'audio_end_at' parameter.
 data class TranscriptRequest(
-    val audio_url: String,
-    val language_detection: Boolean = true
+    @SerializedName("audio_url") val audioUrl: String,
+    @SerializedName("language_detection") val languageDetection: Boolean = true
 )
 
-// The response for the transcript object, used for polling
 data class TranscriptResponse(
-    val id: String,
-    val status: String,
-    val text: String?, // Nullable because it's not present until completed
-    val error: String?,  // Nullable for the same reason
-    val language_code: String?
+    @SerializedName("id") val id: String,
+    @SerializedName("status") val status: String,
+    @SerializedName("text") val text: String?,
+    @SerializedName("error") val error: String?,
+    @SerializedName("language_code") val languageCode: String?
 )
-
-
-// --- Retrofit API Interface ---
 
 interface AssemblyAiApi {
-    // 1. First, we upload the local file and get a URL for it
     @POST("v2/upload")
     suspend fun uploadFile(
         @Header("Authorization") apiKey: String,
         @Body file: RequestBody
     ): UploadResponse
 
-    // 2. Then, we ask AssemblyAI to transcribe the file at that URL
     @POST("v2/transcript")
     suspend fun createTranscript(
         @Header("Authorization") apiKey: String,
         @Body request: TranscriptRequest
     ): TranscriptResponse
 
-    // 3. Finally, we poll this endpoint with the transcript ID to get the result
     @GET("v2/transcript/{id}")
     suspend fun getTranscript(
         @Header("Authorization") apiKey: String,
@@ -69,23 +57,25 @@ interface AssemblyAiApi {
     )
 }
 
-
-// --- Retrofit Client Object ---
-
 object RetrofitClient {
-    // Note the new baseUrl
     private const val BASE_URL = "https://api.assemblyai.com/"
 
-    fun create(): AssemblyAiApi {
+    private val client: OkHttpClient by lazy {
         val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            level = HttpLoggingInterceptor.Level.NONE
+            redactHeader("Authorization")
         }
 
-        val client = OkHttpClient.Builder()
+        OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(5, TimeUnit.MINUTES)
+            .writeTimeout(5, TimeUnit.MINUTES)
             .addInterceptor(logging)
             .build()
+    }
 
-        return Retrofit.Builder()
+    val api: AssemblyAiApi by lazy {
+        Retrofit.Builder()
             .baseUrl(BASE_URL)
             .client(client)
             .addConverterFactory(GsonConverterFactory.create())
