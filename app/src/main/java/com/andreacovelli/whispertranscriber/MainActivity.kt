@@ -31,11 +31,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
+// import androidx.navigation.NavType
+// import androidx.navigation.navArgument
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.ui.theme.WhisperTranscriberTheme
 import java.text.SimpleDateFormat
@@ -45,9 +45,6 @@ import java.util.*
 object AppRoutes {
     const val MAIN = "main"
     const val HISTORY = "history"
-    const val HISTORY_DETAIL = "history_detail/{historyId}"
-
-    fun historyDetail(id: Int) = "history_detail/$id"
 }
 
 private fun maskApiKey(apiKey: String): String {
@@ -86,23 +83,8 @@ class MainActivity : ComponentActivity() {
                     }
                     composable(AppRoutes.HISTORY) {
                         HistoryScreen(
-                            onNavigateBack = { navController.popBackStack() },
-                            onNavigateToDetail = { historyId ->
-                                navController.navigate(AppRoutes.historyDetail(historyId))
-                            }
+                            onNavigateBack = { navController.popBackStack() }
                         )
-                    }
-                    composable(
-                        route = AppRoutes.HISTORY_DETAIL,
-                        arguments = listOf(navArgument("historyId") { type = NavType.IntType })
-                    ) { backStackEntry ->
-                        val historyId = backStackEntry.arguments?.getInt("historyId")
-                        if (historyId != null) {
-                            HistoryDetailScreen(
-                                historyId = historyId,
-                                onNavigateBack = { navController.popBackStack() }
-                            )
-                        }
                     }
                 }
             }
@@ -187,13 +169,13 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit) {
 @Composable
 fun HistoryScreen(
     historyViewModel: HistoryViewModel = viewModel(),
-    onNavigateBack: () -> Unit,
-    onNavigateToDetail: (Int) -> Unit
+    onNavigateBack: () -> Unit
 ) {
     val historyItems by historyViewModel.historyState.collectAsStateWithLifecycle()
     // FIX: Get context-sensitive variables in the Composable's scope
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
+    var expandedIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
 
     Scaffold(
         topBar = {
@@ -226,7 +208,11 @@ fun HistoryScreen(
                 items(historyItems, key = { it.id }) { item ->
                     HistoryItemCard(
                         item = item,
-                        onClick = { onNavigateToDetail(item.id) },
+                        expanded = expandedIds.contains(item.id),
+                        onToggleExpand = {
+                            expandedIds = if (expandedIds.contains(item.id))
+                                expandedIds - item.id else expandedIds + item.id
+                        },
                         onCopy = { text ->
                             // FIX: Use the captured variables. Do not call Composable functions here.
                             clipboardManager.setText(AnnotatedString(text))
@@ -243,7 +229,8 @@ fun HistoryScreen(
 @Composable
 fun HistoryItemCard(
     item: TranscriptionHistory,
-    onClick: () -> Unit,
+    expanded: Boolean,
+    onToggleExpand: () -> Unit,
     onCopy: (String) -> Unit,
     onDelete: () -> Unit
 ) {
@@ -255,14 +242,26 @@ fun HistoryItemCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
-            .clickable(onClick = onClick)
+            .clickable(onClick = onToggleExpand)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(formattedDate, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(4.dp))
             Text("Language: ${item.language}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
-            Text(item.text, style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis)
+            if (expanded) {
+                Text(item.text, style = MaterialTheme.typography.bodyMedium)
+            } else {
+                Text(item.text, style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis)
+            }
+            if (!expanded) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Show more",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
             Spacer(Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -274,75 +273,6 @@ fun HistoryItemCard(
                 }
                 IconButton(onClick = onDelete) {
                     Icon(Icons.Default.Delete, "Delete item", tint = MaterialTheme.colorScheme.error)
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun HistoryDetailScreen(
-    historyId: Int,
-    historyViewModel: HistoryViewModel = viewModel(),
-    onNavigateBack: () -> Unit
-) {
-    val historyItem by historyViewModel.getHistoryItem(historyId).collectAsStateWithLifecycle(initialValue = null)
-    val clipboardManager = LocalClipboardManager.current
-    val context = LocalContext.current
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Transcription Detail") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    historyItem?.let {
-                        IconButton(onClick = {
-                            clipboardManager.setText(AnnotatedString(it.text))
-                            Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                        }) {
-                            Icon(Icons.Default.ContentCopy, "Copy Transcription")
-                        }
-                    }
-                }
-            )
-        }
-    ) { paddingValues ->
-        val scrollState = rememberScrollState()
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp)
-                .verticalScroll(scrollState)
-        ) {
-            historyItem?.let { item ->
-                val formattedDate = remember(item.timestamp) {
-                    SimpleDateFormat.getDateTimeInstance(SimpleDateFormat.LONG, SimpleDateFormat.SHORT).format(Date(item.timestamp))
-                }
-                Text(
-                    text = "Date: $formattedDate",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "Language: ${item.language}",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
-                Text(
-                    text = item.text,
-                    style = MaterialTheme.typography.bodyLarge
-                )
-            } ?: run {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
                 }
             }
         }
