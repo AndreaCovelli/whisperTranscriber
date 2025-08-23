@@ -57,6 +57,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
+            // One-shot migration from plaintext -> encrypted
+            runCatching { settings.migrateToEncryptedIfNeeded() }
+
             // Collect settings
             launch {
                 settings.providerFlow.collect { p ->
@@ -96,6 +99,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             settings.saveGeminiApiKey(s.geminiApiKey)
         }
     }
+    fun forgetAssemblyKey() {
+        viewModelScope.launch {
+            settings.forgetAssemblyApiKey()
+            _uiState.update { it.copy(assemblyApiKey = "") }
+        }
+    }
+    fun forgetGeminiKey() {
+        viewModelScope.launch {
+            settings.forgetGeminiApiKey()
+            _uiState.update { it.copy(geminiApiKey = "") }
+        }
+    }
 
     fun handleAudioShare(uri: Uri) {
         currentJob?.cancel()
@@ -131,7 +146,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
 
-            // Always produce 16kHz mono WAV; both providers accept it nicely
             _uiState.update { it.copy(status = "Converting to WAV...") }
             val outputFile = withContext(ioDispatcher) {
                 File.createTempFile("converted_", ".wav", getApplication<Application>().cacheDir)
@@ -150,7 +164,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val finished = sessionDeferred.await()
                 if (ReturnCode.isSuccess(finished.returnCode)) {
                     if (outputFile.exists() && outputFile.length() > 0) {
-                        val state = _uiState.value // Use a stable snapshot of state
+                        val state = _uiState.value
                         try {
                             if (usingAssembly) {
                                 transcribeWithAssembly(outputFile, state.assemblyApiKey)
@@ -185,7 +199,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // AssemblyAI path (unchanged logic, just renamed)
+    // AssemblyAI path unchanged...
     private suspend fun transcribeWithAssembly(file: File, apiKey: String) {
         try {
             _uiState.update { it.copy(status = "AssemblyAI: 1/4 Uploading file...") }
@@ -240,7 +254,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
                         return
                     }
-                    else -> { /* queued or processing */ }
+                    else -> { }
                 }
                 delay(5_000L)
             }
@@ -259,12 +273,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // NEW: Gemini path
     private suspend fun transcribeWithGemini(file: File, apiKey: String) {
         try {
-            // Inline uploads must be <= ~20 MB per request per docs.
             val sizeBytes = file.length()
-            val maxBytes = 19L * 1024L * 1024L // keep a little headroom
+            val maxBytes = 19L * 1024L * 1024L
             if (sizeBytes > maxBytes) {
                 _uiState.update {
                     it.copy(
@@ -278,7 +290,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             val bytes = withContext(ioDispatcher) { file.readBytes() }
 
-            // Build a tiny JSON schema: { language_code: string, text: string }
             val responseSchema = Schema.builder()
                 .type(Object::class.java.simpleName)
                 .properties(

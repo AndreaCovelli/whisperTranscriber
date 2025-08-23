@@ -327,6 +327,17 @@ fun SettingsScreen(
                 },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
             )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(onClick = {
+                    viewModel.forgetAssemblyKey()
+                    scope.launch { snackbarHostState.showSnackbar("AssemblyAI key forgotten") }
+                }) {
+                    Text("Forget key")
+                }
+            }
 
             Text("Gemini API Key", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(
@@ -342,6 +353,17 @@ fun SettingsScreen(
                 },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
             )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(onClick = {
+                    viewModel.forgetGeminiKey()
+                    scope.launch { snackbarHostState.showSnackbar("Gemini key forgotten") }
+                }) {
+                    Text("Forget key")
+                }
+            }
 
             Button(
                 onClick = {
