@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -257,12 +258,11 @@ fun MainScreen(
                         }
                     }
                 }
-                SelectionContainer {
-                    Text(
-                        uiState.transcription,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+                ExpandableText(
+                    text = uiState.transcription,
+                    modifier = Modifier.fillMaxWidth(),
+                    minimizedMaxLines = 6
+                )
 
                 Spacer(Modifier.height(12.dp))
                 Button(
@@ -594,6 +594,63 @@ fun HistoryItemCard(
                     Icon(Icons.Default.Delete, "Delete item", tint = MaterialTheme.colorScheme.error)
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun ExpandableText(
+    text: String,
+    modifier: Modifier = Modifier,
+    minimizedMaxLines: Int = 6
+) {
+    var expanded by rememberSaveable(text) { mutableStateOf(false) }
+    var isOverflowing by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .animateContentSize(
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMedium
+                )
+            )
+    ) {
+        if (expanded) {
+            SelectionContainer {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        } else {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = minimizedMaxLines,
+                overflow = TextOverflow.Ellipsis,
+                onTextLayout = { result ->
+                    // True if Compose had to ellipsize (i.e., "too long")
+                    isOverflowing = result.hasVisualOverflow
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = isOverflowing) { expanded = true }
+            )
+        }
+
+        if (isOverflowing) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = if (expanded) "Show less" else "Show more",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .clickable { expanded = !expanded }
+            )
         }
     }
 }

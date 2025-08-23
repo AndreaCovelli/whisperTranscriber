@@ -382,7 +382,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             try {
                 val client = Client.builder().apiKey(apiKey).build()
-                val prompt = "You are an expert summarizer. Provide a concise, easy-to-read summary of the following text, in the same language. Use bullet points for key takeaways if appropriate"
+                val prompt = """
+                    You are an expert summarizer.
+                    Provide a concise, easy-to-read summary of the following text, in the same language.
+                    Use bullet points (-) for key takeaways if appropriate. The output should be plain text,
+                    no markdown.
+                """.trimIndent()
 
                 val content = Content.fromParts(
                     Part.fromText(prompt),
