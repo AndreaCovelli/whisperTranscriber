@@ -27,8 +27,6 @@ import okhttp3.RequestBody.Companion.asRequestBody
 import retrofit2.HttpException
 import java.io.File
 import java.io.FileOutputStream
-
-// NEW: Gemini imports
 import com.google.genai.Client
 import com.google.genai.types.Content
 import com.google.genai.types.GenerateContentConfig
@@ -96,14 +94,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             settings.saveProvider(s.provider)
             settings.saveAssemblyApiKey(s.assemblyApiKey)
             settings.saveGeminiApiKey(s.geminiApiKey)
-            _uiState.update { it.copy(status = "Settings saved") }
         }
     }
 
     fun handleAudioShare(uri: Uri) {
         currentJob?.cancel()
         currentJob = viewModelScope.launch {
-        // Load persisted settings synchronously to avoid race on cold start
+            // Load persisted settings synchronously to avoid race on cold start
             val persistedProvider = settings.providerFlow.firstOrNull() ?: _uiState.value.provider
             val persistedAssemblyKey = settings.assemblyApiKeyFlow.firstOrNull().orEmpty()
             val persistedGeminiKey = settings.geminiApiKeyFlow.firstOrNull().orEmpty()
@@ -217,7 +214,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             historyDao.insert(
                                 TranscriptionHistory(
                                     text = newTranscription,
-                                    language = detectedLanguage
+                                    language = detectedLanguage,
+                                    model = "AssemblyAI"
                                 )
                             )
                         }
@@ -325,7 +323,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 historyDao.insert(
                     TranscriptionHistory(
                         text = transcript,
-                        language = language
+                        language = language,
+                        model = "gemini-2.5-flash"
                     )
                 )
             }

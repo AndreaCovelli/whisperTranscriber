@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
@@ -35,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -50,6 +52,7 @@ import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.ui.theme.WhisperTranscriberTheme
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlinx.coroutines.launch
 
 object AppRoutes {
     const val MAIN = "main"
@@ -274,6 +277,8 @@ fun SettingsScreen(
     var showAssemblyKey by remember { mutableStateOf(false) }
     var showGeminiKey by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -285,7 +290,8 @@ fun SettingsScreen(
                     }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -337,7 +343,13 @@ fun SettingsScreen(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
             )
 
-            Button(onClick = viewModel::saveSettings, modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = {
+                    viewModel.saveSettings()
+                    scope.launch { snackbarHostState.showSnackbar("Settings saved") }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Text("Save Settings")
             }
         }
@@ -350,18 +362,36 @@ private fun ProviderSelector(
     onSelect: (TranscriptionProvider) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .selectable(
+                    selected = selected == TranscriptionProvider.ASSEMBLY_AI,
+                    onClick = { onSelect(TranscriptionProvider.ASSEMBLY_AI) },
+                    role = Role.RadioButton
+                ),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             RadioButton(
                 selected = selected == TranscriptionProvider.ASSEMBLY_AI,
-                onClick = { onSelect(TranscriptionProvider.ASSEMBLY_AI) }
+                onClick = null
             )
             Spacer(Modifier.width(8.dp))
             Text("AssemblyAI")
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .selectable(
+                    selected = selected == TranscriptionProvider.GEMINI_25_FLASH,
+                    onClick = { onSelect(TranscriptionProvider.GEMINI_25_FLASH) },
+                    role = Role.RadioButton
+                ),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             RadioButton(
                 selected = selected == TranscriptionProvider.GEMINI_25_FLASH,
-                onClick = { onSelect(TranscriptionProvider.GEMINI_25_FLASH) }
+                onClick = null
             )
             Spacer(Modifier.width(8.dp))
             Text("Gemini 2.5 Flash")
@@ -417,7 +447,6 @@ fun HistoryScreen(
                                 expandedIds - item.id else expandedIds + item.id
                         },
                         onCopy = { text ->
-                            // FIX: Use the captured variables. Do not call Composable functions here.
                             clipboardManager.setText(AnnotatedString(text))
                             Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                         },
@@ -440,6 +469,7 @@ fun HistoryItemCard(
     val formattedDate = remember(item.timestamp) {
         SimpleDateFormat("MMM dd, yyyy - HH:mm", Locale.getDefault()).format(Date(item.timestamp))
     }
+    val displayModel = remember(item.model) { if (item.model.isBlank()) "Unknown" else item.model }
 
     Card(
         modifier = Modifier
@@ -459,6 +489,8 @@ fun HistoryItemCard(
             Text(formattedDate, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(4.dp))
             Text("Language: ${item.language}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(2.dp))
+            Text("Model: $displayModel", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
             if (expanded) {
                 Text(item.text, style = MaterialTheme.typography.bodyMedium)
