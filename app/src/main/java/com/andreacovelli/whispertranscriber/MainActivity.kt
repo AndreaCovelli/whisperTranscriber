@@ -27,11 +27,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -46,17 +46,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-// import androidx.navigation.NavType
-// import androidx.navigation.navArgument
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.ui.theme.WhisperTranscriberTheme
 import java.text.SimpleDateFormat
 import java.util.*
 
-// --- Navigation Routes ---
 object AppRoutes {
     const val MAIN = "main"
     const val HISTORY = "history"
+    const val SETTINGS = "settings"
 }
 
 class MainActivity : ComponentActivity() {
@@ -100,7 +98,7 @@ class MainActivity : ComponentActivity() {
                 NavHost(navController = navController, startDestination = AppRoutes.MAIN) {
                     composable(
                         route = AppRoutes.MAIN,
-                        enterTransition = { null }, // no animation on first entry
+                        enterTransition = { null },
                         exitTransition = {
                             slideOutOfContainer(
                                 AnimatedContentTransitionScope.SlideDirection.Left,
@@ -117,7 +115,8 @@ class MainActivity : ComponentActivity() {
                     ) {
                         MainScreen(
                             viewModel = mainViewModel,
-                            onNavigateToHistory = { navController.navigate(AppRoutes.HISTORY) }
+                            onNavigateToHistory = { navController.navigate(AppRoutes.HISTORY) },
+                            onNavigateToSettings = { navController.navigate(AppRoutes.SETTINGS) }
                         )
                     }
 
@@ -145,6 +144,34 @@ class MainActivity : ComponentActivity() {
                     ) {
                         HistoryScreen(onNavigateBack = { navController.popBackStack() })
                     }
+
+                    composable(
+                        route = AppRoutes.SETTINGS,
+                        enterTransition = {
+                            slideIntoContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Left,
+                                animationSpec = tween(300)
+                            )
+                        },
+                        exitTransition = {
+                            slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Left,
+                                animationSpec = tween(300)
+                            )
+                        },
+                        popEnterTransition = { null },
+                        popExitTransition = {
+                            slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Right,
+                                animationSpec = tween(300)
+                            )
+                        }
+                    ) {
+                        SettingsScreen(
+                            viewModel = mainViewModel,
+                            onNavigateBack = { navController.popBackStack() }
+                        )
+                    }
                 }
             }
         }
@@ -159,10 +186,12 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit) {
+fun MainScreen(
+    viewModel: MainViewModel,
+    onNavigateToHistory: () -> Unit,
+    onNavigateToSettings: () -> Unit
+) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var isApiKeyFocused by remember { mutableStateOf(false) }
-    val focusManager = LocalFocusManager.current
 
     Scaffold(
         topBar = {
@@ -175,6 +204,12 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit) {
                             contentDescription = "View Transcription History"
                         )
                     }
+                    IconButton(onClick = onNavigateToSettings) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Settings"
+                        )
+                    }
                 }
             )
         }
@@ -184,29 +219,21 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit) {
                 .padding(paddingValues)
                 .padding(16.dp)
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) {
-                    focusManager.clearFocus()
-                },
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text("AssemblyAI API Key", style = MaterialTheme.typography.titleMedium)
-            OutlinedTextField(
-                value = uiState.apiKey,
-                onValueChange = viewModel::onApiKeyChange,
-                label = { Text("Paste your API key here") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .onFocusChanged { focusState -> isApiKeyFocused = focusState.isFocused },
-                visualTransformation = if (isApiKeyFocused) VisualTransformation.None else PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+            // Show current provider so user knows which engine will run
+            AssistChip(
+                onClick = {},
+                label = {
+                    Text(
+                        when (uiState.provider) {
+                            TranscriptionProvider.ASSEMBLY_AI -> "Using: AssemblyAI"
+                            TranscriptionProvider.GEMINI_25_FLASH -> "Using: Gemini 2.5 Flash"
+                        }
+                    )
+                }
             )
-            Button(onClick = viewModel::saveApiKey, modifier = Modifier.fillMaxWidth()) {
-                Text("Save Key")
-            }
             HorizontalDivider()
             Text("Status", style = MaterialTheme.typography.titleMedium)
             Text(uiState.status)
@@ -226,7 +253,6 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit) {
                         Icon(Icons.Filled.ContentCopy, "Copy Transcription")
                     }
                 }
-                // Make the transcription text selectable (supports partial selection)
                 SelectionContainer {
                     Text(
                         uiState.transcription,
@@ -240,12 +266,116 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+fun SettingsScreen(
+    viewModel: MainViewModel,
+    onNavigateBack: () -> Unit
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var showAssemblyKey by remember { mutableStateOf(false) }
+    var showGeminiKey by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Settings") },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                }
+            )
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .padding(paddingValues)
+                .padding(16.dp)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { focusManager.clearFocus() },
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text("Transcription Provider", style = MaterialTheme.typography.titleMedium)
+            ProviderSelector(
+                selected = uiState.provider,
+                onSelect = viewModel::setProvider
+            )
+
+            HorizontalDivider()
+
+            Text("AssemblyAI API Key", style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(
+                value = uiState.assemblyApiKey,
+                onValueChange = viewModel::setAssemblyKey,
+                label = { Text("Enter AssemblyAI API key") },
+                modifier = Modifier.fillMaxWidth(),
+                visualTransformation = if (showAssemblyKey) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    TextButton(onClick = { showAssemblyKey = !showAssemblyKey }) {
+                        Text(if (showAssemblyKey) "Hide" else "Show")
+                    }
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+            )
+
+            Text("Gemini API Key", style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(
+                value = uiState.geminiApiKey,
+                onValueChange = viewModel::setGeminiKey,
+                label = { Text("Enter Gemini API key") },
+                modifier = Modifier.fillMaxWidth(),
+                visualTransformation = if (showGeminiKey) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    TextButton(onClick = { showGeminiKey = !showGeminiKey }) {
+                        Text(if (showGeminiKey) "Hide" else "Show")
+                    }
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+            )
+
+            Button(onClick = viewModel::saveSettings, modifier = Modifier.fillMaxWidth()) {
+                Text("Save Settings")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProviderSelector(
+    selected: TranscriptionProvider,
+    onSelect: (TranscriptionProvider) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(
+                selected = selected == TranscriptionProvider.ASSEMBLY_AI,
+                onClick = { onSelect(TranscriptionProvider.ASSEMBLY_AI) }
+            )
+            Spacer(Modifier.width(8.dp))
+            Text("AssemblyAI")
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(
+                selected = selected == TranscriptionProvider.GEMINI_25_FLASH,
+                onClick = { onSelect(TranscriptionProvider.GEMINI_25_FLASH) }
+            )
+            Spacer(Modifier.width(8.dp))
+            Text("Gemini 2.5 Flash")
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 fun HistoryScreen(
     historyViewModel: HistoryViewModel = viewModel(),
     onNavigateBack: () -> Unit
 ) {
     val historyItems by historyViewModel.historyState.collectAsStateWithLifecycle()
-    // FIX: Get context-sensitive variables in the Composable's scope
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
     var expandedIds by remember { mutableStateOf<Set<Int>>(emptySet()) }

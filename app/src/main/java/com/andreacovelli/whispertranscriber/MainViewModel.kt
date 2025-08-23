@@ -28,10 +28,21 @@ import retrofit2.HttpException
 import java.io.File
 import java.io.FileOutputStream
 
+// NEW: Gemini imports
+import com.google.genai.Client
+import com.google.genai.types.Content
+import com.google.genai.types.GenerateContentConfig
+import com.google.genai.types.GenerateContentResponse
+import com.google.genai.types.Part
+import com.google.genai.types.Schema
+import org.json.JSONObject
+
 data class UiState(
     val status: String = "Welcome! Share an audio file to begin.",
-    val apiKey: String = "",
-    val transcription: String = ""
+    val transcription: String = "",
+    val provider: TranscriptionProvider = TranscriptionProvider.ASSEMBLY_AI,
+    val assemblyApiKey: String = "",
+    val geminiApiKey: String = ""
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -39,41 +50,79 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(UiState())
     val uiState = _uiState.asStateFlow()
 
-    private val apiKeyManager = ApiKeyManager(application)
+    private val settings = ApiKeyManager(application)
     private val historyDao: TranscriptionHistoryDao
 
-    // New: control concurrency and cancellation
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
     private var currentJob: Job? = null
     @Volatile private var currentFfmpegSessionId: Long? = null
 
     init {
         viewModelScope.launch {
-            apiKeyManager.apiKeyFlow.collect { key ->
-                _uiState.update { it.copy(apiKey = key ?: "") }
+            // Collect settings
+            launch {
+                settings.providerFlow.collect { p ->
+                    _uiState.update { it.copy(provider = p) }
+                }
+            }
+            launch {
+                settings.assemblyApiKeyFlow.collect { key ->
+                    _uiState.update { it.copy(assemblyApiKey = key.orEmpty()) }
+                }
+            }
+            launch {
+                settings.geminiApiKeyFlow.collect { key ->
+                    _uiState.update { it.copy(geminiApiKey = key.orEmpty()) }
+                }
             }
         }
         val database = AppDatabase.getDatabase(application)
         historyDao = database.transcriptionHistoryDao()
     }
 
-    fun onApiKeyChange(newKey: String) {
-        _uiState.update { it.copy(apiKey = newKey) }
+    // Settings mutations
+    fun setProvider(p: TranscriptionProvider) {
+        _uiState.update { it.copy(provider = p) }
     }
-
-    fun saveApiKey() {
+    fun setAssemblyKey(k: String) {
+        _uiState.update { it.copy(assemblyApiKey = k) }
+    }
+    fun setGeminiKey(k: String) {
+        _uiState.update { it.copy(geminiApiKey = k) }
+    }
+    fun saveSettings() {
         viewModelScope.launch {
-            apiKeyManager.saveApiKey(_uiState.value.apiKey)
-            _uiState.update { it.copy(status = "API Key Saved!") }
+            val s = _uiState.value
+            settings.saveProvider(s.provider)
+            settings.saveAssemblyApiKey(s.assemblyApiKey)
+            settings.saveGeminiApiKey(s.geminiApiKey)
+            _uiState.update { it.copy(status = "Settings saved") }
         }
     }
 
     fun handleAudioShare(uri: Uri) {
         currentJob?.cancel()
         currentJob = viewModelScope.launch {
-            val apiKey = apiKeyManager.apiKeyFlow.firstOrNull()
-            if (apiKey.isNullOrBlank()) {
-                _uiState.update { it.copy(status = "Error: API Key is not set.") }
+        // Load persisted settings synchronously to avoid race on cold start
+            val persistedProvider = settings.providerFlow.firstOrNull() ?: _uiState.value.provider
+            val persistedAssemblyKey = settings.assemblyApiKeyFlow.firstOrNull().orEmpty()
+            val persistedGeminiKey = settings.geminiApiKeyFlow.firstOrNull().orEmpty()
+
+            // Keep UI state in sync with what we actually use
+            _uiState.update {
+                it.copy(
+                    provider = persistedProvider,
+                    assemblyApiKey = persistedAssemblyKey,
+                    geminiApiKey = persistedGeminiKey
+                )
+            }
+
+            val usingAssembly = persistedProvider == TranscriptionProvider.ASSEMBLY_AI
+            val neededKey = if (usingAssembly) persistedAssemblyKey else persistedGeminiKey
+            if (neededKey.isBlank()) {
+                _uiState.update {
+                    it.copy(status = "Error: ${if (usingAssembly) "AssemblyAI" else "Gemini"} API Key is not set.")
+                }
                 return@launch
             }
 
@@ -85,6 +134,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
 
+            // Always produce 16kHz mono WAV; both providers accept it nicely
             _uiState.update { it.copy(status = "Converting to WAV...") }
             val outputFile = withContext(ioDispatcher) {
                 File.createTempFile("converted_", ".wav", getApplication<Application>().cacheDir)
@@ -103,8 +153,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val finished = sessionDeferred.await()
                 if (ReturnCode.isSuccess(finished.returnCode)) {
                     if (outputFile.exists() && outputFile.length() > 0) {
+                        val state = _uiState.value // Use a stable snapshot of state
                         try {
-                            transcribe(outputFile, apiKey)
+                            if (usingAssembly) {
+                                transcribeWithAssembly(outputFile, state.assemblyApiKey)
+                            } else {
+                                transcribeWithGemini(outputFile, state.geminiApiKey)
+                            }
                         } finally {
                             runCatching { outputFile.delete() }
                             runCatching { inputFile.delete() }
@@ -133,22 +188,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun transcribe(file: File, apiKey: String) {
+    // AssemblyAI path (unchanged logic, just renamed)
+    private suspend fun transcribeWithAssembly(file: File, apiKey: String) {
         try {
-            _uiState.update { it.copy(status = "1/4: Uploading file...") }
+            _uiState.update { it.copy(status = "AssemblyAI: 1/4 Uploading file...") }
             val api = RetrofitClient.api
 
             val requestFileBody = file.asRequestBody("application/octet-stream".toMediaType())
             val uploadResponse = api.uploadFile(apiKey, requestFileBody)
             val audioUrl = uploadResponse.uploadUrl
 
-            _uiState.update { it.copy(status = "2/4: File uploaded. Creating transcript...") }
+            _uiState.update { it.copy(status = "AssemblyAI: 2/4 Creating transcript...") }
 
             val transcriptRequest = TranscriptRequest(audioUrl = audioUrl)
             var transcriptResponse = api.createTranscript(apiKey, transcriptRequest)
             val transcriptId = transcriptResponse.id
 
-            _uiState.update { it.copy(status = "3/4: Transcription queued. Waiting for result...") }
+            _uiState.update { it.copy(status = "AssemblyAI: 3/4 Waiting for result...") }
 
             repeat(36) {
                 transcriptResponse = api.getTranscript(apiKey, transcriptId)
@@ -168,7 +224,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                         _uiState.update {
                             it.copy(
-                                status = "4/4: Success! (Language: $detectedLanguage)",
+                                status = "AssemblyAI: 4/4 Success! (Language: $detectedLanguage)",
                                 transcription = newTranscription
                             )
                         }
@@ -193,7 +249,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(status = "Error: Timed out waiting for transcription.") }
 
         } catch (e: Exception) {
-            val errorMessage = when (e) {
+            val msg = when (e) {
                 is HttpException -> when (e.code()) {
                     401 -> "Error: Unauthorized. Check your AssemblyAI API Key."
                     else -> "Error: HTTP ${e.code()} ${e.message()}"
@@ -201,7 +257,91 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 is CancellationException -> throw e
                 else -> "Error: Network request failed: ${e.message}"
             }
-            _uiState.update { it.copy(status = errorMessage) }
+            _uiState.update { it.copy(status = msg) }
+        }
+    }
+
+    // NEW: Gemini path
+    private suspend fun transcribeWithGemini(file: File, apiKey: String) {
+        try {
+            // Inline uploads must be <= ~20 MB per request per docs.
+            val sizeBytes = file.length()
+            val maxBytes = 19L * 1024L * 1024L // keep a little headroom
+            if (sizeBytes > maxBytes) {
+                _uiState.update {
+                    it.copy(
+                        status = "Error: Audio file is ${"%.1f".format(sizeBytes / (1024f * 1024f))} MB. Gemini inline limit is ~20 MB. Please share a shorter clip."
+                    )
+                }
+                return
+            }
+
+            _uiState.update { it.copy(status = "Gemini: Uploading audio and transcribing...") }
+
+            val bytes = withContext(ioDispatcher) { file.readBytes() }
+
+            // Build a tiny JSON schema: { language_code: string, text: string }
+            val responseSchema = Schema.builder()
+                .type(Object::class.java.simpleName)
+                .properties(
+                    mapOf(
+                        "language_code" to Schema.builder()
+                            .type(String::class.java.simpleName)
+                            .build(),
+                        "text" to Schema.builder()
+                            .type(String::class.java.simpleName)
+                            .build()
+                    )
+                )
+                .required(listOf("language_code", "text"))
+                .build()
+
+            val config: GenerateContentConfig = GenerateContentConfig.builder()
+                .responseMimeType("application/json")
+                .responseSchema(responseSchema)
+                .build()
+
+            val content: Content = Content.fromParts(
+                Part.fromText(
+                    "Transcribe the provided audio. " +
+                            "Return only a compact JSON object with fields: " +
+                            "language_code (BCP-47 like en-US) and text (full transcript). " +
+                            "Do not include any extra commentary."
+                ),
+                Part.fromBytes(bytes, "audio/wav")
+            )
+
+            val client = Client.builder().apiKey(apiKey).build()
+            val response: GenerateContentResponse = withContext(ioDispatcher) {
+                client.models.generateContent("gemini-2.5-flash", content, config)
+            }
+
+            val json = response.text() ?: "{}"
+            val obj = JSONObject(json)
+            val transcript = obj.optString("text").ifBlank { "No text found." }
+            val language = obj.optString("language_code", "und")
+
+            withContext(ioDispatcher) {
+                historyDao.insert(
+                    TranscriptionHistory(
+                        text = transcript,
+                        language = language
+                    )
+                )
+            }
+
+            _uiState.update {
+                it.copy(
+                    status = "Gemini: Success! (Language: $language)",
+                    transcription = transcript
+                )
+            }
+
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            _uiState.update {
+                it.copy(status = "Gemini error: ${e.message ?: e::class.java.simpleName}")
+            }
         }
     }
 
