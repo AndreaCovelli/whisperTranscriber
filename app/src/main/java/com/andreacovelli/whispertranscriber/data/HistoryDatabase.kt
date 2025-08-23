@@ -22,13 +22,14 @@ data class TranscriptionHistory(
     val text: String,
     val language: String,
     val model: String = "",
+    val summary: String = "",
     val timestamp: Long = System.currentTimeMillis()
 )
 
 @Dao
 interface TranscriptionHistoryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(historyItem: TranscriptionHistory)
+    suspend fun insert(historyItem: TranscriptionHistory): Long
 
     @Delete
     suspend fun delete(historyItem: TranscriptionHistory)
@@ -38,9 +39,12 @@ interface TranscriptionHistoryDao {
 
     @Query("SELECT * FROM transcription_history WHERE id = :id")
     fun getHistoryItemById(id: Int): Flow<TranscriptionHistory?>
+
+    @Query("UPDATE transcription_history SET summary = :summary WHERE id = :id")
+    suspend fun updateSummary(id: Int, summary: String)
 }
 
-@Database(entities = [TranscriptionHistory::class], version = 2, exportSchema = false)
+@Database(entities = [TranscriptionHistory::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun transcriptionHistoryDao(): TranscriptionHistoryDao
 
@@ -54,6 +58,12 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transcription_history ADD COLUMN summary TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -61,7 +71,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "transcription_database"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                 INSTANCE = instance
                 instance

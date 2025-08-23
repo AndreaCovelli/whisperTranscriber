@@ -51,7 +51,6 @@ import androidx.navigation.compose.rememberNavController
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.ui.theme.WhisperTranscriberTheme
 import java.text.SimpleDateFormat
-import java.util.*
 import kotlinx.coroutines.launch
 
 object AppRoutes {
@@ -249,11 +248,13 @@ fun MainScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text("Transcription", style = MaterialTheme.typography.titleMedium)
-                    IconButton(onClick = {
-                        clipboardManager.setText(AnnotatedString(uiState.transcription))
-                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                    }) {
-                        Icon(Icons.Filled.ContentCopy, "Copy Transcription")
+                    Row {
+                        IconButton(onClick = {
+                            clipboardManager.setText(AnnotatedString(uiState.transcription))
+                            Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                        }) {
+                            Icon(Icons.Filled.ContentCopy, "Copy Transcription")
+                        }
                     }
                 }
                 SelectionContainer {
@@ -261,6 +262,38 @@ fun MainScreen(
                         uiState.transcription,
                         modifier = Modifier.fillMaxWidth()
                     )
+                }
+
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = { viewModel.summarizeTranscription() },
+                    enabled = uiState.geminiApiKey.isNotBlank(),
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("Summarize with Gemini")
+                }
+
+                if (uiState.summary.isNotEmpty()) {
+                    Spacer(Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Summary", style = MaterialTheme.typography.titleMedium)
+                        IconButton(onClick = {
+                            clipboardManager.setText(AnnotatedString(uiState.summary))
+                            Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                        }) {
+                            Icon(Icons.Filled.ContentCopy, "Copy Summary")
+                        }
+                    }
+                    SelectionContainer {
+                        Text(
+                            uiState.summary,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             }
         }
@@ -489,9 +522,9 @@ fun HistoryItemCard(
     onDelete: () -> Unit
 ) {
     val formattedDate = remember(item.timestamp) {
-        SimpleDateFormat("MMM dd, yyyy - HH:mm", Locale.getDefault()).format(Date(item.timestamp))
+        SimpleDateFormat("MMM dd, yyyy - HH:mm", java.util.Locale.getDefault()).format(java.util.Date(item.timestamp))
     }
-    val displayModel = remember(item.model) { if (item.model.isBlank()) "Unknown" else item.model }
+    val displayModel = remember(item.model) { item.model.ifBlank { "Unknown" } }
 
     Card(
         modifier = Modifier
@@ -516,8 +549,24 @@ fun HistoryItemCard(
             Spacer(Modifier.height(8.dp))
             if (expanded) {
                 Text(item.text, style = MaterialTheme.typography.bodyMedium)
+                if (item.summary.isNotBlank()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text("Summary", style = MaterialTheme.typography.titleSmall)
+                    Spacer(Modifier.height(4.dp))
+                    Text(item.summary, style = MaterialTheme.typography.bodyMedium)
+                }
             } else {
                 Text(item.text, style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                if (item.summary.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        item.summary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             if (!expanded) {
                 Spacer(Modifier.height(4.dp))
@@ -535,6 +584,11 @@ fun HistoryItemCard(
             ) {
                 IconButton(onClick = { onCopy(item.text) }) {
                     Icon(Icons.Default.ContentCopy, "Copy text")
+                }
+                if (item.summary.isNotBlank()) {
+                    IconButton(onClick = { onCopy(item.summary) }) {
+                        Icon(Icons.Default.ContentCopy, "Copy summary")
+                    }
                 }
                 IconButton(onClick = onDelete) {
                     Icon(Icons.Default.Delete, "Delete item", tint = MaterialTheme.colorScheme.error)

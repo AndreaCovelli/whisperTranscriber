@@ -38,6 +38,7 @@ import org.json.JSONObject
 data class UiState(
     val status: String = "Welcome! Share an audio file to begin.",
     val transcription: String = "",
+    val summary: String = "",
     val provider: TranscriptionProvider = TranscriptionProvider.ASSEMBLY_AI,
     val assemblyApiKey: String = "",
     val geminiApiKey: String = ""
@@ -54,6 +55,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
     private var currentJob: Job? = null
     @Volatile private var currentFfmpegSessionId: Long? = null
+
+    // Track the most recently inserted history id to update summary later
+    private var lastInsertedHistoryId: Int? = null
 
     init {
         viewModelScope.launch {
@@ -138,7 +142,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
 
-            _uiState.update { it.copy(status = "Processing file...", transcription = "") }
+            _uiState.update { it.copy(status = "Processing file...", transcription = "", summary = "") }
+            lastInsertedHistoryId = null
 
             val inputFile = copyUriToCache(uri)
             if (inputFile == null) {
@@ -199,7 +204,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // AssemblyAI path unchanged...
+    // AssemblyAI path unchanged except capturing inserted row id and resetting summary in UI
     private suspend fun transcribeWithAssembly(file: File, apiKey: String) {
         try {
             _uiState.update { it.copy(status = "AssemblyAI: 1/4 Uploading file...") }
@@ -224,7 +229,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val detectedLanguage = transcriptResponse.languageCode ?: "Unknown"
                         val newTranscription = transcriptResponse.text ?: "No text found."
 
-                        withContext(ioDispatcher) {
+                        val insertedId = withContext(ioDispatcher) {
                             historyDao.insert(
                                 TranscriptionHistory(
                                     text = newTranscription,
@@ -232,12 +237,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     model = "AssemblyAI"
                                 )
                             )
-                        }
+                        }.toInt()
+                        lastInsertedHistoryId = insertedId
 
                         _uiState.update {
                             it.copy(
                                 status = "AssemblyAI: 4/4 Success! (Language: $detectedLanguage)",
-                                transcription = newTranscription
+                                transcription = newTranscription,
+                                summary = ""
                             )
                         }
                         viewModelScope.launch {
@@ -330,7 +337,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val transcript = obj.optString("text").ifBlank { "No text found." }
             val language = obj.optString("language_code", "und")
 
-            withContext(ioDispatcher) {
+            val insertedId = withContext(ioDispatcher) {
                 historyDao.insert(
                     TranscriptionHistory(
                         text = transcript,
@@ -338,12 +345,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         model = "gemini-2.5-flash"
                     )
                 )
-            }
+            }.toInt()
+            lastInsertedHistoryId = insertedId
 
             _uiState.update {
                 it.copy(
                     status = "Gemini: Success! (Language: $language)",
-                    transcription = transcript
+                    transcription = transcript,
+                    summary = ""
                 )
             }
 
@@ -351,6 +360,61 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (e is CancellationException) throw e
             _uiState.update {
                 it.copy(status = "Gemini error: ${e.message ?: e::class.java.simpleName}")
+            }
+        }
+    }
+
+    fun summarizeTranscription() {
+        viewModelScope.launch {
+            val current = _uiState.value
+            val text = current.transcription
+            if (text.isBlank()) {
+                _uiState.update { it.copy(status = "Nothing to summarize. Transcribe audio first.") }
+                return@launch
+            }
+            val apiKey = current.geminiApiKey
+            if (apiKey.isBlank()) {
+                _uiState.update { it.copy(status = "Error: Gemini API Key is not set (Settings).") }
+                return@launch
+            }
+
+            _uiState.update { it.copy(status = "Summarizing with Gemini 2.5 Flash...") }
+
+            try {
+                val client = Client.builder().apiKey(apiKey).build()
+                val prompt = "You are an expert summarizer. Provide a concise, easy-to-read summary of the following text, in the same language. Use bullet points for key takeaways if appropriate"
+
+                val content = Content.fromParts(
+                    Part.fromText(prompt),
+                    Part.fromText(text)
+                )
+
+                val response = withContext(ioDispatcher) {
+                    val config = GenerateContentConfig.builder()
+                        .responseMimeType("text/plain")
+                        .build()
+                    client.models.generateContent("gemini-2.5-flash", content, config)
+                }
+
+                val summary = response.text()?.trim().orEmpty().ifBlank { "No summary generated." }
+
+                // Update UI
+                _uiState.update {
+                    it.copy(
+                        status = "Summary generated.",
+                        summary = summary
+                    )
+                }
+
+                // Persist summary for the most recent item (if available)
+                lastInsertedHistoryId?.let { id ->
+                    withContext(ioDispatcher) { historyDao.updateSummary(id, summary) }
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                _uiState.update {
+                    it.copy(status = "Summarization error: ${e.message ?: e::class.java.simpleName}")
+                }
             }
         }
     }
