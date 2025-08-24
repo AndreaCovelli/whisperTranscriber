@@ -78,7 +78,8 @@ dependencies {
     implementation(libs.androidx.material.icons.core)
     implementation(libs.androidx.material.icons.extended)
 
-    implementation("com.google.genai:google-genai:1.13.0")
+    // Google ML Kit
+    implementation(libs.google.genai)
 
     // Room
     implementation(libs.androidx.room.runtime)
