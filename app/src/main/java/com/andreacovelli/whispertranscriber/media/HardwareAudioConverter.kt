@@ -32,12 +32,14 @@ object HardwareAudioConverter {
     // Hardware-accelerated decode -> PCM16 WAV
     // forceMono: downmix to 1 channel to reduce size
     // targetSampleRate: resample to this rate (default 16_000)
+    // onProgress: optional callback [0f..1f], based on extractor PTS / durationUs
     suspend fun convertToWav(
         context: Context,
         inputUri: Uri,
         outputFile: File,
         forceMono: Boolean = true,
-        targetSampleRate: Int = 16_000
+        targetSampleRate: Int = 16_000,
+        onProgress: ((Float) -> Unit)? = null
     ): Result {
         require(targetSampleRate > 0)
 
@@ -68,6 +70,7 @@ object HardwareAudioConverter {
 
         val durationUs = if (srcFormat.containsKey(MediaFormat.KEY_DURATION))
             srcFormat.getLong(MediaFormat.KEY_DURATION) else -1L
+        if (durationUs > 0) onProgress?.invoke(0f)
 
         val decoder = MediaCodec.createDecoderByType(srcMime)
         decoder.configure(srcFormat, null, null, 0)
@@ -79,18 +82,41 @@ object HardwareAudioConverter {
             srcFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else 2
         var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
 
-        // Output format: always PCM16 WAV @ targetSampleRate, channels = 1 if forceMono else decoder channels
+        // Output format: PCM16 WAV @ targetSampleRate, channels = 1 if forceMono else decoder channels
         var outChannelsToWrite = if (forceMono) 1 else decChannels
         val writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
 
         val needResample = { inRate: Int -> inRate != targetSampleRate }
         var resampler: PolyphaseResampler? = null
 
+        // Reusable scratch buffers to reduce allocations in the hot path
+        var shortScratch = ShortArray(0)
+        var floatScratch = FloatArray(0)   // holds interleaved floats (no downmix)
+        var monoScratch = FloatArray(0)    // holds mono floats (downmixed)
+        fun ensureShortCapacity(minSize: Int) {
+            if (shortScratch.size < minSize) {
+                shortScratch = ShortArray(max(minSize, shortScratch.size.coerceAtLeast(1024) * 2))
+            }
+        }
+        fun ensureFloatCapacity(minSize: Int) {
+            if (floatScratch.size < minSize) {
+                floatScratch = FloatArray(max(minSize, floatScratch.size.coerceAtLeast(2048) * 2))
+            }
+        }
+        fun ensureMonoCapacity(minSize: Int) {
+            if (monoScratch.size < minSize) {
+                monoScratch = FloatArray(max(minSize, monoScratch.size.coerceAtLeast(2048) * 2))
+            }
+        }
+
         val inputTimeoutUs = 10000L
         val outputTimeoutUs = 10000L
         val info = MediaCodec.BufferInfo()
         var inputEos = false
         var outputEos = false
+
+        val hasDuration = durationUs > 0
+        var lastProgress = -1f
 
         try {
             while (!outputEos && currentCoroutineContext().isActive) {
@@ -106,6 +132,15 @@ object HardwareAudioConverter {
                         } else {
                             val pts = extractor.sampleTime
                             decoder.queueInputBuffer(inIdx, 0, size, pts, 0)
+
+                            // Progress update based on queued input PTS
+                            if (hasDuration && pts >= 0) {
+                                val p = (pts.toDouble() / durationUs.toDouble()).coerceIn(0.0, 1.0).toFloat()
+                                if (p - lastProgress >= 0.01f || p == 1f) {
+                                    lastProgress = p
+                                    onProgress?.invoke(p)
+                                }
+                            }
                             extractor.advance()
                         }
                     }
@@ -127,7 +162,6 @@ object HardwareAudioConverter {
                         }
                         outChannelsToWrite = if (forceMono) 1 else decChannels
 
-                        // Initialize resampler if needed
                         if (needResample(decSampleRate)) {
                             resampler = PolyphaseResampler(
                                 inRate = decSampleRate,
@@ -135,8 +169,6 @@ object HardwareAudioConverter {
                                 channels = outChannelsToWrite
                             )
                         }
-                        // If the writer was created earlier, it already uses targetSampleRate/outChannels
-                        // so nothing else to do here.
                     }
                     MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
                     else -> {
@@ -145,46 +177,79 @@ object HardwareAudioConverter {
                             if (info.size > 0) {
                                 ob.position(info.offset)
                                 ob.limit(info.offset + info.size)
+                                // Enforce little-endian for PCM buffer views
+                                ob.order(ByteOrder.LITTLE_ENDIAN)
 
-                                // Convert decoder output to float interleaved in target channel layout
-                                val framesIn = if (pcmEncoding == AudioFormat.ENCODING_PCM_FLOAT) {
-                                    val floats = FloatArray(info.size / 4)
-                                    ob.asFloatBuffer().get(floats)
-                                    val frames = floats.size / decChannels
-                                    val interleaved = if (outChannelsToWrite == decChannels) {
-                                        floats
+                                if (pcmEncoding == AudioFormat.ENCODING_PCM_FLOAT) {
+                                    val floatsCount = info.size / 4
+                                    val frames = floatsCount / decChannels
+                                    ensureFloatCapacity(floatsCount)
+                                    ob.asFloatBuffer().get(floatScratch, 0, floatsCount)
+
+                                    // Downmix if needed into monoScratch with 0.9f headroom
+                                    val (interleaved, interleavedSamples, framesAfterMix) =
+                                        if (outChannelsToWrite == decChannels) {
+                                            Triple(floatScratch, floatsCount, frames)
+                                        } else {
+                                            ensureMonoCapacity(frames)
+                                            val outCount = downmixToMonoInterleavedInto(
+                                                src = floatScratch,
+                                                frames = frames,
+                                                srcChannels = decChannels,
+                                                dst = monoScratch
+                                            )
+                                            Triple(monoScratch, outCount, frames) // outCount == frames
+                                        }
+
+                                    // Resample or write directly
+                                    val res = resampler?.process(interleaved, framesAfterMix, end = false)
+                                    if (res != null) {
+                                        writer.writeFloatsInterleaved(res, outChannelsToWrite)
                                     } else {
-                                        downmixToMonoInterleaved(floats, frames, decChannels)
+                                        writer.writeFloatsInterleaved(interleaved, outChannelsToWrite, interleavedSamples)
                                     }
-                                    // Resample if needed
-                                    val outFloats = resampler?.process(interleaved, frames, end = false)
-                                        ?: interleaved
-                                    writer.writeFloatsInterleaved(outFloats, outChannelsToWrite)
-                                    frames
                                 } else {
-                                    // PCM16 -> float
-                                    val shorts = ShortArray(info.size / 2)
-                                    ob.asShortBuffer().get(shorts)
-                                    val frames = shorts.size / decChannels
-                                    val floats = FloatArray(frames * decChannels)
-                                    // convert to float [-1,1]
+                                    // PCM16 -> float path
+                                    val shortsCount = info.size / 2
+                                    ensureShortCapacity(shortsCount)
+                                    ob.asShortBuffer().get(shortScratch, 0, shortsCount)
+
+                                    val frames = shortsCount / decChannels
+                                    val floatsNeeded = frames * decChannels
+                                    ensureFloatCapacity(floatsNeeded)
+
+                                    // Convert to float [-1,1]
+                                    val inv = 1.0f / 32768.0f
                                     var si = 0
                                     var fi = 0
-                                    val inv = 1.0f / 32768.0f
-                                    while (si < shorts.size) {
-                                        floats[fi++] = (shorts[si++].toInt().coerceIn(-32768, 32767) * inv)
+                                    while (si < shortsCount) {
+                                        // shorts are already -32768..32767
+                                        floatScratch[fi++] = (shortScratch[si++].toInt().coerceIn(-32768, 32767) * inv)
                                     }
-                                    val interleaved = if (outChannelsToWrite == decChannels) {
-                                        floats
+
+                                    // Downmix if needed into monoScratch with 0.9f headroom
+                                    val (interleaved, interleavedSamples, framesAfterMix) =
+                                        if (outChannelsToWrite == decChannels) {
+                                            Triple(floatScratch, floatsNeeded, frames)
+                                        } else {
+                                            ensureMonoCapacity(frames)
+                                            val outCount = downmixToMonoInterleavedInto(
+                                                src = floatScratch,
+                                                frames = frames,
+                                                srcChannels = decChannels,
+                                                dst = monoScratch
+                                            )
+                                            Triple(monoScratch, outCount, frames) // outCount == frames
+                                        }
+
+                                    // Resample or write directly
+                                    val res = resampler?.process(interleaved, framesAfterMix, end = false)
+                                    if (res != null) {
+                                        writer.writeFloatsInterleaved(res, outChannelsToWrite)
                                     } else {
-                                        downmixToMonoInterleaved(floats, frames, decChannels)
+                                        writer.writeFloatsInterleaved(interleaved, outChannelsToWrite, interleavedSamples)
                                     }
-                                    val outFloats = resampler?.process(interleaved, frames, end = false)
-                                        ?: interleaved
-                                    writer.writeFloatsInterleaved(outFloats, outChannelsToWrite)
-                                    frames
                                 }
-                                // framesIn computed above; not used further here
                             }
                             val eos = (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
                             decoder.releaseOutputBuffer(outIdx, false)
@@ -206,6 +271,7 @@ object HardwareAudioConverter {
             try { decoder.release() } catch (_: Exception) {}
             try { extractor.release() } catch (_: Exception) {}
             try { writer.close() } catch (_: Exception) {}
+            if (hasDuration) onProgress?.invoke(1f)
         }
 
         return Result(
@@ -215,17 +281,27 @@ object HardwareAudioConverter {
         )
     }
 
-    private fun downmixToMonoInterleaved(src: FloatArray, frames: Int, srcChannels: Int): FloatArray {
-        val out = FloatArray(frames)
+    // Downmix to mono with 0.9f headroom into a provided buffer
+    // src: interleaved float with srcChannels, frames total
+    // dst: must have capacity >= frames
+    // returns the number of output samples written (equals frames for mono)
+    private fun downmixToMonoInterleavedInto(
+        src: FloatArray,
+        frames: Int,
+        srcChannels: Int,
+        dst: FloatArray
+    ): Int {
+        val scale = 0.9f / srcChannels
         var i = 0
         var o = 0
-        while (i < frames * srcChannels) {
+        val total = frames * srcChannels
+        while (i < total) {
             var sum = 0f
             for (c in 0 until srcChannels) sum += src[i + c]
-            out[o++] = sum / srcChannels
+            dst[o++] = sum * scale
             i += srcChannels
         }
-        return out
+        return frames
     }
 
     // High-quality polyphase windowed-sinc resampler (streaming, interleaved floats)
@@ -242,11 +318,10 @@ object HardwareAudioConverter {
         private val step = inRate.toDouble() / outRate.toDouble() // input frames advanced per output sample
         private val kernel: Array<FloatArray> // [phase][tap]
         private var tail: FloatArray = FloatArray(ntaps * channels)
-        private var totalFramesSeen: Long = 0L // number of "real" input frames consumed (excl. tail)
-        private var srcPosGlobal = 0.0 // next virtual source pos (in frames)
+        private var totalFramesSeen: Long = 0L
+        private var srcPosGlobal = 0.0
 
         init {
-            // cutoff = 0.5 * min(1, outRate/inRate) with small safety margin to reduce aliasing
             val cutoff = 0.5 * min(1.0, outRate.toDouble() / inRate.toDouble()) * 0.95
             kernel = Array(nphases) { p ->
                 val frac = p.toDouble() / nphases.toDouble()
@@ -261,32 +336,25 @@ object HardwareAudioConverter {
                     h[j] = v
                     sum += v
                 }
-                // Normalize DC gain per phase
                 val scale = if (abs(sum) < 1e-12) 1.0 else 1.0 / sum
                 FloatArray(ntaps) { j -> (h[j] * scale).toFloat() }
             }
         }
 
         fun process(inputInterleaved: FloatArray, framesIn: Int, end: Boolean): FloatArray {
-            // Build work buffer = tail + input
             val workFrames = ntaps + framesIn
             val work = FloatArray(workFrames * channels)
-            // copy tail
             System.arraycopy(tail, 0, work, 0, tail.size)
-            // copy input after tail
             if (framesIn > 0) {
                 System.arraycopy(inputInterleaved, 0, work, tail.size, framesIn * channels)
             }
 
-            // Compute relative position for this block
             val workStartGlobal = totalFramesSeen - ntaps
             var posRel = srcPosGlobal - workStartGlobal
 
-            // Predict output capacity (safe upper bound) and allocate
             val approxOutFrames = ((framesIn * outRate.toLong()) / inRate.toLong() + 32L).toInt().coerceAtLeast(0)
             val out = ArrayList<Float>(approxOutFrames * channels)
 
-            // Emit output while we have enough left/right support for convolution
             while (true) {
                 val base = kotlin.math.floor(posRel).toInt()
                 val leftIndex = base - center
@@ -298,7 +366,6 @@ object HardwareAudioConverter {
                 if (phase == nphases) phase = 0
                 val k = kernel[phase]
 
-                // Convolve per channel
                 for (ch in 0 until channels) {
                     var acc = 0.0f
                     var j = 0
@@ -315,22 +382,17 @@ object HardwareAudioConverter {
                 srcPosGlobal += step
             }
 
-            // Update tail for next call with the last ntaps frames of "work"
             val copyStartFrames = max(0, workFrames - ntaps)
             val copyStart = copyStartFrames * channels
             if (copyStart < work.size) {
                 System.arraycopy(work, copyStart, tail, 0, ntaps * channels)
             }
-
-            // Update "consumed" frames count
             totalFramesSeen += framesIn
 
-            // If end, we might still be able to produce more by padding zeros
             if (end) {
                 out.addAll(finishInternal())
             }
 
-            // Materialize to FloatArray
             val arr = FloatArray(out.size)
             for (i in arr.indices) arr[i] = out[i]
             return arr
@@ -340,7 +402,6 @@ object HardwareAudioConverter {
 
         private fun finishInternal(): ArrayList<Float> {
             val out = ArrayList<Float>(ntaps * channels)
-            // Create padded work: tail + zeros(ntaps)
             val workFrames = ntaps + ntaps
             val work = FloatArray(workFrames * channels)
             System.arraycopy(tail, 0, work, 0, tail.size)
@@ -375,7 +436,6 @@ object HardwareAudioConverter {
                 srcPosGlobal += step
             }
 
-            // No need to update tail further; stream is finished.
             return out
         }
 
@@ -399,6 +459,14 @@ object HardwareAudioConverter {
 
         private val out = BufferedOutputStream(FileOutputStream(file))
         private var dataBytesWritten = 0L
+        // Reusable byte scratch buffer, grown on demand
+        private var byteScratch = ByteArray(0)
+        private fun ensureByteCapacity(minBytes: Int) {
+            if (byteScratch.size < minBytes) {
+                val newSize = max(minBytes, byteScratch.size.coerceAtLeast(16384) * 2)
+                byteScratch = ByteArray(newSize)
+            }
+        }
 
         init {
             val header = ByteArray(44)
@@ -421,21 +489,24 @@ object HardwareAudioConverter {
             out.write(header)
         }
 
-        fun writeFloatsInterleaved(samples: FloatArray, channels: Int) {
+        // sampleCount = number of float samples (interleaved) to write from 'samples'
+        fun writeFloatsInterleaved(samples: FloatArray, channels: Int, sampleCount: Int = samples.size) {
             require(channels == this.channels)
-            if (samples.isEmpty()) return
-            val bytes = ByteArray(samples.size * 2) // 16-bit
+            if (sampleCount <= 0) return
+            val byteCount = sampleCount * 2 // 16-bit
+            ensureByteCapacity(byteCount)
+
             var bi = 0
             var i = 0
-            while (i < samples.size) {
+            while (i < sampleCount) {
                 val v = (samples[i].coerceIn(-1f, 1f) * 32767f).roundToInt()
                 val s = v.coerceIn(-32768, 32767)
-                bytes[bi++] = (s and 0xff).toByte()
-                bytes[bi++] = ((s shr 8) and 0xff).toByte()
+                byteScratch[bi++] = (s and 0xff).toByte()
+                byteScratch[bi++] = ((s shr 8) and 0xff).toByte()
                 i++
             }
-            out.write(bytes)
-            dataBytesWritten += bytes.size
+            out.write(byteScratch, 0, byteCount)
+            dataBytesWritten += byteCount
         }
 
         override fun close() {

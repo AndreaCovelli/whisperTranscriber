@@ -140,7 +140,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(status = "Processing file...", transcription = "", summary = "") }
             lastInsertedHistoryId = null
 
-            _uiState.update { it.copy(status = "Converting to 16 kHz WAV...") }
+            //_uiState.update { it.copy(status = "Converting to 16 kHz WAV...") }
             val outputFile = withContext(ioDispatcher) {
                 File.createTempFile("converted", ".wav", getApplication<Application>().cacheDir)
             }
@@ -150,7 +150,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     inputUri = uri,
                     outputFile = outputFile,
                     forceMono = true,
-                    targetSampleRate = 16_000
+                    targetSampleRate = 16_000,
+                    onProgress = { _uiState.update { s -> s.copy(status = "Converting to 16 kHz WAV: ${"%.1f".format(it * 100)}%") } }
                 )
 
                 val state = _uiState.value
