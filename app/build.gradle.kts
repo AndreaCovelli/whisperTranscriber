@@ -73,7 +73,7 @@ dependencies {
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 
     // FFmpeg - align with com.arthenica package used in imports
-    implementation(libs.ffmpeg.kit.full)
+    //implementation(libs.ffmpeg.kit.full)
 
     implementation(libs.androidx.material.icons.core)
     implementation(libs.androidx.material.icons.extended)

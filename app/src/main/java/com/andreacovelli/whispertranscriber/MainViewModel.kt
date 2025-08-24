@@ -5,13 +5,10 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.andreacovelli.whispertranscriber.data.AppDatabase
+import com.andreacovelli.whispertranscriber.media.HardwareAudioConverter
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistoryDao
-import com.arthenica.ffmpegkit.FFmpegKit
-import com.arthenica.ffmpegkit.FFmpegSession
-import com.arthenica.ffmpegkit.ReturnCode
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -26,7 +23,6 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.asRequestBody
 import retrofit2.HttpException
 import java.io.File
-import java.io.FileOutputStream
 import com.google.genai.Client
 import com.google.genai.types.Content
 import com.google.genai.types.GenerateContentConfig
@@ -54,7 +50,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
     private var currentJob: Job? = null
-    @Volatile private var currentFfmpegSessionId: Long? = null
 
     // Track the most recently inserted history id to update summary later
     private var lastInsertedHistoryId: Int? = null
@@ -145,61 +140,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(status = "Processing file...", transcription = "", summary = "") }
             lastInsertedHistoryId = null
 
-            val inputFile = copyUriToCache(uri)
-            if (inputFile == null) {
-                _uiState.update { it.copy(status = "Error: Could not read shared file.") }
-                return@launch
-            }
-
-            _uiState.update { it.copy(status = "Converting to WAV...") }
+            _uiState.update { it.copy(status = "Converting to 16 kHz WAV...") }
             val outputFile = withContext(ioDispatcher) {
-                File.createTempFile("converted_", ".wav", getApplication<Application>().cacheDir)
+                File.createTempFile("converted", ".wav", getApplication<Application>().cacheDir)
             }
-
-            val command =
-                "-hide_banner -y -i \"${inputFile.absolutePath}\" -vn -ac 1 -ar 16000 -c:a pcm_s16le \"${outputFile.absolutePath}\""
-
-            val sessionDeferred = CompletableDeferred<FFmpegSession>()
-            val session = FFmpegKit.executeAsync(command) { s ->
-                if (!sessionDeferred.isCompleted) sessionDeferred.complete(s)
-            }
-            currentFfmpegSessionId = session.sessionId
-
             try {
-                val finished = sessionDeferred.await()
-                if (ReturnCode.isSuccess(finished.returnCode)) {
-                    if (outputFile.exists() && outputFile.length() > 0) {
-                        val state = _uiState.value
-                        try {
-                            if (usingAssembly) {
-                                transcribeWithAssembly(outputFile, state.assemblyApiKey)
-                            } else {
-                                transcribeWithGemini(outputFile, state.geminiApiKey)
-                            }
-                        } finally {
-                            runCatching { outputFile.delete() }
-                            runCatching { inputFile.delete() }
-                        }
+                HardwareAudioConverter.convertToWav(
+                    context = getApplication(),
+                    inputUri = uri,
+                    outputFile = outputFile,
+                    forceMono = true,
+                    targetSampleRate = 16_000
+                )
+
+                val state = _uiState.value
+                try {
+                    if (usingAssembly) {
+                        transcribeWithAssembly(outputFile, state.assemblyApiKey)
                     } else {
-                        _uiState.update { it.copy(status = "Error: FFmpeg created an empty file.") }
-                        runCatching { outputFile.delete() }
-                        runCatching { inputFile.delete() }
+                        transcribeWithGemini(outputFile, state.geminiApiKey)
                     }
-                } else {
-                    val logs = finished.allLogsAsString
-                    _uiState.update {
-                        it.copy(status = "Error: FFmpeg conversion failed.${if (logs.isNotBlank()) " Details: $logs" else ""}")
-                    }
+                } finally {
                     runCatching { outputFile.delete() }
-                    runCatching { inputFile.delete() }
                 }
-            } catch (ce: CancellationException) {
-                currentFfmpegSessionId?.let { FFmpegKit.cancel(it) }
+            } catch (e: CancellationException) {
                 runCatching { outputFile.delete() }
-                runCatching { inputFile.delete() }
-                throw ce
-            } finally {
-                currentFfmpegSessionId = null
+                throw e
+            } catch (e: Exception) {
+                runCatching { outputFile.delete() }
+                _uiState.update { it.copy(status = "Error: Hardware decode/resample failed: ${e.message}") }
+                return@launch
             }
         }
     }
@@ -422,28 +392,5 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
-    }
-
-    private suspend fun copyUriToCache(uri: Uri): File? = withContext(ioDispatcher) {
-        try {
-            val app = getApplication<Application>()
-            val inputStream = app.contentResolver.openInputStream(uri) ?: return@withContext null
-            val inputFile = File.createTempFile("shared_audio", null, app.cacheDir)
-            inputStream.use { input ->
-                FileOutputStream(inputFile).use { output ->
-                    input.copyTo(output)
-                }
-            }
-            inputFile
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        currentJob?.cancel()
-        currentFfmpegSessionId?.let { FFmpegKit.cancel(it) }
-        currentFfmpegSessionId = null
     }
 }

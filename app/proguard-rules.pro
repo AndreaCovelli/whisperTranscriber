@@ -27,9 +27,6 @@
 -keep class com.andreacovelli.whispertranscriber.data.** { *; }
 -keep class androidx.room.* { *; }
 
--keep class com.arthenica.** { *; }
--dontwarn com.arthenica.*
-
 -keep class com.google.auth.** { *; }
 -keep class com.google.api.client.** { *; }
 
