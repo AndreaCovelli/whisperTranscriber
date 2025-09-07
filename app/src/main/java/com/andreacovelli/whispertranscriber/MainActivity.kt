@@ -64,36 +64,41 @@ class MainActivity : ComponentActivity() {
 
     private val mainViewModel: MainViewModel by viewModels()
 
-    private fun extractSharedUri(intent: Intent?): Uri? {
-        intent ?: return null
+    private fun extractSharedUris(intent: Intent?): List<Uri> {
+        intent ?: return emptyList()
         return when (intent.action) {
             Intent.ACTION_SEND -> {
-                intent.clipData?.getItemAt(0)?.uri
+                val single = intent.clipData?.getItemAt(0)?.uri
                     ?: if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
                     } else {
                         @Suppress("DEPRECATION")
                         intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
                     }
+                listOfNotNull(single)
             }
             Intent.ACTION_SEND_MULTIPLE -> {
-                val fromClip = intent.clipData?.let { clip ->
-                    if (clip.itemCount > 0) clip.getItemAt(0).uri else null
-                }
-                fromClip ?: if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)?.firstOrNull()
+                val clipUris = intent.clipData?.let { clip ->
+                    (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }
+                }.orEmpty()
+                val extraUris = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
                 } else {
                     @Suppress("DEPRECATION")
-                    intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.firstOrNull()
+                    intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
                 }
+                (clipUris + extraUris).distinctBy { it.toString() }
             }
-            else -> null
+            else -> emptyList()
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        extractSharedUri(intent)?.let { mainViewModel.handleAudioShare(it) }
+        val shared = extractSharedUris(intent)
+        if (shared.isNotEmpty()) {
+            mainViewModel.handleAudioShareMultiple(shared)
+        }
 
         setContent {
             WhisperTranscriberTheme {
@@ -183,7 +188,10 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        extractSharedUri(intent)?.let { mainViewModel.handleAudioShare(it) }
+        val shared = extractSharedUris(intent)
+        if (shared.isNotEmpty()) {
+            mainViewModel.handleAudioShareMultiple(shared)
+        }
     }
 }
 
@@ -195,6 +203,8 @@ fun MainScreen(
     onNavigateToSettings: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -225,7 +235,6 @@ fun MainScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Show current provider so user knows which engine will run
             AssistChip(
                 onClick = {},
                 label = {
@@ -237,62 +246,152 @@ fun MainScreen(
                     )
                 }
             )
+
             HorizontalDivider()
+
             Text("Status", style = MaterialTheme.typography.titleMedium)
             Text(uiState.status)
-            if (uiState.transcription.isNotEmpty()) {
-                val clipboardManager = LocalClipboardManager.current
-                val context = LocalContext.current
+
+            HorizontalDivider()
+
+            if (uiState.jobs.isEmpty()) {
+                Text(
+                    "Share one or more audio files to start transcribing.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            } else {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    uiState.jobs.forEach { job ->
+                        TranscriptionJobCard(
+                            job = job,
+                            canSummarize = uiState.geminiApiKey.isNotBlank(),
+                            onSummarize = { viewModel.summarizeJob(job.id) },
+                            onCopyTranscript = {
+                                clipboardManager.setText(AnnotatedString(job.transcript))
+                                Toast.makeText(context, "Copied transcript", Toast.LENGTH_SHORT).show()
+                            },
+                            onCopySummary = {
+                                clipboardManager.setText(AnnotatedString(job.summary))
+                                Toast.makeText(context, "Copied summary", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TranscriptionJobCard(
+    job: TranscriptionJobState,
+    canSummarize: Boolean,
+    onSummarize: () -> Unit,
+    onCopyTranscript: () -> Unit,
+    onCopySummary: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(16.dp)
+                .animateContentSize(
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    )
+                )
+        ) {
+            Text(
+                text = job.displayName.ifBlank { "Audio file" },
+                style = MaterialTheme.typography.titleMedium
+            )
+            Spacer(Modifier.height(4.dp))
+
+            val secondary = buildString {
+                if (job.language.isNotBlank()) append("Language: ${job.language}")
+                if (job.model.isNotBlank()) {
+                    if (isNotEmpty()) append(" • ")
+                    append("Model: ${job.model}")
+                }
+            }
+            if (secondary.isNotBlank()) {
+                Text(
+                    text = secondary,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(4.dp))
+            }
+
+            Text(job.status, style = MaterialTheme.typography.bodySmall)
+
+            if (job.error != null) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    job.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            if (job.transcript.isBlank() && job.error == null) {
+                Spacer(Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = { job.progress.coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            if (job.transcript.isNotBlank()) {
+                Spacer(Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Transcription", style = MaterialTheme.typography.titleMedium)
-                    Row {
-                        IconButton(onClick = {
-                            clipboardManager.setText(AnnotatedString(uiState.transcription))
-                            Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                        }) {
-                            Icon(Icons.Filled.ContentCopy, "Copy Transcription")
-                        }
+                    Text("Transcription", style = MaterialTheme.typography.titleSmall)
+                    IconButton(onClick = onCopyTranscript) {
+                        Icon(Icons.Filled.ContentCopy, "Copy Transcription")
                     }
                 }
                 ExpandableText(
-                    text = uiState.transcription,
+                    text = job.transcript,
                     modifier = Modifier.fillMaxWidth(),
                     minimizedMaxLines = 6
                 )
 
                 Spacer(Modifier.height(12.dp))
-                Button(
-                    onClick = { viewModel.summarizeTranscription() },
-                    enabled = uiState.geminiApiKey.isNotBlank(),
-                    modifier = Modifier.align(Alignment.End)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
                 ) {
-                    Text("Summarize with Gemini")
+                    Button(
+                        onClick = onSummarize,
+                        enabled = canSummarize && !job.isSummarizing,
+                    ) {
+                        Text(if (job.isSummarizing) "Summarizing..." else "Summarize with Gemini")
+                    }
                 }
 
-                if (uiState.summary.isNotEmpty()) {
-                    Spacer(Modifier.height(16.dp))
+                if (job.summary.isNotBlank()) {
+                    Spacer(Modifier.height(12.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Summary", style = MaterialTheme.typography.titleMedium)
-                        IconButton(onClick = {
-                            clipboardManager.setText(AnnotatedString(uiState.summary))
-                            Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                        }) {
+                        Text("Summary", style = MaterialTheme.typography.titleSmall)
+                        IconButton(onClick = onCopySummary) {
                             Icon(Icons.Filled.ContentCopy, "Copy Summary")
                         }
                     }
                     SelectionContainer {
-                        Text(
-                            uiState.summary,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        Text(job.summary)
                     }
                 }
             }
@@ -632,7 +731,6 @@ fun ExpandableText(
                 maxLines = minimizedMaxLines,
                 overflow = TextOverflow.Ellipsis,
                 onTextLayout = { result ->
-                    // True if Compose had to ellipsize (i.e., "too long")
                     isOverflowing = result.hasVisualOverflow
                 },
                 modifier = Modifier

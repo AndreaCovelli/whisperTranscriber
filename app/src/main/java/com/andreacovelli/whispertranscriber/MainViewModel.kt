@@ -2,6 +2,7 @@ package com.andreacovelli.whispertranscriber
 
 import android.app.Application
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.andreacovelli.whispertranscriber.data.AppDatabase
@@ -30,14 +31,36 @@ import com.google.genai.types.GenerateContentResponse
 import com.google.genai.types.Part
 import com.google.genai.types.Schema
 import org.json.JSONObject
+import java.util.UUID
 
 data class UiState(
-    val status: String = "Welcome! Share an audio file to begin.",
-    val transcription: String = "",
-    val summary: String = "",
+    val status: String = "Waiting for audios...",
     val provider: TranscriptionProvider = TranscriptionProvider.ASSEMBLY_AI,
     val assemblyApiKey: String = "",
-    val geminiApiKey: String = ""
+    val geminiApiKey: String = "",
+    val jobs: List<TranscriptionJobState> = emptyList()
+)
+
+data class TranscriptionJobState(
+    val id: String = UUID.randomUUID().toString(),
+    val uri: Uri? = null,
+    val displayName: String = "",
+    val status: String = "Queued",
+    val progress: Float = 0f, // 0..1 conversion progress
+    val transcript: String = "",
+    val language: String = "",
+    val model: String = "",
+    val summary: String = "",
+    val historyId: Int? = null,
+    val error: String? = null,
+    val isRunning: Boolean = false,
+    val isSummarizing: Boolean = false
+)
+
+private data class TranscriptionData(
+    val text: String,
+    val language: String,
+    val model: String
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -51,15 +74,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
     private var currentJob: Job? = null
 
-    // Track the most recently inserted history id to update summary later
-    private var lastInsertedHistoryId: Int? = null
-
     init {
         viewModelScope.launch {
-            // One-shot migration from plaintext -> encrypted
             runCatching { settings.migrateToEncryptedIfNeeded() }
 
-            // Collect settings
             launch {
                 settings.providerFlow.collect { p ->
                     _uiState.update { it.copy(provider = p) }
@@ -111,20 +129,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun handleAudioShare(uri: Uri) {
+    fun handleAudioShareMultiple(uris: List<Uri>) {
+        if (uris.isEmpty()) return
         currentJob?.cancel()
         currentJob = viewModelScope.launch {
-            // Load persisted settings synchronously to avoid race on cold start
             val persistedProvider = settings.providerFlow.firstOrNull() ?: _uiState.value.provider
             val persistedAssemblyKey = settings.assemblyApiKeyFlow.firstOrNull().orEmpty()
             val persistedGeminiKey = settings.geminiApiKeyFlow.firstOrNull().orEmpty()
 
-            // Keep UI state in sync with what we actually use
             _uiState.update {
                 it.copy(
                     provider = persistedProvider,
                     assemblyApiKey = persistedAssemblyKey,
-                    geminiApiKey = persistedGeminiKey
+                    geminiApiKey = persistedGeminiKey,
+                    status = "Queued ${uris.size} file(s)..."
                 )
             }
 
@@ -137,147 +155,209 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
 
-            _uiState.update { it.copy(status = "Processing file...", transcription = "", summary = "") }
-            lastInsertedHistoryId = null
-
-            //_uiState.update { it.copy(status = "Converting to 16 kHz WAV...") }
-            val outputFile = withContext(ioDispatcher) {
-                File.createTempFile("converted", ".wav", getApplication<Application>().cacheDir)
-            }
-            try {
-                HardwareAudioConverter.convertToWav(
-                    context = getApplication(),
-                    inputUri = uri,
-                    outputFile = outputFile,
-                    forceMono = true,
-                    targetSampleRate = 16_000,
-                    onProgress = { _uiState.update { s -> s.copy(status = "Converting to 16 kHz WAV: ${"%.1f".format(it * 100)}%") } }
+            // Create jobs and start processing sequentially
+            for ((index, uri) in uris.withIndex()) {
+                val displayName = resolveDisplayName(uri).ifBlank { uri.lastPathSegment ?: "Audio ${index + 1}" }
+                val jobState = TranscriptionJobState(
+                    uri = uri,
+                    displayName = displayName,
+                    status = "Starting...",
+                    progress = 0f,
+                    isRunning = true
                 )
+                addJob(jobState)
+                _uiState.update { it.copy(status = "Processing ${index + 1}/${uris.size}: $displayName") }
 
-                val state = _uiState.value
                 try {
-                    if (usingAssembly) {
-                        transcribeWithAssembly(outputFile, state.assemblyApiKey)
-                    } else {
-                        transcribeWithGemini(outputFile, state.geminiApiKey)
-                    }
-                } finally {
-                    runCatching { outputFile.delete() }
+                    processSingleJob(
+                        jobId = jobState.id,
+                        uri = uri,
+                        usingAssembly = usingAssembly,
+                        apiKey = neededKey
+                    )
+                } catch (e: CancellationException) {
+                    updateJob(jobState.id) { it.copy(status = "Cancelled", isRunning = false, error = "Cancelled") }
+                    throw e
+                } catch (e: Exception) {
+                    val msg = e.message ?: e::class.java.simpleName
+                    updateJob(jobState.id) { it.copy(status = "Error", isRunning = false, error = msg) }
                 }
-            } catch (e: CancellationException) {
-                runCatching { outputFile.delete() }
-                throw e
-            } catch (e: Exception) {
-                runCatching { outputFile.delete() }
-                _uiState.update { it.copy(status = "Error: Hardware decode/resample failed: ${e.message}") }
-                return@launch
             }
+
+            _uiState.update { it.copy(status = "Done processing ${uris.size} file(s).") }
         }
     }
 
-    // AssemblyAI path unchanged except capturing inserted row id and resetting summary in UI
-    private suspend fun transcribeWithAssembly(file: File, apiKey: String) {
+    private suspend fun processSingleJob(jobId: String, uri: Uri, usingAssembly: Boolean, apiKey: String) {
+        val app = getApplication<Application>()
+
+        val outputFile = withContext(ioDispatcher) {
+            File.createTempFile("converted_${jobId.take(6)}", ".wav", app.cacheDir)
+        }
         try {
-            _uiState.update { it.copy(status = "AssemblyAI: 1/4 Uploading file...") }
+            // Convert
+            updateJob(jobId) { it.copy(status = "Converting to 16 kHz WAV...", progress = 0f) }
+            HardwareAudioConverter.convertToWav(
+                context = app,
+                inputUri = uri,
+                outputFile = outputFile,
+                forceMono = true,
+                targetSampleRate = 16_000,
+                onProgress = { p ->
+                    updateJob(jobId) {
+                        it.copy(
+                            status = "Converting to 16 kHz WAV: ${"%.1f".format(p * 100)}%",
+                            progress = p
+                        )
+                    }
+                }
+            )
+
+            // Transcribe
+            val data = if (usingAssembly) {
+                transcribeWithAssemblyReturn(
+                    file = outputFile,
+                    apiKey = apiKey,
+                    onStatus = { s -> updateJob(jobId) { it.copy(status = "AssemblyAI: $s") } }
+                )
+            } else {
+                transcribeWithGeminiReturn(
+                    file = outputFile,
+                    apiKey = apiKey,
+                    onStatus = { s -> updateJob(jobId) { it.copy(status = "Gemini: $s") } }
+                )
+            }
+
+            // Persist in history
+            val historyId = withContext(ioDispatcher) {
+                historyDao.insert(
+                    TranscriptionHistory(
+                        text = data.text,
+                        language = data.language.ifBlank { "Unknown" },
+                        model = data.model
+                    )
+                )
+            }.toInt()
+
+            updateJob(jobId) {
+                it.copy(
+                    transcript = data.text,
+                    language = data.language.ifBlank { "Unknown" },
+                    model = data.model,
+                    historyId = historyId,
+                    progress = 1f,
+                    isRunning = false,
+                    error = null
+                )
+            }
+        } finally {
+            runCatching { outputFile.delete() }
+        }
+    }
+
+    private fun addJob(job: TranscriptionJobState) {
+        _uiState.update { it.copy(jobs = it.jobs + job) }
+    }
+
+    private fun updateJob(jobId: String, transform: (TranscriptionJobState) -> TranscriptionJobState) {
+        _uiState.update { state ->
+            state.copy(jobs = state.jobs.map { if (it.id == jobId) transform(it) else it })
+        }
+    }
+
+    private suspend fun resolveDisplayName(uri: Uri): String {
+        return withContext(ioDispatcher) {
+            val cr = getApplication<Application>().contentResolver
+            val proj = arrayOf(OpenableColumns.DISPLAY_NAME)
+            try {
+                cr.query(uri, proj, null, null, null)?.use { c ->
+                    val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (idx >= 0 && c.moveToFirst()) {
+                        return@withContext c.getString(idx) ?: ""
+                    }
+                }
+            } catch (_: Exception) { }
+            ""
+        }
+    }
+
+    // New "returning" version for AssemblyAI — used by multi-job pipeline
+    private suspend fun transcribeWithAssemblyReturn(
+        file: File,
+        apiKey: String,
+        onStatus: (String) -> Unit
+    ): TranscriptionData {
+        try {
+            onStatus("1/4 Uploading file...")
             val api = RetrofitClient.api
 
             val requestFileBody = file.asRequestBody("application/octet-stream".toMediaType())
             val uploadResponse = api.uploadFile(apiKey, requestFileBody)
             val audioUrl = uploadResponse.uploadUrl
 
-            _uiState.update { it.copy(status = "AssemblyAI: 2/4 Creating transcript...") }
-
+            onStatus("2/4 Creating transcript...")
             val transcriptRequest = TranscriptRequest(audioUrl = audioUrl)
             var transcriptResponse = api.createTranscript(apiKey, transcriptRequest)
             val transcriptId = transcriptResponse.id
 
-            _uiState.update { it.copy(status = "AssemblyAI: 3/4 Waiting for result...") }
-
+            onStatus("3/4 Waiting for result...")
             repeat(36) {
                 transcriptResponse = api.getTranscript(apiKey, transcriptId)
                 when (transcriptResponse.status) {
                     "completed" -> {
                         val detectedLanguage = transcriptResponse.languageCode ?: "Unknown"
                         val newTranscription = transcriptResponse.text ?: "No text found."
-
-                        val insertedId = withContext(ioDispatcher) {
-                            historyDao.insert(
-                                TranscriptionHistory(
-                                    text = newTranscription,
-                                    language = detectedLanguage,
-                                    model = "AssemblyAI"
-                                )
-                            )
-                        }.toInt()
-                        lastInsertedHistoryId = insertedId
-
-                        _uiState.update {
-                            it.copy(
-                                status = "AssemblyAI: 4/4 Success! (Language: $detectedLanguage)",
-                                transcription = newTranscription,
-                                summary = ""
-                            )
-                        }
-                        viewModelScope.launch {
-                            runCatching { api.deleteTranscript(apiKey, transcriptId) }
-                        }
-                        return
+                        // Cleanup remote transcript
+                        runCatching { api.deleteTranscript(apiKey, transcriptId) }
+                        onStatus("4/4 Success")
+                        return TranscriptionData(
+                            text = newTranscription,
+                            language = detectedLanguage,
+                            model = "AssemblyAI"
+                        )
                     }
                     "error" -> {
-                        _uiState.update {
-                            it.copy(status = "Error: Transcription failed. ${transcriptResponse.error}")
-                        }
-                        viewModelScope.launch {
-                            runCatching { api.deleteTranscript(apiKey, transcriptId) }
-                        }
-                        return
+                        runCatching { api.deleteTranscript(apiKey, transcriptId) }
+                        throw IllegalStateException("Transcription failed. ${transcriptResponse.error.orEmpty()}")
                     }
-                    else -> { }
+                    else -> { /* continue waiting */ }
                 }
                 delay(5_000L)
             }
-            _uiState.update { it.copy(status = "Error: Timed out waiting for transcription.") }
-
+            throw IllegalStateException("Timed out waiting for transcription.")
         } catch (e: Exception) {
-            val msg = when (e) {
-                is HttpException -> when (e.code()) {
-                    401 -> "Error: Unauthorized. Check your AssemblyAI API Key."
-                    else -> "Error: HTTP ${e.code()} ${e.message()}"
-                }
-                is CancellationException -> throw e
-                else -> "Error: Network request failed: ${e.message}"
+            if (e is CancellationException) throw e
+            if (e is HttpException) {
+                val msg = if (e.code() == 401) "Unauthorized. Check your AssemblyAI API key." else "HTTP ${e.code()} ${e.message()}"
+                throw IllegalStateException(msg, e)
+            } else {
+                throw IllegalStateException("Network or API error: ${e.message}", e)
             }
-            _uiState.update { it.copy(status = msg) }
         }
     }
 
-    private suspend fun transcribeWithGemini(file: File, apiKey: String) {
+    // New "returning" version for Gemini — used by multi-job pipeline
+    private suspend fun transcribeWithGeminiReturn(
+        file: File,
+        apiKey: String,
+        onStatus: (String) -> Unit
+    ): TranscriptionData {
         try {
             val sizeBytes = file.length()
             val maxBytes = 19L * 1024L * 1024L
             if (sizeBytes > maxBytes) {
-                _uiState.update {
-                    it.copy(
-                        status = "Error: Audio file is ${"%.1f".format(sizeBytes / (1024f * 1024f))} MB. Gemini inline limit is ~20 MB. Please share a shorter clip."
-                    )
-                }
-                return
+                throw IllegalArgumentException("Audio is ${"%.1f".format(sizeBytes / (1024f * 1024f))} MB. Gemini inline limit is ~20 MB.")
             }
 
-            _uiState.update { it.copy(status = "Gemini: Uploading audio and transcribing...") }
-
+            onStatus("Uploading audio and transcribing...")
             val bytes = withContext(ioDispatcher) { file.readBytes() }
 
             val responseSchema = Schema.builder()
                 .type(Object::class.java.simpleName)
                 .properties(
                     mapOf(
-                        "language_code" to Schema.builder()
-                            .type(String::class.java.simpleName)
-                            .build(),
-                        "text" to Schema.builder()
-                            .type(String::class.java.simpleName)
-                            .build()
+                        "language_code" to Schema.builder().type(String::class.java.simpleName).build(),
+                        "text" to Schema.builder().type(String::class.java.simpleName).build()
                     )
                 )
                 .required(listOf("language_code", "text"))
@@ -308,49 +388,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val transcript = obj.optString("text").ifBlank { "No text found." }
             val language = obj.optString("language_code", "und")
 
-            val insertedId = withContext(ioDispatcher) {
-                historyDao.insert(
-                    TranscriptionHistory(
-                        text = transcript,
-                        language = language,
-                        model = "gemini-2.5-flash"
-                    )
-                )
-            }.toInt()
-            lastInsertedHistoryId = insertedId
-
-            _uiState.update {
-                it.copy(
-                    status = "Gemini: Success! (Language: $language)",
-                    transcription = transcript,
-                    summary = ""
-                )
-            }
-
+            onStatus("Success")
+            return TranscriptionData(
+                text = transcript,
+                language = language,
+                model = "gemini-2.5-flash"
+            )
         } catch (e: Exception) {
             if (e is CancellationException) throw e
-            _uiState.update {
-                it.copy(status = "Gemini error: ${e.message ?: e::class.java.simpleName}")
-            }
+            throw IllegalStateException("Gemini error: ${e.message ?: e::class.java.simpleName}", e)
         }
     }
 
-    fun summarizeTranscription() {
+    // Per-job summarization for multi-file flow
+    fun summarizeJob(jobId: String) {
         viewModelScope.launch {
-            val current = _uiState.value
-            val text = current.transcription
+            val state = _uiState.value
+            val job = state.jobs.find { it.id == jobId } ?: return@launch
+            val text = job.transcript
             if (text.isBlank()) {
-                _uiState.update { it.copy(status = "Nothing to summarize. Transcribe audio first.") }
+                _uiState.update { it.copy(status = "Nothing to summarize for ${job.displayName}.") }
                 return@launch
             }
-            val apiKey = current.geminiApiKey
+            val apiKey = state.geminiApiKey
             if (apiKey.isBlank()) {
                 _uiState.update { it.copy(status = "Error: Gemini API Key is not set (Settings).") }
                 return@launch
             }
 
+            updateJob(jobId) { it.copy(isSummarizing = true) }
             _uiState.update { it.copy(status = "Summarizing with Gemini 2.5 Flash...") }
-
             try {
                 val client = Client.builder().apiKey(apiKey).build()
                 val prompt = """
@@ -374,20 +441,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 val summary = response.text()?.trim().orEmpty().ifBlank { "No summary generated." }
 
-                // Update UI
-                _uiState.update {
-                    it.copy(
-                        status = "Summary generated.",
-                        summary = summary
-                    )
-                }
+                updateJob(jobId) { it.copy(isSummarizing = false, summary = summary) }
+                _uiState.update { it.copy(status = "Summary generated.") }
 
-                // Persist summary for the most recent item (if available)
-                lastInsertedHistoryId?.let { id ->
-                    withContext(ioDispatcher) { historyDao.updateSummary(id, summary) }
+                // Persist per-job summary
+                withContext(ioDispatcher) {
+                    val hid = job.historyId
+                    if (hid != null) {
+                        historyDao.updateSummary(hid, summary)
+                    }
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
+                updateJob(jobId) { it.copy(isSummarizing = false) }
                 _uiState.update {
                     it.copy(status = "Summarization error: ${e.message ?: e::class.java.simpleName}")
                 }
