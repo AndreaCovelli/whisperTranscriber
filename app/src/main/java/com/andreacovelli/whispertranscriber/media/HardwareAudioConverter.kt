@@ -20,6 +20,8 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 object HardwareAudioConverter {
 
@@ -40,7 +42,7 @@ object HardwareAudioConverter {
         forceMono: Boolean = true,
         targetSampleRate: Int = 16_000,
         onProgress: ((Float) -> Unit)? = null
-    ): Result {
+    ): Result = withContext(Dispatchers.IO) {
         require(targetSampleRate > 0)
 
         val extractor = MediaExtractor()
@@ -265,7 +267,6 @@ object HardwareAudioConverter {
                     writer.writeFloatsInterleaved(flushFloats, outChannelsToWrite)
                 }
             }
-
         } finally {
             try { decoder.stop() } catch (_: Exception) {}
             try { decoder.release() } catch (_: Exception) {}
@@ -274,7 +275,7 @@ object HardwareAudioConverter {
             if (hasDuration) onProgress?.invoke(1f)
         }
 
-        return Result(
+        Result(
             sampleRate = targetSampleRate,
             channelCount = outChannelsToWrite,
             durationUs = durationUs
