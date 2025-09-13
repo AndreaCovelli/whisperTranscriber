@@ -32,6 +32,7 @@ import com.google.genai.types.Part
 import com.google.genai.types.Schema
 import org.json.JSONObject
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 data class UiState(
     val status: String = "Waiting for audios...",
@@ -94,6 +95,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+
+        // Cleanup old temp WAVs on a background thread
+        viewModelScope.launch(ioDispatcher) {
+            cleanupOldTempWavs(maxAgeMs = TimeUnit.DAYS.toMillis(3))
+        }
+
         val database = AppDatabase.getDatabase(application)
         historyDao = database.transcriptionHistoryDao()
     }
@@ -126,6 +133,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             settings.forgetGeminiApiKey()
             _uiState.update { it.copy(geminiApiKey = "") }
+        }
+    }
+
+    private fun cleanupOldTempWavs(maxAgeMs: Long = TimeUnit.DAYS.toMillis(3)) {
+        val app = getApplication<Application>()
+        val cache = app.cacheDir ?: return
+        val cutoff = System.currentTimeMillis() - maxAgeMs
+        val prefix = "converted_"
+        val suffix = ".wav"
+
+        val files = cache.listFiles() ?: return
+        for (f in files) {
+            val name = f.name
+            if (
+                f.isFile &&
+                name.startsWith(prefix) &&
+                name.endsWith(suffix) &&
+                f.lastModified() < cutoff
+            ) {
+                runCatching { f.delete() }
+            }
         }
     }
 
