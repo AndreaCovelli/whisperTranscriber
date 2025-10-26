@@ -13,10 +13,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -66,6 +68,13 @@ private data class TranscriptionData(
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
+    companion object {
+        private const val GEMINI_MODEL = "gemini-2.5-flash"
+        // Use explicit JSON schema type strings for Proguard safety
+        private const val TYPE_OBJECT = "OBJECT"
+        private const val TYPE_STRING = "STRING"
+    }
+
     private val _uiState = MutableStateFlow(UiState())
     val uiState = _uiState.asStateFlow()
 
@@ -73,7 +82,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val historyDao: TranscriptionHistoryDao
 
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
-    private var currentJob: Job? = null
+
+    // Job Queuing implementation
+    private val jobQueue = Channel<TranscriptionJobState>(Channel.UNLIMITED)
+    private var processorJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -103,26 +115,97 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         val database = AppDatabase.getDatabase(application)
         historyDao = database.transcriptionHistoryDao()
+
+        // Start the job processor
+        startJobProcessor()
     }
 
-    // Settings mutations
+    // Job Processor Loop
+    private fun startJobProcessor() {
+        // Check if already running, but also check if the previous run failed due to missing API key and retry
+        if (processorJob?.isActive == true && _uiState.value.status.startsWith("Error:").not()) return
+
+        processorJob = viewModelScope.launch {
+            // Fetch latest settings before processing
+            val persistedProvider = settings.providerFlow.firstOrNull() ?: _uiState.value.provider
+            val persistedAssemblyKey = settings.assemblyApiKeyFlow.firstOrNull().orEmpty()
+            val persistedGeminiKey = settings.geminiApiKeyFlow.firstOrNull().orEmpty()
+
+            // Update keys in state
+            _uiState.update {
+                it.copy(
+                    provider = persistedProvider,
+                    assemblyApiKey = persistedAssemblyKey,
+                    geminiApiKey = persistedGeminiKey
+                )
+            }
+
+            val usingAssembly = persistedProvider == TranscriptionProvider.ASSEMBLY_AI
+            val neededKey = if (usingAssembly) persistedAssemblyKey else persistedGeminiKey
+
+            if (neededKey.isBlank()) {
+                // Only show error if there are jobs queued/pending.
+                if (_uiState.value.jobs.any { it.status == "Queued" } || _uiState.value.status.contains("Queuing")) {
+                    _uiState.update {
+                        it.copy(status = "Error: ${if (usingAssembly) "AssemblyAI" else "Gemini"} API Key is not set. Please configure in Settings.")
+                    }
+                }
+                // Stop processor; it will be restarted when settings change or new job arrives.
+                return@launch
+            }
+
+            var processedCount = 0
+            // Update status if the queue was empty previously or showing an error
+            if (_uiState.value.status.startsWith("Waiting") || _uiState.value.status.startsWith("Error:")) {
+                _uiState.update { it.copy(status = "Ready to process queue...") }
+            }
+
+            jobQueue.receiveAsFlow().collect { jobState ->
+                _uiState.update { it.copy(status = "Processing: ${jobState.displayName}") }
+                updateJob(jobState.id) { it.copy(isRunning = true, status = "Starting...") }
+
+                try {
+                    processSingleJob(
+                        jobId = jobState.id,
+                        uri = jobState.uri!!,
+                        usingAssembly = usingAssembly,
+                        apiKey = neededKey
+                    )
+                    processedCount++
+                } catch (_: CancellationException) {
+                    updateJob(jobState.id) { it.copy(status = "Cancelled", isRunning = false, error = "Cancelled") }
+                } catch (e: Exception) {
+                    val msg = e.message ?: e::class.java.simpleName
+                    updateJob(jobState.id) { it.copy(status = "Error", isRunning = false, error = msg) }
+                }
+                _uiState.update { it.copy(status = "Processed $processedCount file(s). Waiting for more...") }
+            }
+        }
+    }
+
+    // Settings mutations (Auto-Save)
     fun setProvider(p: TranscriptionProvider) {
         _uiState.update { it.copy(provider = p) }
+        viewModelScope.launch {
+            settings.saveProvider(p)
+            startJobProcessor() // Restart processor to re-evaluate provider/keys
+        }
     }
     fun setAssemblyKey(k: String) {
         _uiState.update { it.copy(assemblyApiKey = k) }
+        viewModelScope.launch {
+            settings.saveAssemblyApiKey(k)
+            startJobProcessor() // Restart processor if it was waiting for key
+        }
     }
     fun setGeminiKey(k: String) {
         _uiState.update { it.copy(geminiApiKey = k) }
-    }
-    fun saveSettings() {
         viewModelScope.launch {
-            val s = _uiState.value
-            settings.saveProvider(s.provider)
-            settings.saveAssemblyApiKey(s.assemblyApiKey)
-            settings.saveGeminiApiKey(s.geminiApiKey)
+            settings.saveGeminiApiKey(k)
+            startJobProcessor() // Restart processor if it was waiting for key
         }
     }
+
     fun forgetAssemblyKey() {
         viewModelScope.launch {
             settings.forgetAssemblyApiKey()
@@ -157,62 +240,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // Updated handleAudioShareMultiple (Queuing)
     fun handleAudioShareMultiple(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        currentJob?.cancel()
-        currentJob = viewModelScope.launch {
-            val persistedProvider = settings.providerFlow.firstOrNull() ?: _uiState.value.provider
-            val persistedAssemblyKey = settings.assemblyApiKeyFlow.firstOrNull().orEmpty()
-            val persistedGeminiKey = settings.geminiApiKeyFlow.firstOrNull().orEmpty()
 
-            _uiState.update {
-                it.copy(
-                    provider = persistedProvider,
-                    assemblyApiKey = persistedAssemblyKey,
-                    geminiApiKey = persistedGeminiKey,
-                    status = "Queued ${uris.size} file(s)..."
-                )
-            }
+        viewModelScope.launch {
+            _uiState.update { it.copy(status = "Queuing ${uris.size} file(s)...") }
 
-            val usingAssembly = persistedProvider == TranscriptionProvider.ASSEMBLY_AI
-            val neededKey = if (usingAssembly) persistedAssemblyKey else persistedGeminiKey
-            if (neededKey.isBlank()) {
-                _uiState.update {
-                    it.copy(status = "Error: ${if (usingAssembly) "AssemblyAI" else "Gemini"} API Key is not set.")
-                }
-                return@launch
-            }
-
-            // Create jobs and start processing sequentially
+            // Create jobs and add them to the queue
             for ((index, uri) in uris.withIndex()) {
                 val displayName = resolveDisplayName(uri).ifBlank { uri.lastPathSegment ?: "Audio ${index + 1}" }
                 val jobState = TranscriptionJobState(
                     uri = uri,
                     displayName = displayName,
-                    status = "Starting...",
+                    status = "Queued",
                     progress = 0f,
-                    isRunning = true
+                    isRunning = false // Starts as false, processor sets to true
                 )
                 addJob(jobState)
-                _uiState.update { it.copy(status = "Processing ${index + 1}/${uris.size}: $displayName") }
-
-                try {
-                    processSingleJob(
-                        jobId = jobState.id,
-                        uri = uri,
-                        usingAssembly = usingAssembly,
-                        apiKey = neededKey
-                    )
-                } catch (e: CancellationException) {
-                    updateJob(jobState.id) { it.copy(status = "Cancelled", isRunning = false, error = "Cancelled") }
-                    throw e
-                } catch (e: Exception) {
-                    val msg = e.message ?: e::class.java.simpleName
-                    updateJob(jobState.id) { it.copy(status = "Error", isRunning = false, error = msg) }
-                }
+                jobQueue.send(jobState) // Add to the processing channel
             }
-
-            _uiState.update { it.copy(status = "Done processing ${uris.size} file(s).") }
+            // Ensure the processor is running
+            startJobProcessor()
         }
     }
 
@@ -309,7 +358,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // New "returning" version for AssemblyAI — used by multi-job pipeline
+    // Updated transcribeWithAssemblyReturn (Increased Timeout)
     private suspend fun transcribeWithAssemblyReturn(
         file: File,
         apiKey: String,
@@ -329,7 +378,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val transcriptId = transcriptResponse.id
 
             onStatus("3/4 Waiting for result...")
-            repeat(36) {
+            // Increased timeout from 36 (3 min) to 120 (10 min) for longer files
+            repeat(120) {
                 transcriptResponse = api.getTranscript(apiKey, transcriptId)
                 when (transcriptResponse.status) {
                     "completed" -> {
@@ -364,7 +414,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // New "returning" version for Gemini — used by multi-job pipeline
+    // Updated transcribeWithGeminiReturn (Robustness)
     private suspend fun transcribeWithGeminiReturn(
         file: File,
         apiKey: String,
@@ -374,18 +424,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val sizeBytes = file.length()
             val maxBytes = 19L * 1024L * 1024L
             if (sizeBytes > maxBytes) {
-                throw IllegalArgumentException("Audio is ${"%.1f".format(sizeBytes / (1024f * 1024f))} MB. Gemini inline limit is ~20 MB.")
+                // Clarified error message using MiB
+                throw IllegalArgumentException("Audio is ${"%.1f".format(sizeBytes / (1024f * 1024f))} MiB. Gemini inline limit is ~20 MiB.")
             }
 
             onStatus("Uploading audio and transcribing...")
             val bytes = withContext(ioDispatcher) { file.readBytes() }
 
+            // Use constants for schema types
             val responseSchema = Schema.builder()
-                .type(Object::class.java.simpleName)
+                .type(TYPE_OBJECT)
                 .properties(
                     mapOf(
-                        "language_code" to Schema.builder().type(String::class.java.simpleName).build(),
-                        "text" to Schema.builder().type(String::class.java.simpleName).build()
+                        "language_code" to Schema.builder().type(TYPE_STRING).build(),
+                        "text" to Schema.builder().type(TYPE_STRING).build()
                     )
                 )
                 .required(listOf("language_code", "text"))
@@ -408,7 +460,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             val client = Client.builder().apiKey(apiKey).build()
             val response: GenerateContentResponse = withContext(ioDispatcher) {
-                client.models.generateContent("gemini-2.5-flash", content, config)
+                // Use the constant for the model name
+                client.models.generateContent(GEMINI_MODEL, content, config)
             }
 
             val json = response.text() ?: "{}"
@@ -420,7 +473,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return TranscriptionData(
                 text = transcript,
                 language = language,
-                model = "gemini-2.5-flash"
+                model = GEMINI_MODEL
             )
         } catch (e: Exception) {
             if (e is CancellationException) throw e
@@ -428,7 +481,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Per-job summarization for multi-file flow
+    // Per-job summarization for multi-file flow (Use constant)
     fun summarizeJob(jobId: String) {
         viewModelScope.launch {
             val state = _uiState.value
@@ -464,7 +517,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val config = GenerateContentConfig.builder()
                         .responseMimeType("text/plain")
                         .build()
-                    client.models.generateContent("gemini-2.5-flash", content, config)
+                    // Use the constant for the model name
+                    client.models.generateContent(GEMINI_MODEL, content, config)
                 }
 
                 val summary = response.text()?.trim().orEmpty().ifBlank { "No summary generated." }

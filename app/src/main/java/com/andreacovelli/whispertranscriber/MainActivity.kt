@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,7 +52,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.ui.theme.WhisperTranscriberTheme
-import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 object AppRoutes {
@@ -73,7 +77,7 @@ class MainActivity : ComponentActivity() {
                         intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
                     } else {
                         @Suppress("DEPRECATION")
-                        intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+                        intent.getParcelableExtra(Intent.EXTRA_STREAM)
                     }
                 listOfNotNull(single)
             }
@@ -339,12 +343,21 @@ private fun TranscriptionJobCard(
                 )
             }
 
-            if (job.transcript.isBlank() && job.error == null) {
+            // Improved Progress Indication
+            // Show progress if transcript is empty, no error, AND job is marked as running.
+            if (job.transcript.isBlank() && job.error == null && job.isRunning) {
                 Spacer(Modifier.height(8.dp))
-                LinearProgressIndicator(
-                    progress = { job.progress.coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth()
-                )
+
+                // Check if the status indicates a phase where 'progress' is meaningful (Conversion)
+                if (job.status.contains("Converting")) {
+                    LinearProgressIndicator(
+                        progress = { job.progress.coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    // Indeterminate progress for Starting, Uploading, Waiting for API, etc.
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
             }
 
             if (job.transcript.isNotBlank()) {
@@ -496,16 +509,7 @@ fun SettingsScreen(
                     Text("Forget key")
                 }
             }
-
-            Button(
-                onClick = {
-                    viewModel.saveSettings()
-                    scope.launch { snackbarHostState.showSnackbar("Settings saved") }
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Save Settings")
-            }
+            // Save button removed: settings are auto-saved via ViewModel setters.
         }
     }
 }
@@ -562,7 +566,13 @@ fun HistoryScreen(
     val historyItems by historyViewModel.historyState.collectAsStateWithLifecycle()
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
-    var expandedIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
+
+    // State Preservation: Use rememberSaveable with listSaver for Set<Int>
+    val expandedIdsSaver = listSaver<Set<Int>, Int>(
+        save = { it.toList() },
+        restore = { it.toSet() }
+    )
+    var expandedIds by rememberSaveable(stateSaver = expandedIdsSaver) { mutableStateOf(emptySet()) }
 
     Scaffold(
         topBar = {
@@ -621,7 +631,8 @@ fun HistoryItemCard(
     onDelete: () -> Unit
 ) {
     val formattedDate = remember(item.timestamp) {
-        SimpleDateFormat("MMM dd, yyyy - HH:mm", java.util.Locale.getDefault()).format(java.util.Date(item.timestamp))
+        DateTimeFormatter.ofPattern("MMM dd, yyyy - HH:mm", Locale.getDefault())
+            .format(Instant.ofEpochMilli(item.timestamp).atZone(ZoneId.systemDefault()))
     }
     val displayModel = remember(item.model) { item.model.ifBlank { "Unknown" } }
 
