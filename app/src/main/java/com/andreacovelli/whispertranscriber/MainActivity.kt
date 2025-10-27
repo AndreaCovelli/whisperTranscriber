@@ -240,12 +240,15 @@ fun MainScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             AssistChip(
-                onClick = {},
+                onClick = onNavigateToSettings, // Navigate to settings on click
                 label = {
                     Text(
+                        // Updated display based on the new enum structure
                         when (uiState.provider) {
                             TranscriptionProvider.ASSEMBLY_AI -> "Using: AssemblyAI"
-                            TranscriptionProvider.GEMINI_25_FLASH -> "Using: Gemini 2.5 Flash"
+                            TranscriptionProvider.GEMINI_FLASH_LITE -> "Using: Gemini Flash Lite"
+                            TranscriptionProvider.GEMINI_FLASH -> "Using: Gemini Flash"
+                            TranscriptionProvider.GEMINI_PRO -> "Using: Gemini Pro"
                         }
                     )
                 }
@@ -450,7 +453,7 @@ fun SettingsScreen(
                 ) { focusManager.clearFocus() },
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text("Transcription Provider", style = MaterialTheme.typography.titleMedium)
+            Text("Transcription Provider & Model", style = MaterialTheme.typography.titleMedium)
             ProviderSelector(
                 selected = uiState.provider,
                 onSelect = viewModel::setProvider
@@ -514,48 +517,80 @@ fun SettingsScreen(
     }
 }
 
+// Updated ProviderSelector to include all options in a flat list
 @Composable
 private fun ProviderSelector(
     selected: TranscriptionProvider,
     onSelect: (TranscriptionProvider) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .selectable(
-                    selected = selected == TranscriptionProvider.ASSEMBLY_AI,
-                    onClick = { onSelect(TranscriptionProvider.ASSEMBLY_AI) },
-                    role = Role.RadioButton
-                ),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            RadioButton(
-                selected = selected == TranscriptionProvider.ASSEMBLY_AI,
-                onClick = null
-            )
-            Spacer(Modifier.width(8.dp))
-            Text("AssemblyAI")
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .selectable(
-                    selected = selected == TranscriptionProvider.GEMINI_25_FLASH,
-                    onClick = { onSelect(TranscriptionProvider.GEMINI_25_FLASH) },
-                    role = Role.RadioButton
-                ),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            RadioButton(
-                selected = selected == TranscriptionProvider.GEMINI_25_FLASH,
-                onClick = null
-            )
-            Spacer(Modifier.width(8.dp))
-            Text("Gemini 2.5 Flash")
-        }
+        // AssemblyAI Option
+        ProviderRadioOption(
+            text = "AssemblyAI",
+            isSelected = selected == TranscriptionProvider.ASSEMBLY_AI,
+            onClick = { onSelect(TranscriptionProvider.ASSEMBLY_AI) }
+        )
+
+        // Gemini Options Header
+        Text(
+            "Gemini Models:",
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(top = 8.dp)
+        )
+
+        // Gemini Flash Lite
+        ProviderRadioOption(
+            text = "Gemini Flash Lite",
+            isSelected = selected == TranscriptionProvider.GEMINI_FLASH_LITE,
+            onClick = { onSelect(TranscriptionProvider.GEMINI_FLASH_LITE) },
+            modifier = Modifier.padding(start = 16.dp)
+        )
+
+        // Gemini Flash
+        ProviderRadioOption(
+            text = "Gemini Flash",
+            isSelected = selected == TranscriptionProvider.GEMINI_FLASH,
+            onClick = { onSelect(TranscriptionProvider.GEMINI_FLASH) },
+            modifier = Modifier.padding(start = 16.dp)
+        )
+
+        // Gemini Pro
+        ProviderRadioOption(
+            text = "Gemini Pro",
+            isSelected = selected == TranscriptionProvider.GEMINI_PRO,
+            onClick = { onSelect(TranscriptionProvider.GEMINI_PRO) },
+            modifier = Modifier.padding(start = 16.dp)
+        )
     }
 }
+
+// Helper Composable for Radio Options
+@Composable
+private fun ProviderRadioOption(
+    text: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .selectable(
+                selected = isSelected,
+                onClick = onClick,
+                role = Role.RadioButton
+            ),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(
+            selected = isSelected,
+            onClick = null // null because the Row is selectable
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(text)
+    }
+}
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

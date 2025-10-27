@@ -69,7 +69,7 @@ private data class TranscriptionData(
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
-        private const val GEMINI_MODEL = "gemini-2.5-flash"
+        // GEMINI_MODEL constant removed.
         // Use explicit JSON schema type strings for Proguard safety
         private const val TYPE_OBJECT = "OBJECT"
         private const val TYPE_STRING = "STRING"
@@ -89,7 +89,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
-            runCatching { settings.migrateToEncryptedIfNeeded() }
+            // migrateToEncryptedIfNeeded() call removed.
 
             launch {
                 settings.providerFlow.collect { p ->
@@ -143,6 +143,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val usingAssembly = persistedProvider == TranscriptionProvider.ASSEMBLY_AI
             val neededKey = if (usingAssembly) persistedAssemblyKey else persistedGeminiKey
 
+            // Get the specific model name if using Gemini
+            val geminiModelName = persistedProvider.modelName
+
             if (neededKey.isBlank()) {
                 // Only show error if there are jobs queued/pending.
                 if (_uiState.value.jobs.any { it.status == "Queued" } || _uiState.value.status.contains("Queuing")) {
@@ -151,6 +154,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
                 // Stop processor; it will be restarted when settings change or new job arrives.
+                return@launch
+            }
+
+            // Ensure Gemini model name is present if provider is Gemini
+            if (!usingAssembly && geminiModelName == null) {
+                _uiState.update {
+                    it.copy(status = "Error: Invalid Gemini configuration. Please check Settings.")
+                }
                 return@launch
             }
 
@@ -169,7 +180,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         jobId = jobState.id,
                         uri = jobState.uri!!,
                         usingAssembly = usingAssembly,
-                        apiKey = neededKey
+                        apiKey = neededKey,
+                        geminiModel = geminiModelName // Pass the specific model name string
                     )
                     processedCount++
                 } catch (_: CancellationException) {
@@ -265,7 +277,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun processSingleJob(jobId: String, uri: Uri, usingAssembly: Boolean, apiKey: String) {
+    private suspend fun processSingleJob(jobId: String, uri: Uri, usingAssembly: Boolean, apiKey: String, geminiModel: String?) {
         val app = getApplication<Application>()
 
         val outputFile = withContext(ioDispatcher) {
@@ -298,9 +310,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     onStatus = { s -> updateJob(jobId) { it.copy(status = "AssemblyAI: $s") } }
                 )
             } else {
+                // Ensure geminiModel is not null if usingAssembly is false
+                if (geminiModel == null) {
+                    throw IllegalStateException("Gemini model not specified.")
+                }
                 transcribeWithGeminiReturn(
                     file = outputFile,
                     apiKey = apiKey,
+                    modelName = geminiModel, // Pass the specific model name
                     onStatus = { s -> updateJob(jobId) { it.copy(status = "Gemini: $s") } }
                 )
             }
@@ -414,14 +431,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Updated transcribeWithGeminiReturn (Robustness)
+    // Updated transcribeWithGeminiReturn (Robustness and Model Selection)
     private suspend fun transcribeWithGeminiReturn(
         file: File,
         apiKey: String,
+        modelName: String, // Accept the model name string
         onStatus: (String) -> Unit
     ): TranscriptionData {
         try {
             val sizeBytes = file.length()
+            // Adjusting limit slightly based on Gemini documentation (approx 20MB for inline data)
             val maxBytes = 19L * 1024L * 1024L
             if (sizeBytes > maxBytes) {
                 // Clarified error message using MiB
@@ -460,8 +479,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             val client = Client.builder().apiKey(apiKey).build()
             val response: GenerateContentResponse = withContext(ioDispatcher) {
-                // Use the constant for the model name
-                client.models.generateContent(GEMINI_MODEL, content, config)
+                // Use the dynamic model name
+                client.models.generateContent(modelName, content, config)
             }
 
             val json = response.text() ?: "{}"
@@ -473,7 +492,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return TranscriptionData(
                 text = transcript,
                 language = language,
-                model = GEMINI_MODEL
+                model = modelName // Return the actual model used
             )
         } catch (e: Exception) {
             if (e is CancellationException) throw e
@@ -481,7 +500,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Per-job summarization for multi-file flow (Use constant)
+    // Per-job summarization for multi-file flow
     fun summarizeJob(jobId: String) {
         viewModelScope.launch {
             val state = _uiState.value
@@ -497,8 +516,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
 
+            // Determine which model to use for summarization.
+            // We default to the currently selected provider if it's Gemini, otherwise use Flash as a sensible default if API key is present.
+            val providerForSummary = state.provider
+            val modelName = if (providerForSummary.isGemini()) {
+                providerForSummary.modelName!!
+            } else {
+                // If using AssemblyAI for transcription, default to Flash for summarization
+                TranscriptionProvider.GEMINI_FLASH.modelName!!
+            }
+
             updateJob(jobId) { it.copy(isSummarizing = true) }
-            _uiState.update { it.copy(status = "Summarizing with Gemini 2.5 Flash...") }
+            _uiState.update { it.copy(status = "Summarizing with $modelName...") }
             try {
                 val client = Client.builder().apiKey(apiKey).build()
                 val prompt = """
@@ -517,8 +546,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val config = GenerateContentConfig.builder()
                         .responseMimeType("text/plain")
                         .build()
-                    // Use the constant for the model name
-                    client.models.generateContent(GEMINI_MODEL, content, config)
+                    // Use the determined model name
+                    client.models.generateContent(modelName, content, config)
                 }
 
                 val summary = response.text()?.trim().orEmpty().ifBlank { "No summary generated." }
