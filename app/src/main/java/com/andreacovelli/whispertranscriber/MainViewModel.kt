@@ -23,8 +23,12 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.asRequestBody
+import okio.BufferedSink
+import okio.source
 import retrofit2.HttpException
 import java.io.File
 import com.google.genai.Client
@@ -88,6 +92,43 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             "audio/vorbis",
             "audio/flac",
             "audio/x-flac"
+        )
+
+        // Natively supported AssemblyAI MIME types (based on AssemblyAI docs and common Android MIME types)
+        private val SUPPORTED_ASSEMBLYAI_MIME_TYPES = setOf(
+            "audio/3gpp", // .3ga, often contains AMR
+            "audio/aac",
+            "audio/x-hx-aac-adts",
+            "audio/ac3",
+            "audio/aiff",
+            "audio/x-aiff",
+            // ALAC is tricky, often container dependent (e.g., audio/mp4)
+            "audio/amr",
+            "audio/amr-wb",
+            "audio/ape", // Monkey's Audio
+            "audio/basic", // .au
+            // DSS/QCP/TTA/VOC/WV are generally non-standard MIME types on Android, but included if recognizable
+            "audio/flac",
+            "audio/x-flac",
+            "video/x-flv", // FLV container
+            "audio/mp4", // .m4a, .m4b, .m4p, .m4r
+            "audio/x-m4a",
+            "audio/mpeg", // .mp3, .mpga
+            "audio/mp3",
+            "audio/ogg", // .ogg, .oga, .mogg
+            "application/ogg",
+            "audio/opus",
+            "audio/wav",
+            "audio/x-wav",
+            "audio/x-ms-wma", // .wma
+            "audio/webm",
+            "audio/wavpack", // .wv
+            // Video containers (AssemblyAI extracts audio)
+            "video/mp4",
+            "video/3gpp",
+            "video/webm",
+            "video/quicktime",
+            "video/x-msvideo"
         )
     }
 
@@ -293,7 +334,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // MODIFIED: Implements conditional conversion logic
+    // Helper function to create a streaming RequestBody from a Uri
+    private fun createRequestBodyFromUri(uri: Uri): RequestBody {
+        val app = getApplication<Application>()
+        val contentResolver = app.contentResolver
+
+        // Determine the content type, handle potential parsing errors, and fallback to octet-stream
+        val contentType = contentResolver.getType(uri)?.let { mime ->
+            try {
+                mime.toMediaType()
+            } catch (_: IllegalArgumentException) {
+                "application/octet-stream".toMediaType()
+            }
+        } ?: "application/octet-stream".toMediaType()
+
+
+        return object : RequestBody() {
+            override fun contentType(): MediaType = contentType
+
+            // Return the actual length if available, otherwise -1L (OkHttp will use chunked encoding)
+            override fun contentLength(): Long = try {
+                // Using openFileDescriptor/statSize is generally more reliable for length than AssetFileDescriptor.length
+                contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
+            } catch (_: Exception) { -1L }
+
+            override fun writeTo(sink: BufferedSink) {
+                // Efficiently stream data from the input stream to the network sink
+                // Use okio.source for efficient copying
+                contentResolver.openInputStream(uri)?.use { sink.writeAll(it.source()) }
+                    ?: throw IllegalStateException("Could not open input stream for Uri: $uri")
+            }
+        }
+    }
+
     private suspend fun processSingleJob(jobId: String, uri: Uri, usingAssembly: Boolean, apiKey: String, geminiModel: String?) {
         val app = getApplication<Application>()
         val contentResolver = app.contentResolver
@@ -302,8 +375,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val inputMimeType = contentResolver.getType(uri)?.lowercase()
 
         // 2. Determine if conversion is needed.
-        // AssemblyAI path always converts (for standardization). Gemini path converts if MIME type is unknown or unsupported.
-        val conversionNeeded = usingAssembly || (inputMimeType == null || inputMimeType !in SUPPORTED_GEMINI_MIME_TYPES)
+        val conversionNeeded = when {
+            inputMimeType == null -> true // Always convert if MIME type is unknown
+            usingAssembly -> inputMimeType !in SUPPORTED_ASSEMBLYAI_MIME_TYPES
+            else -> inputMimeType !in SUPPORTED_GEMINI_MIME_TYPES // Gemini
+        }
 
         // This will hold the converted file if created, otherwise null. Used for cleanup.
         var convertedTempFile: File? = null
@@ -312,12 +388,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // Data holders for transcription step
             var bytesForGemini: ByteArray? = null
             var mimeTypeForGemini: String? = null
-            var fileForAssembly: File? = null
+            // For AssemblyAI, we use either the converted File or the original Uri for streaming
+            var sourceForAssembly: Any? = null // Can be File or Uri
 
             if (conversionNeeded) {
                 // --- Conversion Path ---
                 val reasonSuffix = if (inputMimeType == null) "(Unknown format)" else "($inputMimeType)"
-                val conversionReason = if (usingAssembly) "Standardizing for AssemblyAI" else "Format not natively supported by Gemini $reasonSuffix"
+                val providerName = if (usingAssembly) "AssemblyAI" else "Gemini"
+                val conversionReason = "Format not natively supported by $providerName $reasonSuffix"
 
                 updateJob(jobId) { it.copy(status = "$conversionReason. Converting to 16 kHz WAV...", progress = 0f) }
 
@@ -343,7 +421,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
 
                 if (usingAssembly) {
-                    fileForAssembly = outputFile
+                    sourceForAssembly = outputFile
                 } else {
                     // If converted for Gemini, load bytes from the temp file.
                     updateJob(jobId) { it.copy(status = "Loading converted audio...") }
@@ -352,28 +430,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
             } else {
-                // --- Direct Path (Supported Gemini formats) ---
-                // We can only reach here if using Gemini (!usingAssembly)
-                updateJob(jobId) { it.copy(status = "Format supported ($inputMimeType). Loading audio directly...", progress = 0.5f) }
+                // --- Direct Path (Supported formats) ---
 
-                // Read bytes directly from the URI stream efficiently
-                bytesForGemini = withContext(ioDispatcher) {
-                    contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                } ?: throw IllegalStateException("Failed to read input audio file.")
-                mimeTypeForGemini =
-                    inputMimeType // Guaranteed not null because conversionNeeded is false
+                if (usingAssembly) {
+                    updateJob(jobId) { it.copy(status = "Format supported ($inputMimeType). Preparing for direct upload...", progress = 1f) }
+                    // Use the original URI for streaming upload
+                    sourceForAssembly = uri
+                } else {
+                    // Gemini
+                    updateJob(jobId) { it.copy(status = "Format supported ($inputMimeType). Loading audio directly...", progress = 0.5f) }
 
-                updateJob(jobId) { it.copy(progress = 1f) }
+                    // Read bytes directly from the URI stream efficiently
+                    bytesForGemini = withContext(ioDispatcher) {
+                        contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    } ?: throw IllegalStateException("Failed to read input audio file.")
+                    mimeTypeForGemini =
+                        inputMimeType // Guaranteed not null because conversionNeeded is false
+
+                    updateJob(jobId) { it.copy(progress = 1f) }
+                }
             }
 
 
             // Transcribe
             val data = if (usingAssembly) {
-                if (fileForAssembly == null) {
-                    throw IllegalStateException("Internal error: AssemblyAI requires prepared file but it's missing.")
+                if (sourceForAssembly == null) {
+                    throw IllegalStateException("Internal error: AssemblyAI source (File or Uri) is missing.")
                 }
                 transcribeWithAssemblyReturn(
-                    file = fileForAssembly,
+                    source = sourceForAssembly,
                     apiKey = apiKey,
                     onStatus = { s -> updateJob(jobId) { it.copy(status = "AssemblyAI: $s") } }
                 )
@@ -445,9 +530,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Updated transcribeWithAssemblyReturn (Increased Timeout)
+    // Updated transcribeWithAssemblyReturn (Increased Timeout, supports File or Uri via streaming)
     private suspend fun transcribeWithAssemblyReturn(
-        file: File,
+        source: Any, // Accepts File (converted) or Uri (original)
         apiKey: String,
         onStatus: (String) -> Unit
     ): TranscriptionData {
@@ -455,7 +540,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             onStatus("1/4 Uploading file...")
             val api = RetrofitClient.api
 
-            val requestFileBody = file.asRequestBody("application/octet-stream".toMediaType())
+            // Determine how to create the RequestBody
+            val requestFileBody = when (source) {
+                is File -> {
+                    // If it's a File (likely a converted WAV), use the standard method.
+                    // Use octet-stream as a safe fallback for converted files.
+                    source.asRequestBody("application/octet-stream".toMediaType())
+                }
+                is Uri -> {
+                    // If it's a Uri (original supported format), stream it efficiently.
+                    createRequestBodyFromUri(source)
+                }
+                else -> throw IllegalArgumentException("Unsupported source type for AssemblyAI: ${source::class.java.name}")
+            }
+
+            // The Retrofit interface handles the upload regardless of the RequestBody implementation
             val uploadResponse = api.uploadFile(apiKey, requestFileBody)
             val audioUrl = uploadResponse.uploadUrl
 
