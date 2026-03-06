@@ -13,10 +13,22 @@ android {
         applicationId = "com.andreacovelli.whispertranscriber"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
+        versionName = (findProperty("versionName") as String?) ?: "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        create("release") {
+            val keystorePath = findProperty("keystorePath") as String?
+            if (keystorePath != null) {
+                storeFile = file(keystorePath)
+                storePassword = findProperty("keystorePassword") as String?
+                keyAlias = findProperty("keyAlias") as String?
+                keyPassword = findProperty("keyPassword") as String?
+            }
+        }
     }
 
     buildTypes {
@@ -27,7 +39,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (findProperty("keystorePath") != null)
+                signingConfigs.getByName("release")
+            else
+                signingConfigs.getByName("debug")
         }
     }
     compileOptions {
