@@ -594,7 +594,7 @@ private fun ApiKeyCard(
                         )
                     }
                 },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
             )
             if (keyValue.isNotBlank()) {
                 Row(

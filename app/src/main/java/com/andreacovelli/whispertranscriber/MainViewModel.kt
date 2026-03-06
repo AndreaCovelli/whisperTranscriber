@@ -290,10 +290,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearCompletedJobs() {
-        _uiState.update { state ->
-            state.copy(jobs = state.jobs.filter {
-                it.isRunning || (it.transcript.isBlank() && it.error == null)
-            })
+        viewModelScope.launch {
+            val jobsToRemove = _uiState.value.jobs.filter { job ->
+                !job.isRunning && (job.transcript.isNotBlank() || job.error != null)
+            }
+            jobsToRemove.forEach { job ->
+                job.historyId?.let { id ->
+                    historyDao.delete(TranscriptionHistory(id = id, text = "", language = ""))
+                }
+            }
+            _uiState.update { state ->
+                state.copy(jobs = state.jobs.filter { job ->
+                    job.isRunning || (job.transcript.isBlank() && job.error == null)
+                })
+            }
         }
     }
 
