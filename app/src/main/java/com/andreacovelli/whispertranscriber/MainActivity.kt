@@ -28,7 +28,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.listSaver
@@ -213,7 +216,7 @@ fun MainScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Audio Transcriber") },
+                title = { Text("Whisper Transcriber") },
                 actions = {
                     IconButton(onClick = onNavigateToHistory) {
                         Icon(
@@ -254,20 +257,54 @@ fun MainScreen(
                 }
             )
 
-            HorizontalDivider()
-
-            Text("Status", style = MaterialTheme.typography.titleMedium)
-            Text(uiState.status)
-
-            HorizontalDivider()
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        "Status",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(uiState.status, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
 
             if (uiState.jobs.isEmpty()) {
-                Text(
-                    "Share one or more audio files to start transcribing.",
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Mic,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "Share one or more audio files to start transcribing.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             } else {
-                Column(
+                    val hasCompleted = uiState.jobs.any { !it.isRunning && (it.transcript.isNotBlank() || it.error != null) }
+                    if (hasCompleted) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = { viewModel.clearCompletedJobs() }) {
+                                Text("Clear completed")
+                            }
+                        }
+                    }
+                    Column(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -469,8 +506,11 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 visualTransformation = if (showAssemblyKey) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = {
-                    TextButton(onClick = { showAssemblyKey = !showAssemblyKey }) {
-                        Text(if (showAssemblyKey) "Hide" else "Show")
+                    IconButton(onClick = { showAssemblyKey = !showAssemblyKey }) {
+                        Icon(
+                            imageVector = if (showAssemblyKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = if (showAssemblyKey) "Hide API key" else "Show API key"
+                        )
                     }
                 },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
@@ -495,8 +535,11 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 visualTransformation = if (showGeminiKey) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = {
-                    TextButton(onClick = { showGeminiKey = !showGeminiKey }) {
-                        Text(if (showGeminiKey) "Hide" else "Show")
+                    IconButton(onClick = { showGeminiKey = !showGeminiKey }) {
+                        Icon(
+                            imageVector = if (showGeminiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = if (showGeminiKey) "Hide API key" else "Show API key"
+                        )
                     }
                 },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
@@ -727,12 +770,24 @@ fun HistoryItemCard(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { onCopy(item.text) }) {
-                    Icon(Icons.Default.ContentCopy, "Copy text")
+                TextButton(onClick = { onCopy(item.text) }) {
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("Copy text")
                 }
                 if (item.summary.isNotBlank()) {
-                    IconButton(onClick = { onCopy(item.summary) }) {
-                        Icon(Icons.Default.ContentCopy, "Copy summary")
+                    TextButton(onClick = { onCopy(item.summary) }) {
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("Copy summary")
                     }
                 }
                 IconButton(onClick = onDelete) {
@@ -755,6 +810,7 @@ fun ExpandableText(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .then(if (!expanded && isOverflowing) Modifier.clickable { expanded = true } else Modifier)
             .animateContentSize(
                 animationSpec = spring(
                     dampingRatio = Spring.DampingRatioNoBouncy,
@@ -779,9 +835,7 @@ fun ExpandableText(
                 onTextLayout = { result ->
                     isOverflowing = result.hasVisualOverflow
                 },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(enabled = isOverflowing) { expanded = true }
+                modifier = Modifier.fillMaxWidth()
             )
         }
 

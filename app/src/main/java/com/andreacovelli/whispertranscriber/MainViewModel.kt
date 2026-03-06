@@ -288,6 +288,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun clearCompletedJobs() {
+        _uiState.update { state ->
+            state.copy(jobs = state.jobs.filter {
+                it.isRunning || (it.transcript.isBlank() && it.error == null)
+            })
+        }
+    }
+
     private fun cleanupOldTempWavs(maxAgeMs: Long = TimeUnit.DAYS.toMillis(3)) {
         val app = getApplication<Application>()
         val cache = app.cacheDir ?: return
