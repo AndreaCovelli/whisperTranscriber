@@ -498,11 +498,8 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var showAssemblyKey by remember { mutableStateOf(false) }
-    var showGeminiKey by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
     val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -542,111 +539,90 @@ fun SettingsScreen(
                 }
             }
 
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+            ApiKeyCard(
+                title = "AssemblyAI API Key",
+                label = "Enter AssemblyAI API key",
+                keyValue = uiState.assemblyApiKey,
+                onValueChange = viewModel::setAssemblyKey,
+                onForget = viewModel::forgetAssemblyKey,
+                forgetMessage = "AssemblyAI key forgotten",
+                snackbarHostState = snackbarHostState
+            )
+
+            ApiKeyCard(
+                title = "Gemini API Key",
+                label = "Enter Gemini API key",
+                keyValue = uiState.geminiApiKey,
+                onValueChange = viewModel::setGeminiKey,
+                onForget = viewModel::forgetGeminiKey,
+                forgetMessage = "Gemini key forgotten",
+                snackbarHostState = snackbarHostState
+            )
+        }
+    }
+}
+
+@Composable
+private fun ApiKeyCard(
+    title: String,
+    label: String,
+    keyValue: String,
+    onValueChange: (String) -> Unit,
+    onForget: () -> Unit,
+    forgetMessage: String,
+    snackbarHostState: SnackbarHostState
+) {
+    val scope = rememberCoroutineScope()
+    var showKey by remember { mutableStateOf(false) }
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(
+                value = keyValue,
+                onValueChange = onValueChange,
+                label = { Text(label) },
+                modifier = Modifier.fillMaxWidth(),
+                visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(onClick = { showKey = !showKey }) {
+                        Icon(
+                            imageVector = if (showKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = if (showKey) "Hide API key" else "Show API key"
+                        )
+                    }
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+            )
+            if (keyValue.isNotBlank()) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text("AssemblyAI API Key", style = MaterialTheme.typography.titleMedium)
-                    OutlinedTextField(
-                        value = uiState.assemblyApiKey,
-                        onValueChange = viewModel::setAssemblyKey,
-                        label = { Text("Enter AssemblyAI API key") },
-                        modifier = Modifier.fillMaxWidth(),
-                        visualTransformation = if (showAssemblyKey) VisualTransformation.None else PasswordVisualTransformation(),
-                        trailingIcon = {
-                            IconButton(onClick = { showAssemblyKey = !showAssemblyKey }) {
-                                Icon(
-                                    imageVector = if (showAssemblyKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = if (showAssemblyKey) "Hide API key" else "Show API key"
-                                )
-                            }
-                        },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                    Icon(
+                        Icons.Default.Lock,
+                        contentDescription = null,
+                        modifier = Modifier.size(12.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    if (uiState.assemblyApiKey.isNotBlank()) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Lock,
-                                contentDescription = null,
-                                modifier = Modifier.size(12.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                "Encrypted & saved",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        TextButton(onClick = {
-                            viewModel.forgetAssemblyKey()
-                            scope.launch { snackbarHostState.showSnackbar("AssemblyAI key forgotten") }
-                        }) {
-                            Text("Forget key")
-                        }
-                    }
+                    Text(
+                        "Encrypted & saved",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
-
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text("Gemini API Key", style = MaterialTheme.typography.titleMedium)
-                    OutlinedTextField(
-                        value = uiState.geminiApiKey,
-                        onValueChange = viewModel::setGeminiKey,
-                        label = { Text("Enter Gemini API key") },
-                        modifier = Modifier.fillMaxWidth(),
-                        visualTransformation = if (showGeminiKey) VisualTransformation.None else PasswordVisualTransformation(),
-                        trailingIcon = {
-                            IconButton(onClick = { showGeminiKey = !showGeminiKey }) {
-                                Icon(
-                                    imageVector = if (showGeminiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = if (showGeminiKey) "Hide API key" else "Show API key"
-                                )
-                            }
-                        },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-                    )
-                    if (uiState.geminiApiKey.isNotBlank()) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Lock,
-                                contentDescription = null,
-                                modifier = Modifier.size(12.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                "Encrypted & saved",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        TextButton(onClick = {
-                            viewModel.forgetGeminiKey()
-                            scope.launch { snackbarHostState.showSnackbar("Gemini key forgotten") }
-                        }) {
-                            Text("Forget key")
-                        }
-                    }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(onClick = {
+                    onForget()
+                    scope.launch { snackbarHostState.showSnackbar(forgetMessage) }
+                }) {
+                    Text("Forget key")
                 }
             }
         }
@@ -736,16 +712,9 @@ fun HistoryScreen(
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
 
-    var searchQuery by remember { mutableStateOf("") }
+    val searchQuery by historyViewModel.searchQuery.collectAsStateWithLifecycle()
+    val filteredItems by historyViewModel.filteredHistoryItems.collectAsStateWithLifecycle()
     var showDeleteAllDialog by remember { mutableStateOf(false) }
-
-    val filteredItems = remember(historyItems, searchQuery) {
-        if (searchQuery.isBlank()) historyItems
-        else historyItems.filter { item ->
-            item.text.contains(searchQuery, ignoreCase = true) ||
-            item.displayName.contains(searchQuery, ignoreCase = true)
-        }
-    }
 
     val expandedIdsSaver = listSaver<Set<Int>, Int>(
         save = { it.toList() },
@@ -797,7 +766,7 @@ fun HistoryScreen(
             if (historyItems.isNotEmpty()) {
                 OutlinedTextField(
                     value = searchQuery,
-                    onValueChange = { searchQuery = it },
+                    onValueChange = { historyViewModel.setSearchQuery(it) },
                     placeholder = { Text("Search transcriptions…") },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -805,7 +774,7 @@ fun HistoryScreen(
                     singleLine = true,
                     trailingIcon = if (searchQuery.isNotEmpty()) {
                         {
-                            IconButton(onClick = { searchQuery = "" }) {
+                            IconButton(onClick = { historyViewModel.setSearchQuery("") }) {
                                 Icon(Icons.Default.Delete, "Clear search")
                             }
                         }
@@ -924,24 +893,19 @@ fun HistoryItemCard(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = { onCopy(item.text) }) {
-                    Icon(
-                        Icons.Default.ContentCopy,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text("Copy text")
+                val copyActions = buildList {
+                    add("text" to item.text)
+                    if (item.summary.isNotBlank()) add("summary" to item.summary)
                 }
-                if (item.summary.isNotBlank()) {
-                    TextButton(onClick = { onCopy(item.summary) }) {
+                copyActions.forEach { (type, content) ->
+                    TextButton(onClick = { onCopy(content) }) {
                         Icon(
                             Icons.Default.ContentCopy,
                             contentDescription = null,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("Copy summary")
+                        Text("Copy $type")
                     }
                 }
                 IconButton(onClick = onDelete) {
@@ -993,25 +957,15 @@ fun ExpandableText(
             )
         }
 
-        if (expanded) {
+        if (expanded || isOverflowing) {
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "Show less",
+                text = if (expanded) "Show less" else "Show more",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier
                     .align(Alignment.End)
-                    .clickable { expanded = false }
-            )
-        } else if (isOverflowing) {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = "Show more",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .align(Alignment.End)
-                    .clickable { expanded = true }
+                    .clickable { expanded = !expanded }
             )
         }
     }
