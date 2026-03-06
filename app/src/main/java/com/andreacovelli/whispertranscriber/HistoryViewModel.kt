@@ -27,13 +27,15 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
             initialValue = emptyList()
         )
 
-    fun getHistoryItem(id: Int): Flow<TranscriptionHistory?> {
-        return historyDao.getHistoryItemById(id)
-    }
-
     fun deleteHistoryItem(item: TranscriptionHistory) {
         viewModelScope.launch {
             historyDao.delete(item)
+        }
+    }
+
+    fun deleteAllHistory() {
+        viewModelScope.launch {
+            historyDao.deleteAll()
         }
     }
 }

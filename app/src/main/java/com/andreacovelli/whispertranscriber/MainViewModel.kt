@@ -236,6 +236,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     processSingleJob(
                         jobId = jobState.id,
                         uri = jobState.uri!!,
+                        displayName = jobState.displayName,
                         usingAssembly = usingAssembly,
                         apiKey = neededKey,
                         geminiModel = geminiModelName // Pass the specific model name string
@@ -375,7 +376,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun processSingleJob(jobId: String, uri: Uri, usingAssembly: Boolean, apiKey: String, geminiModel: String?) {
+    private suspend fun processSingleJob(jobId: String, uri: Uri, displayName: String, usingAssembly: Boolean, apiKey: String, geminiModel: String?) {
         val app = getApplication<Application>()
         val contentResolver = app.contentResolver
 
@@ -490,7 +491,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     TranscriptionHistory(
                         text = data.text,
                         language = data.language.ifBlank { "Unknown" },
-                        model = data.model
+                        model = data.model,
+                        displayName = displayName
                     )
                 )
             }.toInt()
