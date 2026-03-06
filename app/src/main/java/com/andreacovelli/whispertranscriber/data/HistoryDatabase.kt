@@ -23,6 +23,7 @@ data class TranscriptionHistory(
     val language: String,
     val model: String = "",
     val summary: String = "",
+    val displayName: String = "",
     val timestamp: Long = System.currentTimeMillis()
 )
 
@@ -34,6 +35,9 @@ interface TranscriptionHistoryDao {
     @Delete
     suspend fun delete(historyItem: TranscriptionHistory)
 
+    @Query("DELETE FROM transcription_history")
+    suspend fun deleteAll()
+
     @Query("SELECT * FROM transcription_history ORDER BY timestamp DESC")
     fun getAllHistory(): Flow<List<TranscriptionHistory>>
 
@@ -44,7 +48,7 @@ interface TranscriptionHistoryDao {
     suspend fun updateSummary(id: Int, summary: String)
 }
 
-@Database(entities = [TranscriptionHistory::class], version = 3, exportSchema = false)
+@Database(entities = [TranscriptionHistory::class], version = 4, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun transcriptionHistoryDao(): TranscriptionHistoryDao
 
@@ -64,6 +68,12 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transcription_history ADD COLUMN displayName TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -71,7 +81,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "transcription_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                 INSTANCE = instance
                 instance

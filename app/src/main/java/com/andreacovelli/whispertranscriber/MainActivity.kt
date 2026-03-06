@@ -25,10 +25,17 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.listSaver
@@ -213,7 +220,7 @@ fun MainScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Audio Transcriber") },
+                title = { Text("Whisper Transcriber") },
                 actions = {
                     IconButton(onClick = onNavigateToHistory) {
                         Icon(
@@ -231,61 +238,120 @@ fun MainScreen(
             )
         }
     ) { paddingValues ->
-        Column(
+        val providerLabel = when (uiState.provider) {
+            TranscriptionProvider.ASSEMBLY_AI -> "Using: AssemblyAI"
+            TranscriptionProvider.GEMINI_FLASH_LITE -> "Using: Gemini Flash Lite"
+            TranscriptionProvider.GEMINI_FLASH -> "Using: Gemini Flash"
+            TranscriptionProvider.GEMINI_PRO -> "Using: Gemini Pro"
+        }
+        LazyColumn(
             modifier = Modifier
                 .padding(paddingValues)
-                .padding(16.dp)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState()),
+                .fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            AssistChip(
-                onClick = onNavigateToSettings, // Navigate to settings on click
-                label = {
-                    Text(
-                        // Updated display based on the new enum structure
-                        when (uiState.provider) {
-                            TranscriptionProvider.ASSEMBLY_AI -> "Using: AssemblyAI"
-                            TranscriptionProvider.GEMINI_FLASH_LITE -> "Using: Gemini Flash Lite"
-                            TranscriptionProvider.GEMINI_FLASH -> "Using: Gemini Flash"
-                            TranscriptionProvider.GEMINI_PRO -> "Using: Gemini Pro"
-                        }
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onNavigateToSettings() },
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer
                     )
-                }
-            )
-
-            HorizontalDivider()
-
-            Text("Status", style = MaterialTheme.typography.titleMedium)
-            Text(uiState.status)
-
-            HorizontalDivider()
-
-            if (uiState.jobs.isEmpty()) {
-                Text(
-                    "Share one or more audio files to start transcribing.",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            } else {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    uiState.jobs.forEach { job ->
-                        TranscriptionJobCard(
-                            job = job,
-                            canSummarize = uiState.geminiApiKey.isNotBlank(),
-                            onSummarize = { viewModel.summarizeJob(job.id) },
-                            onCopyTranscript = {
-                                clipboardManager.setText(AnnotatedString(job.transcript))
-                                Toast.makeText(context, "Copied transcript", Toast.LENGTH_SHORT).show()
-                            },
-                            onCopySummary = {
-                                clipboardManager.setText(AnnotatedString(job.summary))
-                                Toast.makeText(context, "Copied summary", Toast.LENGTH_SHORT).show()
-                            }
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            providerLabel,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = "Go to Settings",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer
                         )
                     }
+                }
+            }
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            "Status",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(uiState.status, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+            if (uiState.jobs.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                "Share one or more audio files to start transcribing.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            } else {
+                val hasCompleted = uiState.jobs.any { !it.isRunning && (it.transcript.isNotBlank() || it.error != null) }
+                if (hasCompleted) {
+                    item {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = { viewModel.clearCompletedJobs() }) {
+                                Text("Clear completed")
+                            }
+                        }
+                    }
+                }
+                items(uiState.jobs, key = { it.id }) { job ->
+                    TranscriptionJobCard(
+                        job = job,
+                        canSummarize = uiState.geminiApiKey.isNotBlank(),
+                        onSummarize = { viewModel.summarizeJob(job.id) },
+                        onCopyTranscript = {
+                            clipboardManager.setText(AnnotatedString(job.transcript))
+                            Toast.makeText(context, "Copied transcript", Toast.LENGTH_SHORT).show()
+                        },
+                        onCopySummary = {
+                            clipboardManager.setText(AnnotatedString(job.summary))
+                            Toast.makeText(context, "Copied summary", Toast.LENGTH_SHORT).show()
+                        },
+                        onShareTranscript = {
+                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, job.transcript)
+                            }
+                            context.startActivity(Intent.createChooser(sendIntent, null))
+                        }
+                    )
                 }
             }
         }
@@ -298,7 +364,8 @@ private fun TranscriptionJobCard(
     canSummarize: Boolean,
     onSummarize: () -> Unit,
     onCopyTranscript: () -> Unit,
-    onCopySummary: () -> Unit
+    onCopySummary: () -> Unit,
+    onShareTranscript: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth()
@@ -371,8 +438,13 @@ private fun TranscriptionJobCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Transcription", style = MaterialTheme.typography.titleSmall)
-                    IconButton(onClick = onCopyTranscript) {
-                        Icon(Icons.Filled.ContentCopy, "Copy Transcription")
+                    Row {
+                        IconButton(onClick = onShareTranscript) {
+                            Icon(Icons.Default.Share, "Share Transcription")
+                        }
+                        IconButton(onClick = onCopyTranscript) {
+                            Icon(Icons.Filled.ContentCopy, "Copy Transcription")
+                        }
                     }
                 }
                 ExpandableText(
@@ -390,7 +462,11 @@ private fun TranscriptionJobCard(
                         onClick = onSummarize,
                         enabled = canSummarize && !job.isSummarizing,
                     ) {
-                        Text(if (job.isSummarizing) "Summarizing..." else "Summarize with Gemini")
+                        Text(when {
+                            job.isSummarizing -> "Summarizing..."
+                            job.summary.isNotBlank() -> "Re-summarize"
+                            else -> "Summarize with Gemini"
+                        })
                     }
                 }
 
@@ -422,11 +498,8 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var showAssemblyKey by remember { mutableStateOf(false) }
-    var showGeminiKey by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
     val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -453,66 +526,105 @@ fun SettingsScreen(
                 ) { focusManager.clearFocus() },
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text("Transcription Provider & Model", style = MaterialTheme.typography.titleMedium)
-            ProviderSelector(
-                selected = uiState.provider,
-                onSelect = viewModel::setProvider
-            )
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Transcription Provider", style = MaterialTheme.typography.titleMedium)
+                    ProviderSelector(
+                        selected = uiState.provider,
+                        onSelect = viewModel::setProvider
+                    )
+                }
+            }
 
-            HorizontalDivider()
-
-            Text("AssemblyAI API Key", style = MaterialTheme.typography.titleMedium)
-            OutlinedTextField(
-                value = uiState.assemblyApiKey,
+            ApiKeyCard(
+                title = "AssemblyAI API Key",
+                label = "Enter AssemblyAI API key",
+                keyValue = uiState.assemblyApiKey,
                 onValueChange = viewModel::setAssemblyKey,
-                label = { Text("Enter AssemblyAI API key") },
-                modifier = Modifier.fillMaxWidth(),
-                visualTransformation = if (showAssemblyKey) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = {
-                    TextButton(onClick = { showAssemblyKey = !showAssemblyKey }) {
-                        Text(if (showAssemblyKey) "Hide" else "Show")
-                    }
-                },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                onForget = viewModel::forgetAssemblyKey,
+                forgetMessage = "AssemblyAI key forgotten",
+                snackbarHostState = snackbarHostState
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                TextButton(onClick = {
-                    viewModel.forgetAssemblyKey()
-                    scope.launch { snackbarHostState.showSnackbar("AssemblyAI key forgotten") }
-                }) {
-                    Text("Forget key")
-                }
-            }
 
-            Text("Gemini API Key", style = MaterialTheme.typography.titleMedium)
-            OutlinedTextField(
-                value = uiState.geminiApiKey,
+            ApiKeyCard(
+                title = "Gemini API Key",
+                label = "Enter Gemini API key",
+                keyValue = uiState.geminiApiKey,
                 onValueChange = viewModel::setGeminiKey,
-                label = { Text("Enter Gemini API key") },
+                onForget = viewModel::forgetGeminiKey,
+                forgetMessage = "Gemini key forgotten",
+                snackbarHostState = snackbarHostState
+            )
+        }
+    }
+}
+
+@Composable
+private fun ApiKeyCard(
+    title: String,
+    label: String,
+    keyValue: String,
+    onValueChange: (String) -> Unit,
+    onForget: () -> Unit,
+    forgetMessage: String,
+    snackbarHostState: SnackbarHostState
+) {
+    val scope = rememberCoroutineScope()
+    var showKey by remember { mutableStateOf(false) }
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(
+                value = keyValue,
+                onValueChange = onValueChange,
+                label = { Text(label) },
                 modifier = Modifier.fillMaxWidth(),
-                visualTransformation = if (showGeminiKey) VisualTransformation.None else PasswordVisualTransformation(),
+                visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = {
-                    TextButton(onClick = { showGeminiKey = !showGeminiKey }) {
-                        Text(if (showGeminiKey) "Hide" else "Show")
+                    IconButton(onClick = { showKey = !showKey }) {
+                        Icon(
+                            imageVector = if (showKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = if (showKey) "Hide API key" else "Show API key"
+                        )
                     }
                 },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
             )
+            if (keyValue.isNotBlank()) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Lock,
+                        contentDescription = null,
+                        modifier = Modifier.size(12.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "Encrypted & saved",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
                 TextButton(onClick = {
-                    viewModel.forgetGeminiKey()
-                    scope.launch { snackbarHostState.showSnackbar("Gemini key forgotten") }
+                    onForget()
+                    scope.launch { snackbarHostState.showSnackbar(forgetMessage) }
                 }) {
                     Text("Forget key")
                 }
             }
-            // Save button removed: settings are auto-saved via ViewModel setters.
         }
     }
 }
@@ -524,43 +636,41 @@ private fun ProviderSelector(
     onSelect: (TranscriptionProvider) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        // AssemblyAI Option
         ProviderRadioOption(
             text = "AssemblyAI",
             isSelected = selected == TranscriptionProvider.ASSEMBLY_AI,
             onClick = { onSelect(TranscriptionProvider.ASSEMBLY_AI) }
         )
 
-        // Gemini Options Header
+        Spacer(Modifier.height(8.dp))
         Text(
-            "Gemini Models:",
-            style = MaterialTheme.typography.titleSmall,
-            modifier = Modifier.padding(top = 8.dp)
+            "Gemini Models",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-
-        // Gemini Flash Lite
-        ProviderRadioOption(
-            text = "Gemini Flash Lite",
-            isSelected = selected == TranscriptionProvider.GEMINI_FLASH_LITE,
-            onClick = { onSelect(TranscriptionProvider.GEMINI_FLASH_LITE) },
-            modifier = Modifier.padding(start = 16.dp)
-        )
-
-        // Gemini Flash
-        ProviderRadioOption(
-            text = "Gemini Flash",
-            isSelected = selected == TranscriptionProvider.GEMINI_FLASH,
-            onClick = { onSelect(TranscriptionProvider.GEMINI_FLASH) },
-            modifier = Modifier.padding(start = 16.dp)
-        )
-
-        // Gemini Pro
-        ProviderRadioOption(
-            text = "Gemini Pro",
-            isSelected = selected == TranscriptionProvider.GEMINI_PRO,
-            onClick = { onSelect(TranscriptionProvider.GEMINI_PRO) },
-            modifier = Modifier.padding(start = 16.dp)
-        )
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.small,
+            color = MaterialTheme.colorScheme.surfaceVariant
+        ) {
+            Column {
+                ProviderRadioOption(
+                    text = "Gemini Flash Lite",
+                    isSelected = selected == TranscriptionProvider.GEMINI_FLASH_LITE,
+                    onClick = { onSelect(TranscriptionProvider.GEMINI_FLASH_LITE) }
+                )
+                ProviderRadioOption(
+                    text = "Gemini Flash",
+                    isSelected = selected == TranscriptionProvider.GEMINI_FLASH,
+                    onClick = { onSelect(TranscriptionProvider.GEMINI_FLASH) }
+                )
+                ProviderRadioOption(
+                    text = "Gemini Pro",
+                    isSelected = selected == TranscriptionProvider.GEMINI_PRO,
+                    onClick = { onSelect(TranscriptionProvider.GEMINI_PRO) }
+                )
+            }
+        }
     }
 }
 
@@ -602,12 +712,32 @@ fun HistoryScreen(
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
 
-    // State Preservation: Use rememberSaveable with listSaver for Set<Int>
+    val searchQuery by historyViewModel.searchQuery.collectAsStateWithLifecycle()
+    val filteredItems by historyViewModel.filteredHistoryItems.collectAsStateWithLifecycle()
+    var showDeleteAllDialog by remember { mutableStateOf(false) }
+
     val expandedIdsSaver = listSaver<Set<Int>, Int>(
         save = { it.toList() },
         restore = { it.toSet() }
     )
     var expandedIds by rememberSaveable(stateSaver = expandedIdsSaver) { mutableStateOf(emptySet()) }
+
+    if (showDeleteAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteAllDialog = false },
+            title = { Text("Delete all history?") },
+            text = { Text("This will permanently remove all transcription history.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    historyViewModel.deleteAllHistory()
+                    showDeleteAllDialog = false
+                }) { Text("Delete all", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAllDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -617,40 +747,74 @@ fun HistoryScreen(
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                     }
+                },
+                actions = {
+                    if (historyItems.isNotEmpty()) {
+                        IconButton(onClick = { showDeleteAllDialog = true }) {
+                            Icon(Icons.Default.DeleteSweep, "Delete all history")
+                        }
+                    }
                 }
             )
         }
     ) { paddingValues ->
-        if (historyItems.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("No history yet.", style = MaterialTheme.typography.bodyLarge)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            if (historyItems.isNotEmpty()) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { historyViewModel.setSearchQuery(it) },
+                    placeholder = { Text("Search transcriptions…") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    singleLine = true,
+                    trailingIcon = if (searchQuery.isNotEmpty()) {
+                        {
+                            IconButton(onClick = { historyViewModel.setSearchQuery("") }) {
+                                Icon(Icons.Default.Delete, "Clear search")
+                            }
+                        }
+                    } else null
+                )
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentPadding = PaddingValues(vertical = 8.dp)
-            ) {
-                items(historyItems, key = { it.id }) { item ->
-                    HistoryItemCard(
-                        item = item,
-                        expanded = expandedIds.contains(item.id),
-                        onToggleExpand = {
-                            expandedIds = if (expandedIds.contains(item.id))
-                                expandedIds - item.id else expandedIds + item.id
-                        },
-                        onCopy = { text ->
-                            clipboardManager.setText(AnnotatedString(text))
-                            Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
-                        },
-                        onDelete = { historyViewModel.deleteHistoryItem(item) }
+            if (filteredItems.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        if (historyItems.isEmpty()) "No history yet."
+                        else "No results for \"$searchQuery\"",
+                        style = MaterialTheme.typography.bodyLarge
                     )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(vertical = 8.dp)
+                ) {
+                    items(filteredItems, key = { it.id }) { item ->
+                        HistoryItemCard(
+                            item = item,
+                            expanded = expandedIds.contains(item.id),
+                            onToggleExpand = {
+                                @Suppress("UNUSED_VALUE")
+                                expandedIds = if (expandedIds.contains(item.id))
+                                    expandedIds - item.id else expandedIds + item.id
+                            },
+                            onCopy = { text ->
+                                clipboardManager.setText(AnnotatedString(text))
+                                Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                            },
+                            onDelete = { historyViewModel.deleteHistoryItem(item) }
+                        )
+                    }
                 }
             }
         }
@@ -686,6 +850,10 @@ fun HistoryItemCard(
                         stiffness = Spring.StiffnessMedium
                     )
                 )) {
+            if (item.displayName.isNotBlank()) {
+                Text(item.displayName, style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(2.dp))
+            }
             Text(formattedDate, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(4.dp))
             Text("Language: ${item.language}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -727,12 +895,19 @@ fun HistoryItemCard(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { onCopy(item.text) }) {
-                    Icon(Icons.Default.ContentCopy, "Copy text")
+                val copyActions = buildList {
+                    add("text" to item.text)
+                    if (item.summary.isNotBlank()) add("summary" to item.summary)
                 }
-                if (item.summary.isNotBlank()) {
-                    IconButton(onClick = { onCopy(item.summary) }) {
-                        Icon(Icons.Default.ContentCopy, "Copy summary")
+                copyActions.forEach { (type, content) ->
+                    TextButton(onClick = { onCopy(content) }) {
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("Copy $type")
                     }
                 }
                 IconButton(onClick = onDelete) {
@@ -755,6 +930,7 @@ fun ExpandableText(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .then(if (!expanded && isOverflowing) Modifier.clickable { expanded = true } else Modifier)
             .animateContentSize(
                 animationSpec = spring(
                     dampingRatio = Spring.DampingRatioNoBouncy,
@@ -779,13 +955,11 @@ fun ExpandableText(
                 onTextLayout = { result ->
                     isOverflowing = result.hasVisualOverflow
                 },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(enabled = isOverflowing) { expanded = true }
+                modifier = Modifier.fillMaxWidth()
             )
         }
 
-        if (isOverflowing) {
+        if (expanded || isOverflowing) {
             Spacer(Modifier.height(4.dp))
             Text(
                 text = if (expanded) "Show less" else "Show more",
