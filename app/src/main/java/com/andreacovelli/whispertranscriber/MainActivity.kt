@@ -783,7 +783,9 @@ fun HistoryScreen(
             }
             if (filteredItems.isEmpty()) {
                 Box(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -794,7 +796,7 @@ fun HistoryScreen(
                 }
             } else {
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(vertical = 8.dp)
                 ) {
                     items(filteredItems, key = { it.id }) { item ->
