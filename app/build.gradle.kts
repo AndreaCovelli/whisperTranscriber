@@ -6,6 +6,8 @@ plugins {
 }
 
 android {
+    val keystorePath = findProperty("keystorePath") as String?
+
     namespace = "com.andreacovelli.whispertranscriber"
     compileSdk = 36
 
@@ -13,7 +15,7 @@ android {
         applicationId = "com.andreacovelli.whispertranscriber"
         minSdk = 26
         targetSdk = 36
-        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
+        versionCode = (findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
         versionName = (findProperty("versionName") as String?) ?: "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -21,7 +23,6 @@ android {
 
     signingConfigs {
         create("release") {
-            val keystorePath = findProperty("keystorePath") as String?
             if (keystorePath != null) {
                 storeFile = file(keystorePath)
                 storePassword = findProperty("keystorePassword") as String?
@@ -39,7 +40,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = if (findProperty("keystorePath") != null)
+            signingConfig = if (keystorePath != null)
                 signingConfigs.getByName("release")
             else
                 signingConfigs.getByName("debug")
