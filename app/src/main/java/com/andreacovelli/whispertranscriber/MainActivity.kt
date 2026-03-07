@@ -54,6 +54,11 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -652,6 +657,7 @@ private fun ProviderSelector(
     onResetValidation: () -> Unit
 ) {
     var customInput by remember(customModelName) { mutableStateOf(customModelName) }
+    var fieldHadFocus by remember(customModelName) { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         ProviderRadioOption(
@@ -707,7 +713,9 @@ private fun ProviderSelector(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .onFocusChanged { focusState ->
-                                    if (!focusState.isFocused && customInput.isNotBlank()) {
+                                    if (focusState.isFocused) {
+                                        fieldHadFocus = true
+                                    } else if (fieldHadFocus && customInput.isNotBlank()) {
                                         onValidateCustomModel(customInput)
                                     }
                                 },
@@ -902,7 +910,8 @@ fun HistoryScreen(
                                 scope.launch { clipboardManager.setClipEntry(ClipEntry(ClipData.newPlainText("", text))) }
                                 Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                             },
-                            onDelete = { historyViewModel.deleteHistoryItem(item) }
+                            onDelete = { historyViewModel.deleteHistoryItem(item) },
+                            searchQuery = searchQuery
                         )
                     }
                 }
@@ -911,13 +920,47 @@ fun HistoryScreen(
     }
 }
 
+private fun buildHighlightedText(
+    text: String,
+    query: String,
+    background: Color,
+    onBackground: Color
+): AnnotatedString {
+    if (query.isBlank()) return AnnotatedString(text)
+    return buildAnnotatedString {
+        var cursor = 0
+        while (cursor < text.length) {
+            val idx = text.indexOf(query, startIndex = cursor, ignoreCase = true)
+            if (idx == -1) {
+                append(text, cursor, text.length)
+                break
+            }
+            if (idx > cursor) {
+                append(text, cursor, idx)
+            }
+            withStyle(SpanStyle(background = background, color = onBackground)) {
+                append(text, idx, idx + query.length)
+            }
+            cursor = idx + query.length
+        }
+    }
+}
+
+@Composable
+private fun rememberHighlightedText(text: String, query: String): AnnotatedString {
+    val background = MaterialTheme.colorScheme.primaryContainer
+    val onBackground = MaterialTheme.colorScheme.onPrimaryContainer
+    return remember(text, query, background, onBackground) { buildHighlightedText(text, query, background, onBackground) }
+}
+
 @Composable
 fun HistoryItemCard(
     item: TranscriptionHistory,
     expanded: Boolean,
     onToggleExpand: () -> Unit,
     onCopy: (String) -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    searchQuery: String = ""
 ) {
     val formattedDate = remember(item.timestamp) {
         DateTimeFormatter.ofPattern("MMM dd, yyyy - HH:mm", Locale.getDefault())
@@ -941,7 +984,7 @@ fun HistoryItemCard(
                     )
                 )) {
             if (item.displayName.isNotBlank()) {
-                Text(item.displayName, style = MaterialTheme.typography.titleSmall)
+                Text(rememberHighlightedText(item.displayName, searchQuery), style = MaterialTheme.typography.titleSmall)
                 Spacer(Modifier.height(2.dp))
             }
             Text(formattedDate, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -951,19 +994,19 @@ fun HistoryItemCard(
             Text("Model: $displayModel", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
             if (expanded) {
-                Text(item.text, style = MaterialTheme.typography.bodyMedium)
+                Text(rememberHighlightedText(item.text, searchQuery), style = MaterialTheme.typography.bodyMedium)
                 if (item.summary.isNotBlank()) {
                     Spacer(Modifier.height(12.dp))
                     Text("Summary", style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(4.dp))
-                    Text(item.summary, style = MaterialTheme.typography.bodyMedium)
+                    Text(rememberHighlightedText(item.summary, searchQuery), style = MaterialTheme.typography.bodyMedium)
                 }
             } else {
-                Text(item.text, style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                Text(rememberHighlightedText(item.text, searchQuery), style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis)
                 if (item.summary.isNotBlank()) {
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        item.summary,
+                        rememberHighlightedText(item.summary, searchQuery),
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis,

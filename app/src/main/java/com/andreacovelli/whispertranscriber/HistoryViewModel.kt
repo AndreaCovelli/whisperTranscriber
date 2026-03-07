@@ -41,7 +41,8 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
         if (query.isBlank()) items
         else items.filter {
             it.text.contains(query, ignoreCase = true) ||
-            it.displayName.contains(query, ignoreCase = true)
+            it.displayName.contains(query, ignoreCase = true) ||
+            it.summary.contains(query, ignoreCase = true)
         }
     }.stateIn(
         scope = viewModelScope,
