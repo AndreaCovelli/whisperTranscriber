@@ -928,16 +928,16 @@ private fun buildHighlightedText(
 ): AnnotatedString {
     if (query.isBlank()) return AnnotatedString(text)
     return buildAnnotatedString {
-        val lower = text.lowercase()
-        val lowerQuery = query.lowercase()
         var cursor = 0
         while (cursor < text.length) {
-            val idx = lower.indexOf(lowerQuery, cursor)
+            val idx = text.indexOf(query, startIndex = cursor, ignoreCase = true)
             if (idx == -1) {
                 append(text, cursor, text.length)
                 break
             }
-            if (idx > cursor) append(text, cursor, idx)
+            if (idx > cursor) {
+                append(text, cursor, idx)
+            }
             withStyle(SpanStyle(background = background, color = onBackground)) {
                 append(text, idx, idx + query.length)
             }
