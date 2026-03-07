@@ -85,10 +85,16 @@ private data class TranscriptionData(
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
-        // GEMINI_MODEL constant removed.
-        // Use explicit JSON schema type strings for Proguard safety
         private const val TYPE_OBJECT = "OBJECT"
         private const val TYPE_STRING = "STRING"
+
+        private const val GEMINI_MODELS_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+        private const val GEMINI_API_KEY_HEADER = "x-goog-api-key"
+
+        private const val ERR_ENTER_MODEL_NAME = "Enter a model name"
+        private const val ERR_ENTER_GEMINI_KEY = "Enter your Gemini API key first"
+        private const val ERR_MODEL_NOT_FOUND = "Model \"%s\" not found"
+        private const val ERR_HTTP_VERIFY = "HTTP %d: could not verify model"
 
         // Natively supported Gemini MIME types
         private val SUPPORTED_GEMINI_MIME_TYPES = setOf(
@@ -312,21 +318,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun validateCustomGeminiModel(modelName: String) {
         val trimmed = modelName.trim()
         if (trimmed.isBlank()) {
-            _uiState.update { it.copy(customModelValidation = CustomModelValidation.Error("Enter a model name")) }
+            _uiState.update { it.copy(customModelValidation = CustomModelValidation.Error(ERR_ENTER_MODEL_NAME)) }
             return
         }
         val apiKey = _uiState.value.geminiApiKey
         if (apiKey.isBlank()) {
-            _uiState.update { it.copy(customModelValidation = CustomModelValidation.Error("Enter your Gemini API key first")) }
+            _uiState.update { it.copy(customModelValidation = CustomModelValidation.Error(ERR_ENTER_GEMINI_KEY)) }
             return
         }
         _uiState.update { it.copy(customModelValidation = CustomModelValidation.Validating) }
         viewModelScope.launch {
             try {
-                val url = "https://generativelanguage.googleapis.com/v1beta/models/$trimmed"
+                val url = "$GEMINI_MODELS_BASE_URL/$trimmed"
                 val request = Request.Builder()
                     .url(url)
-                    .header("x-goog-api-key", apiKey)
+                    .header(GEMINI_API_KEY_HEADER, apiKey)
                     .build()
                 val (isSuccess, code, bodyText) = withContext(ioDispatcher) {
                     httpClient.newCall(request).execute().use { resp ->
@@ -334,8 +340,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
                 if (!isSuccess) {
-                    val msg = if (code == 404) "Model \"$trimmed\" not found"
-                              else "HTTP $code: could not verify model"
+                    val msg = if (code == 404) ERR_MODEL_NOT_FOUND.format(trimmed)
+                              else ERR_HTTP_VERIFY.format(code)
                     _uiState.update { it.copy(customModelValidation = CustomModelValidation.Error(msg)) }
                     return@launch
                 }
@@ -359,7 +365,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun forgetAssemblyKey() {        viewModelScope.launch {
+    fun forgetAssemblyKey() {
+        viewModelScope.launch {
             settings.forgetAssemblyApiKey()
             _uiState.update { it.copy(assemblyApiKey = "") }
         }
