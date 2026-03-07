@@ -652,6 +652,7 @@ private fun ProviderSelector(
     onResetValidation: () -> Unit
 ) {
     var customInput by remember(customModelName) { mutableStateOf(customModelName) }
+    var fieldHadFocus by remember(customModelName) { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         ProviderRadioOption(
@@ -707,7 +708,9 @@ private fun ProviderSelector(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .onFocusChanged { focusState ->
-                                    if (!focusState.isFocused && customInput.isNotBlank()) {
+                                    if (focusState.isFocused) {
+                                        fieldHadFocus = true
+                                    } else if (fieldHadFocus && customInput.isNotBlank()) {
                                         onValidateCustomModel(customInput)
                                     }
                                 },
