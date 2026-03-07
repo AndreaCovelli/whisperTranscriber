@@ -4,7 +4,7 @@ When using libraries, use context7 to check for updated info.
 
 ## Build & Test Commands
 
-Always use the Gradle wrapper (`gradlew.bat` on Windows, `./gradlew` on Unix) — never invoke `gradle` directly. The wrapper uses the JDK defined in `~/.gradle/gradle.properties` via `org.gradle.java.home`, independent of `JAVA_HOME`.
+Always use the Gradle wrapper (`gradlew.bat` on Windows, `./gradlew` on Unix) — never invoke `gradle` directly. The required JDK (21) is declared in `gradle/gradle-daemon-jvm.properties` and resolved automatically via the Foojay toolchain resolver; no manual `JAVA_HOME` setup is needed.
 
 ```bat
 # Build
@@ -19,18 +19,6 @@ gradlew.bat testDebugUnitTest --tests "com.andreacovelli.whispertranscriber.Exam
 # Clean
 gradlew.bat clean
 ```
-
-### JDK setup (one-time, per machine)
-
-The project does not commit a JDK path. Each developer must set `org.gradle.java.home` in their **user-level** `~/.gradle/gradle.properties` (never in the project's `gradle.properties`):
-
-```properties
-# %USERPROFILE%\.gradle\gradle.properties  (Windows)
-# ~/.gradle/gradle.properties              (Unix)
-org.gradle.java.home=C:\\Users\\<you>\\AppData\\Local\\Programs\\Android Studio\\jbr
-```
-
-Using the Android Studio bundled JBR ensures the same JDK used by the IDE is used on the command line, without touching `JAVA_HOME` or affecting other projects.
 
 ## Architecture
 
@@ -94,4 +82,4 @@ Provider + API keys persisted via DataStore keys `assembly_ai_api_key_enc`, `gem
 
 **Version catalog** — All dependencies declared in `gradle/libs.versions.toml`. Add new dependencies there, not inline in `build.gradle.kts`.
 
-**minSdk 26**, **targetSdk/compileSdk 36**, **JVM target 17**, Kotlin 2.0.21, AGP 8.13.1, KSP for Room annotation processing.
+**minSdk 26**, **targetSdk/compileSdk 36**, **JVM target 17**, Kotlin 2.2.10, AGP 9.1.0, KSP 2.3.6 for Room annotation processing.
