@@ -7,6 +7,11 @@ plugins {
 
 android {
     val keystorePath = findProperty("keystorePath") as? String
+    val propKeystorePassword = findProperty("keystorePassword") as? String
+    val propKeyAlias = findProperty("keyAlias") as? String
+    val propKeyPassword = findProperty("keyPassword") as? String
+    val propVersionCode = (findProperty("versionCode") as? String)?.toIntOrNull()
+    val propVersionName = findProperty("versionName") as? String
 
     namespace = "com.andreacovelli.whispertranscriber"
     compileSdk = 36
@@ -15,8 +20,8 @@ android {
         applicationId = "com.andreacovelli.whispertranscriber"
         minSdk = 26
         targetSdk = 36
-        versionCode = (findProperty("versionCode") as? String)?.toIntOrNull() ?: 1
-        versionName = (findProperty("versionName") as? String) ?: "1.0.0"
+        versionCode = propVersionCode ?: 1
+        versionName = propVersionName ?: "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -25,9 +30,9 @@ android {
         create("release") {
             if (keystorePath != null) {
                 storeFile = file(keystorePath)
-                storePassword = findProperty("keystorePassword") as? String
-                keyAlias = findProperty("keyAlias") as? String
-                keyPassword = findProperty("keyPassword") as? String
+                storePassword = propKeystorePassword
+                keyAlias = propKeyAlias
+                keyPassword = propKeyPassword
             }
         }
     }
