@@ -934,12 +934,12 @@ private fun buildHighlightedText(
         while (cursor < text.length) {
             val idx = lower.indexOf(lowerQuery, cursor)
             if (idx == -1) {
-                append(text.substring(cursor))
+                append(text, cursor, text.length)
                 break
             }
-            if (idx > cursor) append(text.substring(cursor, idx))
+            if (idx > cursor) append(text, cursor, idx)
             withStyle(SpanStyle(background = background, color = onBackground)) {
-                append(text.substring(idx, idx + query.length))
+                append(text, idx, idx + query.length)
             }
             cursor = idx + query.length
         }
@@ -950,7 +950,7 @@ private fun buildHighlightedText(
 private fun rememberHighlightedText(text: String, query: String): AnnotatedString {
     val background = MaterialTheme.colorScheme.primaryContainer
     val onBackground = MaterialTheme.colorScheme.onPrimaryContainer
-    return remember(text, query) { buildHighlightedText(text, query, background, onBackground) }
+    return remember(text, query, background, onBackground) { buildHighlightedText(text, query, background, onBackground) }
 }
 
 @Composable
@@ -999,14 +999,14 @@ fun HistoryItemCard(
                     Spacer(Modifier.height(12.dp))
                     Text("Summary", style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(4.dp))
-                    Text(item.summary, style = MaterialTheme.typography.bodyMedium)
+                    Text(rememberHighlightedText(item.summary, searchQuery), style = MaterialTheme.typography.bodyMedium)
                 }
             } else {
                 Text(rememberHighlightedText(item.text, searchQuery), style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis)
                 if (item.summary.isNotBlank()) {
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        item.summary,
+                        rememberHighlightedText(item.summary, searchQuery),
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
