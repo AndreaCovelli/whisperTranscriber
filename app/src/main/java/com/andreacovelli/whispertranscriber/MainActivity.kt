@@ -54,6 +54,11 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -905,7 +910,8 @@ fun HistoryScreen(
                                 scope.launch { clipboardManager.setClipEntry(ClipEntry(ClipData.newPlainText("", text))) }
                                 Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                             },
-                            onDelete = { historyViewModel.deleteHistoryItem(item) }
+                            onDelete = { historyViewModel.deleteHistoryItem(item) },
+                            searchQuery = searchQuery
                         )
                     }
                 }
@@ -914,13 +920,47 @@ fun HistoryScreen(
     }
 }
 
+private fun buildHighlightedText(
+    text: String,
+    query: String,
+    background: Color,
+    onBackground: Color
+): AnnotatedString {
+    if (query.isBlank()) return AnnotatedString(text)
+    return buildAnnotatedString {
+        val lower = text.lowercase()
+        val lowerQuery = query.lowercase()
+        var cursor = 0
+        while (cursor < text.length) {
+            val idx = lower.indexOf(lowerQuery, cursor)
+            if (idx == -1) {
+                append(text.substring(cursor))
+                break
+            }
+            if (idx > cursor) append(text.substring(cursor, idx))
+            withStyle(SpanStyle(background = background, color = onBackground)) {
+                append(text.substring(idx, idx + query.length))
+            }
+            cursor = idx + query.length
+        }
+    }
+}
+
+@Composable
+private fun rememberHighlightedText(text: String, query: String): AnnotatedString {
+    val background = MaterialTheme.colorScheme.primaryContainer
+    val onBackground = MaterialTheme.colorScheme.onPrimaryContainer
+    return remember(text, query) { buildHighlightedText(text, query, background, onBackground) }
+}
+
 @Composable
 fun HistoryItemCard(
     item: TranscriptionHistory,
     expanded: Boolean,
     onToggleExpand: () -> Unit,
     onCopy: (String) -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    searchQuery: String = ""
 ) {
     val formattedDate = remember(item.timestamp) {
         DateTimeFormatter.ofPattern("MMM dd, yyyy - HH:mm", Locale.getDefault())
@@ -944,7 +984,7 @@ fun HistoryItemCard(
                     )
                 )) {
             if (item.displayName.isNotBlank()) {
-                Text(item.displayName, style = MaterialTheme.typography.titleSmall)
+                Text(rememberHighlightedText(item.displayName, searchQuery), style = MaterialTheme.typography.titleSmall)
                 Spacer(Modifier.height(2.dp))
             }
             Text(formattedDate, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -954,7 +994,7 @@ fun HistoryItemCard(
             Text("Model: $displayModel", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
             if (expanded) {
-                Text(item.text, style = MaterialTheme.typography.bodyMedium)
+                Text(rememberHighlightedText(item.text, searchQuery), style = MaterialTheme.typography.bodyMedium)
                 if (item.summary.isNotBlank()) {
                     Spacer(Modifier.height(12.dp))
                     Text("Summary", style = MaterialTheme.typography.titleSmall)
@@ -962,7 +1002,7 @@ fun HistoryItemCard(
                     Text(item.summary, style = MaterialTheme.typography.bodyMedium)
                 }
             } else {
-                Text(item.text, style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                Text(rememberHighlightedText(item.text, searchQuery), style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis)
                 if (item.summary.isNotBlank()) {
                     Spacer(Modifier.height(6.dp))
                     Text(
