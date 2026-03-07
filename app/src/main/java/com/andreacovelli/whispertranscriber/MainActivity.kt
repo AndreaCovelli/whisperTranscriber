@@ -42,11 +42,12 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
+import android.content.ClipData
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
@@ -214,7 +215,8 @@ fun MainScreen(
     onNavigateToSettings: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
     Scaffold(
@@ -337,11 +339,11 @@ fun MainScreen(
                         canSummarize = uiState.geminiApiKey.isNotBlank(),
                         onSummarize = { viewModel.summarizeJob(job.id) },
                         onCopyTranscript = {
-                            clipboardManager.setText(AnnotatedString(job.transcript))
+                            scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", job.transcript))) }
                             Toast.makeText(context, "Copied transcript", Toast.LENGTH_SHORT).show()
                         },
                         onCopySummary = {
-                            clipboardManager.setText(AnnotatedString(job.summary))
+                            scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", job.summary))) }
                             Toast.makeText(context, "Copied summary", Toast.LENGTH_SHORT).show()
                         },
                         onShareTranscript = {
@@ -709,7 +711,8 @@ fun HistoryScreen(
     onNavigateBack: () -> Unit
 ) {
     val historyItems by historyViewModel.historyState.collectAsStateWithLifecycle()
-    val clipboardManager = LocalClipboardManager.current
+    val clipboardManager = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
     val searchQuery by historyViewModel.searchQuery.collectAsStateWithLifecycle()
@@ -809,7 +812,7 @@ fun HistoryScreen(
                                     expandedIds - item.id else expandedIds + item.id
                             },
                             onCopy = { text ->
-                                clipboardManager.setText(AnnotatedString(text))
+                                scope.launch { clipboardManager.setClipEntry(ClipEntry(ClipData.newPlainText("", text))) }
                                 Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                             },
                             onDelete = { historyViewModel.deleteHistoryItem(item) }
