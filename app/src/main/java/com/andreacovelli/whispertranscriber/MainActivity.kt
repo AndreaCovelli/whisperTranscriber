@@ -26,6 +26,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
@@ -43,6 +44,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import android.content.ClipData
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
@@ -245,6 +247,10 @@ fun MainScreen(
             TranscriptionProvider.GEMINI_FLASH_LITE -> "Using: Gemini Flash Lite"
             TranscriptionProvider.GEMINI_FLASH -> "Using: Gemini Flash"
             TranscriptionProvider.GEMINI_PRO -> "Using: Gemini Pro"
+            TranscriptionProvider.GEMINI_CUSTOM -> {
+                val name = uiState.customGeminiModelName
+                if (name.isBlank()) "Using: Custom Gemini model (not set)" else "Using: $name"
+            }
         }
         LazyColumn(
             modifier = Modifier
@@ -536,7 +542,11 @@ fun SettingsScreen(
                     Text("Transcription Provider", style = MaterialTheme.typography.titleMedium)
                     ProviderSelector(
                         selected = uiState.provider,
-                        onSelect = viewModel::setProvider
+                        onSelect = viewModel::setProvider,
+                        customModelName = uiState.customGeminiModelName,
+                        customModelValidation = uiState.customModelValidation,
+                        onValidateCustomModel = viewModel::validateCustomGeminiModel,
+                        onResetValidation = viewModel::resetCustomModelValidation
                     )
                 }
             }
@@ -635,8 +645,14 @@ private fun ApiKeyCard(
 @Composable
 private fun ProviderSelector(
     selected: TranscriptionProvider,
-    onSelect: (TranscriptionProvider) -> Unit
+    onSelect: (TranscriptionProvider) -> Unit,
+    customModelName: String,
+    customModelValidation: CustomModelValidation,
+    onValidateCustomModel: (String) -> Unit,
+    onResetValidation: () -> Unit
 ) {
+    var customInput by remember(customModelName) { mutableStateOf(customModelName) }
+
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         ProviderRadioOption(
             text = "AssemblyAI",
@@ -671,6 +687,72 @@ private fun ProviderSelector(
                     isSelected = selected == TranscriptionProvider.GEMINI_PRO,
                     onClick = { onSelect(TranscriptionProvider.GEMINI_PRO) }
                 )
+                ProviderRadioOption(
+                    text = "Custom model",
+                    isSelected = selected == TranscriptionProvider.GEMINI_CUSTOM,
+                    onClick = { onSelect(TranscriptionProvider.GEMINI_CUSTOM) }
+                )
+                if (selected == TranscriptionProvider.GEMINI_CUSTOM) {
+                    Column(
+                        modifier = Modifier.padding(start = 40.dp, end = 12.dp, bottom = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = customInput,
+                            onValueChange = {
+                                customInput = it
+                                onResetValidation()
+                            },
+                            placeholder = { Text("e.g. gemini-2.0-flash") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onFocusChanged { focusState ->
+                                    if (!focusState.isFocused && customInput.isNotBlank()) {
+                                        onValidateCustomModel(customInput)
+                                    }
+                                },
+                            singleLine = true,
+                            isError = customModelValidation is CustomModelValidation.Error
+                        )
+                        when (val v = customModelValidation) {
+                            is CustomModelValidation.Validating -> {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                    Text("Validating…", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                            is CustomModelValidation.Valid -> {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Check,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        v.displayName,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                            is CustomModelValidation.Error -> {
+                                Text(
+                                    v.message,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                            else -> {}
+                        }
+                    }
+                }
             }
         }
     }
@@ -761,10 +843,15 @@ fun HistoryScreen(
             )
         }
     ) { paddingValues ->
+        val focusManager = LocalFocusManager.current
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { focusManager.clearFocus() }
         ) {
             if (historyItems.isNotEmpty()) {
                 OutlinedTextField(

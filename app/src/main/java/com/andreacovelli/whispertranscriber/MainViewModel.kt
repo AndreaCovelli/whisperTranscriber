@@ -25,6 +25,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import okio.BufferedSink
@@ -41,11 +43,20 @@ import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
+sealed class CustomModelValidation {
+    object Idle : CustomModelValidation()
+    object Validating : CustomModelValidation()
+    data class Valid(val displayName: String) : CustomModelValidation()
+    data class Error(val message: String) : CustomModelValidation()
+}
+
 data class UiState(
     val status: String = "Waiting for audios...",
     val provider: TranscriptionProvider = TranscriptionProvider.ASSEMBLY_AI,
     val assemblyApiKey: String = "",
     val geminiApiKey: String = "",
+    val customGeminiModelName: String = "",
+    val customModelValidation: CustomModelValidation = CustomModelValidation.Idle,
     val jobs: List<TranscriptionJobState> = emptyList()
 )
 
@@ -74,10 +85,16 @@ private data class TranscriptionData(
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
-        // GEMINI_MODEL constant removed.
-        // Use explicit JSON schema type strings for Proguard safety
         private const val TYPE_OBJECT = "OBJECT"
         private const val TYPE_STRING = "STRING"
+
+        private const val GEMINI_MODELS_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+        private const val GEMINI_API_KEY_HEADER = "x-goog-api-key"
+
+        private const val ERR_ENTER_MODEL_NAME = "Enter a model name"
+        private const val ERR_ENTER_GEMINI_KEY = "Enter your Gemini API key first"
+        private const val ERR_MODEL_NOT_FOUND = "Model \"%s\" not found"
+        private const val ERR_HTTP_VERIFY = "HTTP %d: could not verify model"
 
         // Natively supported Gemini MIME types
         private val SUPPORTED_GEMINI_MIME_TYPES = setOf(
@@ -136,6 +153,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val uiState = _uiState.asStateFlow()
 
     private val settings = ApiKeyManager(application)
+    private val httpClient = OkHttpClient()
     private val historyDao: TranscriptionHistoryDao
 
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
@@ -161,6 +179,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             launch {
                 settings.geminiApiKeyFlow.collect { key ->
                     _uiState.update { it.copy(geminiApiKey = key.orEmpty()) }
+                }
+            }
+            launch {
+                settings.customGeminiModelNameFlow.collect { name ->
+                    _uiState.update { it.copy(customGeminiModelName = name.orEmpty()) }
                 }
             }
         }
@@ -201,7 +224,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val neededKey = if (usingAssembly) persistedAssemblyKey else persistedGeminiKey
 
             // Get the specific model name if using Gemini
-            val geminiModelName = persistedProvider.modelName
+            val geminiModelName = when (persistedProvider) {
+                TranscriptionProvider.GEMINI_CUSTOM -> {
+                    val customName = settings.customGeminiModelNameFlow.firstOrNull()
+                    if (customName.isNullOrBlank()) {
+                        _uiState.update {
+                            it.copy(status = "Error: No custom Gemini model set. Enter and validate one in Settings.")
+                        }
+                        return@launch
+                    }
+                    customName
+                }
+                else -> persistedProvider.modelName
+            }
 
             if (neededKey.isBlank()) {
                 // Only show error if there are jobs queued/pending.
@@ -273,6 +308,60 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             settings.saveGeminiApiKey(k)
             startJobProcessor() // Restart processor if it was waiting for key
+        }
+    }
+
+    fun resetCustomModelValidation() {
+        _uiState.update { it.copy(customModelValidation = CustomModelValidation.Idle) }
+    }
+
+    fun validateCustomGeminiModel(modelName: String) {
+        val trimmed = modelName.trim()
+        if (trimmed.isBlank()) {
+            _uiState.update { it.copy(customModelValidation = CustomModelValidation.Error(ERR_ENTER_MODEL_NAME)) }
+            return
+        }
+        val apiKey = _uiState.value.geminiApiKey
+        if (apiKey.isBlank()) {
+            _uiState.update { it.copy(customModelValidation = CustomModelValidation.Error(ERR_ENTER_GEMINI_KEY)) }
+            return
+        }
+        _uiState.update { it.copy(customModelValidation = CustomModelValidation.Validating) }
+        viewModelScope.launch {
+            try {
+                val url = "$GEMINI_MODELS_BASE_URL/$trimmed"
+                val request = Request.Builder()
+                    .url(url)
+                    .header(GEMINI_API_KEY_HEADER, apiKey)
+                    .build()
+                val (isSuccess, code, bodyText) = withContext(ioDispatcher) {
+                    httpClient.newCall(request).execute().use { resp ->
+                        Triple(resp.isSuccessful, resp.code, resp.body.string())
+                    }
+                }
+                if (!isSuccess) {
+                    val msg = if (code == 404) ERR_MODEL_NOT_FOUND.format(trimmed)
+                              else ERR_HTTP_VERIFY.format(code)
+                    _uiState.update { it.copy(customModelValidation = CustomModelValidation.Error(msg)) }
+                    return@launch
+                }
+                val displayName = try {
+                    JSONObject(bodyText).optString("displayName", trimmed)
+                } catch (_: Exception) { trimmed }
+                settings.saveCustomGeminiModelName(trimmed)
+                _uiState.update {
+                    it.copy(
+                        customGeminiModelName = trimmed,
+                        customModelValidation = CustomModelValidation.Valid(displayName)
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(customModelValidation = CustomModelValidation.Error(e.message ?: "Validation failed"))
+                }
+            }
         }
     }
 
@@ -705,11 +794,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // Determine which model to use for summarization.
             // We default to the currently selected provider if it's Gemini, otherwise use Flash as a sensible default if API key is present.
             val providerForSummary = state.provider
-            val modelName = if (providerForSummary.isGemini()) {
-                providerForSummary.modelName!!
-            } else {
-                // If using AssemblyAI for transcription, default to Flash for summarization
-                TranscriptionProvider.GEMINI_FLASH.modelName!!
+            val modelName = when {
+                providerForSummary == TranscriptionProvider.GEMINI_CUSTOM -> {
+                    val customName = state.customGeminiModelName
+                    if (customName.isBlank()) {
+                        _uiState.update { it.copy(status = "Error: No custom Gemini model set for summarization.") }
+                        updateJob(jobId) { it.copy(isSummarizing = false) }
+                        return@launch
+                    }
+                    customName
+                }
+                providerForSummary.isGemini() -> providerForSummary.modelName!!
+                else -> TranscriptionProvider.GEMINI_FLASH.modelName!!
             }
 
             updateJob(jobId) { it.copy(isSummarizing = true) }
