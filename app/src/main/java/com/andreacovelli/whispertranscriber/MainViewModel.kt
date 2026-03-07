@@ -147,6 +147,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val uiState = _uiState.asStateFlow()
 
     private val settings = ApiKeyManager(application)
+    private val httpClient = OkHttpClient()
     private val historyDao: TranscriptionHistoryDao
 
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
@@ -322,9 +323,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(customModelValidation = CustomModelValidation.Validating) }
         viewModelScope.launch {
             try {
-                val url = "https://generativelanguage.googleapis.com/v1beta/models/$trimmed?key=$apiKey"
-                val request = Request.Builder().url(url).build()
-                val httpClient = OkHttpClient()
+                val url = "https://generativelanguage.googleapis.com/v1beta/models/$trimmed"
+                val request = Request.Builder()
+                    .url(url)
+                    .header("x-goog-api-key", apiKey)
+                    .build()
                 val (isSuccess, code, bodyText) = withContext(ioDispatcher) {
                     httpClient.newCall(request).execute().use { resp ->
                         Triple(resp.isSuccessful, resp.code, resp.body.string())
