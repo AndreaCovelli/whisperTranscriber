@@ -25,6 +25,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import okio.BufferedSink
@@ -41,11 +43,20 @@ import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
+sealed class CustomModelValidation {
+    object Idle : CustomModelValidation()
+    object Validating : CustomModelValidation()
+    data class Valid(val displayName: String) : CustomModelValidation()
+    data class Error(val message: String) : CustomModelValidation()
+}
+
 data class UiState(
     val status: String = "Waiting for audios...",
     val provider: TranscriptionProvider = TranscriptionProvider.ASSEMBLY_AI,
     val assemblyApiKey: String = "",
     val geminiApiKey: String = "",
+    val customGeminiModelName: String = "",
+    val customModelValidation: CustomModelValidation = CustomModelValidation.Idle,
     val jobs: List<TranscriptionJobState> = emptyList()
 )
 
@@ -163,6 +174,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _uiState.update { it.copy(geminiApiKey = key.orEmpty()) }
                 }
             }
+            launch {
+                settings.customGeminiModelNameFlow.collect { name ->
+                    _uiState.update { it.copy(customGeminiModelName = name.orEmpty()) }
+                }
+            }
         }
 
         // Cleanup old temp WAVs on a background thread
@@ -201,7 +217,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val neededKey = if (usingAssembly) persistedAssemblyKey else persistedGeminiKey
 
             // Get the specific model name if using Gemini
-            val geminiModelName = persistedProvider.modelName
+            val geminiModelName = when (persistedProvider) {
+                TranscriptionProvider.GEMINI_CUSTOM -> {
+                    val customName = settings.customGeminiModelNameFlow.firstOrNull()
+                    if (customName.isNullOrBlank()) {
+                        _uiState.update {
+                            it.copy(status = "Error: No custom Gemini model set. Enter and validate one in Settings.")
+                        }
+                        return@launch
+                    }
+                    customName
+                }
+                else -> persistedProvider.modelName
+            }
 
             if (neededKey.isBlank()) {
                 // Only show error if there are jobs queued/pending.
@@ -276,8 +304,59 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun forgetAssemblyKey() {
+    fun resetCustomModelValidation() {
+        _uiState.update { it.copy(customModelValidation = CustomModelValidation.Idle) }
+    }
+
+    fun validateCustomGeminiModel(modelName: String) {
+        val trimmed = modelName.trim()
+        if (trimmed.isBlank()) {
+            _uiState.update { it.copy(customModelValidation = CustomModelValidation.Error("Enter a model name")) }
+            return
+        }
+        val apiKey = _uiState.value.geminiApiKey
+        if (apiKey.isBlank()) {
+            _uiState.update { it.copy(customModelValidation = CustomModelValidation.Error("Enter your Gemini API key first")) }
+            return
+        }
+        _uiState.update { it.copy(customModelValidation = CustomModelValidation.Validating) }
         viewModelScope.launch {
+            try {
+                val url = "https://generativelanguage.googleapis.com/v1beta/models/$trimmed?key=$apiKey"
+                val request = Request.Builder().url(url).build()
+                val httpClient = OkHttpClient()
+                val (isSuccess, code, bodyText) = withContext(ioDispatcher) {
+                    httpClient.newCall(request).execute().use { resp ->
+                        Triple(resp.isSuccessful, resp.code, resp.body.string())
+                    }
+                }
+                if (!isSuccess) {
+                    val msg = if (code == 404) "Model \"$trimmed\" not found"
+                              else "HTTP $code: could not verify model"
+                    _uiState.update { it.copy(customModelValidation = CustomModelValidation.Error(msg)) }
+                    return@launch
+                }
+                val displayName = try {
+                    JSONObject(bodyText).optString("displayName", trimmed)
+                } catch (_: Exception) { trimmed }
+                settings.saveCustomGeminiModelName(trimmed)
+                _uiState.update {
+                    it.copy(
+                        customGeminiModelName = trimmed,
+                        customModelValidation = CustomModelValidation.Valid(displayName)
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(customModelValidation = CustomModelValidation.Error(e.message ?: "Validation failed"))
+                }
+            }
+        }
+    }
+
+    fun forgetAssemblyKey() {        viewModelScope.launch {
             settings.forgetAssemblyApiKey()
             _uiState.update { it.copy(assemblyApiKey = "") }
         }
@@ -705,11 +784,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // Determine which model to use for summarization.
             // We default to the currently selected provider if it's Gemini, otherwise use Flash as a sensible default if API key is present.
             val providerForSummary = state.provider
-            val modelName = if (providerForSummary.isGemini()) {
-                providerForSummary.modelName!!
-            } else {
-                // If using AssemblyAI for transcription, default to Flash for summarization
-                TranscriptionProvider.GEMINI_FLASH.modelName!!
+            val modelName = when {
+                providerForSummary == TranscriptionProvider.GEMINI_CUSTOM -> {
+                    val customName = state.customGeminiModelName
+                    if (customName.isBlank()) {
+                        _uiState.update { it.copy(status = "Error: No custom Gemini model set for summarization.") }
+                        updateJob(jobId) { it.copy(isSummarizing = false) }
+                        return@launch
+                    }
+                    customName
+                }
+                providerForSummary.isGemini() -> providerForSummary.modelName!!
+                else -> TranscriptionProvider.GEMINI_FLASH.modelName!!
             }
 
             updateJob(jobId) { it.copy(isSummarizing = true) }

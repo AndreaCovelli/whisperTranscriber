@@ -12,24 +12,21 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
-// Updated enum to include specific models and their API names
 enum class TranscriptionProvider(val modelName: String? = null) {
     ASSEMBLY_AI,
     GEMINI_FLASH_LITE("gemini-flash-lite-latest"),
     GEMINI_FLASH("gemini-flash-latest"),
-    GEMINI_PRO("gemini-pro-latest");
+    GEMINI_PRO("gemini-pro-latest"),
+    GEMINI_CUSTOM; // model name stored separately in DataStore
 
-    // Helper to check if the provider is a Gemini variant
-    fun isGemini(): Boolean {
-        return this != ASSEMBLY_AI
-    }
+    fun isGemini(): Boolean = this != ASSEMBLY_AI
 }
 
 class ApiKeyManager(private val context: Context) {
     companion object {
-        // Encrypted storage (IV:ciphertext Base64)
         private val ASSEMBLY_API_KEY_ENC = stringPreferencesKey("assembly_ai_api_key_enc")
         private val GEMINI_API_KEY_ENC = stringPreferencesKey("gemini_api_key_enc")
+        private val GEMINI_CUSTOM_MODEL_NAME = stringPreferencesKey("gemini_custom_model_name")
 
         private val SELECTED_PROVIDER = stringPreferencesKey("transcription_provider")
     }
@@ -63,6 +60,13 @@ class ApiKeyManager(private val context: Context) {
         context.dataStore.edit { it[SELECTED_PROVIDER] = provider.name }
     }
 
+    suspend fun saveCustomGeminiModelName(name: String) {
+        context.dataStore.edit { prefs ->
+            if (name.isBlank()) prefs.remove(GEMINI_CUSTOM_MODEL_NAME)
+            else prefs[GEMINI_CUSTOM_MODEL_NAME] = name.trim()
+        }
+    }
+
     // Quick wipe actions
     suspend fun forgetAssemblyApiKey() {
         context.dataStore.edit {
@@ -89,6 +93,10 @@ class ApiKeyManager(private val context: Context) {
         p[GEMINI_API_KEY_ENC]?.let { enc ->
             KeystoreCrypto.decryptFromBase64(enc)?.toString(Charsets.UTF_8)
         }
+    }
+
+    val customGeminiModelNameFlow: Flow<String?> = context.dataStore.data.map { p ->
+        p[GEMINI_CUSTOM_MODEL_NAME]?.takeIf { it.isNotBlank() }
     }
 
     val providerFlow: Flow<TranscriptionProvider> = context.dataStore.data.map { p ->
