@@ -27,7 +27,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
@@ -635,22 +634,37 @@ private fun ApiKeyCard(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(title, style = MaterialTheme.typography.titleMedium)
-            
+            OutlinedTextField(
+                value = inputKey,
+                onValueChange = { inputKey = it; onSave(it) },
+                label = { Text(label) },
+                modifier = Modifier.fillMaxWidth(),
+                visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(onClick = { showKey = !showKey }) {
+                        Icon(
+                            imageVector = if (showKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = if (showKey) "Hide API key" else "Show API key"
+                        )
+                    }
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+            )
             if (apiKeyState is ApiKeyState.Present) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Icon(
-                        Icons.Default.CheckCircle,
+                        Icons.Default.Lock,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.primary
+                        modifier = Modifier.size(12.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        "Key is saved and encrypted",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary
+                        "Encrypted & saved",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             } else if (apiKeyState is ApiKeyState.Error) {
@@ -671,48 +685,15 @@ private fun ApiKeyCard(
                     )
                 }
             }
-
-            OutlinedTextField(
-                value = inputKey,
-                onValueChange = { inputKey = it },
-                label = { Text(if (apiKeyState is ApiKeyState.Present) "Enter new key to replace" else label) },
-                modifier = Modifier.fillMaxWidth(),
-                visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = {
-                    IconButton(onClick = { showKey = !showKey }) {
-                        Icon(
-                            imageVector = if (showKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = if (showKey) "Hide input" else "Show input"
-                        )
-                    }
-                },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-            )
-            
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.End
             ) {
-                if (apiKeyState is ApiKeyState.Present) {
-                    TextButton(onClick = {
-                        onForget()
-                        inputKey = ""
-                        scope.launch { snackbarHostState.showSnackbar(forgetMessage) }
-                    }) {
-                        Text("Forget key")
-                    }
-                }
-                Spacer(Modifier.width(8.dp))
-                Button(
-                    onClick = {
-                        onSave(inputKey)
-                        inputKey = ""
-                        scope.launch { snackbarHostState.showSnackbar("Key saved") }
-                    },
-                    enabled = inputKey.isNotBlank()
-                ) {
-                    Text("Save")
+                TextButton(onClick = {
+                    onForget()
+                    scope.launch { snackbarHostState.showSnackbar(forgetMessage) }
+                }) {
+                    Text("Forget key")
                 }
             }
         }
