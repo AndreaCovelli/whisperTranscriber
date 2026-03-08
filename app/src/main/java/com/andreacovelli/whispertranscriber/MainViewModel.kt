@@ -84,8 +84,6 @@ private data class TranscriptionData(
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
-    val audioPlayer = com.andreacovelli.whispertranscriber.media.AudioPlayerManager(application)
-
     companion object {
         private const val TYPE_OBJECT = "OBJECT"
         private const val TYPE_STRING = "STRING"
@@ -200,11 +198,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         // Start the job processor
         startJobProcessor()
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        audioPlayer.release()
     }
 
     // Job Processor Loop
@@ -334,17 +327,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val keyChars = settings.getGeminiApiKey()
             if (keyChars == null || keyChars.isEmpty()) {
-                _uiState.update { it.copy(customModelValidation = CustomModelValidation.Error(ERR_ENTER_GEMINI_KEY)) }
+                val keyState = _uiState.value.geminiApiKeyState
+                val errMsg = if (keyState is ApiKeyState.Error)
+                    "Keystore error: ${keyState.message}. Please re-enter your key."
+                else ERR_ENTER_GEMINI_KEY
+                _uiState.update { it.copy(customModelValidation = CustomModelValidation.Error(errMsg)) }
                 return@launch
             }
-            val apiKey = String(keyChars)
-            keyChars.fill('\u0000')
 
             try {
                 val url = "$GEMINI_MODELS_BASE_URL/$trimmed"
                 val request = Request.Builder()
                     .url(url)
-                    .header(GEMINI_API_KEY_HEADER, apiKey)
+                    .header(GEMINI_API_KEY_HEADER, String(keyChars).also { keyChars.fill('\u0000') })
                     .build()
                 val (isSuccess, code, bodyText) = withContext(ioDispatcher) {
                     httpClient.newCall(request).execute().use { resp ->
@@ -678,17 +673,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             // The Retrofit interface handles the upload regardless of the RequestBody implementation
-            val uploadResponse = try {
-                api.uploadFile(String(apiKey), requestFileBody)
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                if (e is HttpException) {
-                    val msg = if (e.code() == 401) "Unauthorized. Check your AssemblyAI API key." else "HTTP ${e.code()} ${e.message()}"
-                    throw IllegalStateException(msg, e)
-                } else {
-                    throw IllegalStateException("Network or API error: ${e.message}", e)
-                }
-            }
+            val uploadResponse = api.uploadFile(String(apiKey), requestFileBody)
 
             val audioUrl = uploadResponse.uploadUrl
 

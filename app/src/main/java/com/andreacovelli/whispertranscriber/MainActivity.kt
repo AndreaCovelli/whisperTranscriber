@@ -34,8 +34,6 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Visibility
@@ -350,28 +348,9 @@ fun MainScreen(
                     }
                 }
                 items(uiState.jobs, key = { it.id }) { job ->
-                    val isPlaying = viewModel.audioPlayer.isPlaying.collectAsStateWithLifecycle().value
-                    val currentUri = viewModel.audioPlayer.currentUri.collectAsStateWithLifecycle().value
-                    val position = viewModel.audioPlayer.position.collectAsStateWithLifecycle().value
-                    val duration = viewModel.audioPlayer.duration.collectAsStateWithLifecycle().value
-
                     TranscriptionJobCard(
                         job = job,
                         canSummarize = uiState.geminiApiKeyState is ApiKeyState.Present,
-                        isPlaying = isPlaying && currentUri == job.uri,
-                        isActive = currentUri == job.uri,
-                        position = position,
-                        duration = duration,
-                        onPlayPause = {
-                            if (job.uri != null) {
-                                if (isPlaying && currentUri == job.uri) {
-                                    viewModel.audioPlayer.pause()
-                                } else {
-                                    viewModel.audioPlayer.play(job.uri)
-                                }
-                            }
-                        },
-                        onSeek = { viewModel.audioPlayer.seekTo(it) },
                         onSummarize = { viewModel.summarizeJob(job.id) },
                         onCopyTranscript = {
                             scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", job.transcript))) }
@@ -399,12 +378,6 @@ fun MainScreen(
 private fun TranscriptionJobCard(
     job: TranscriptionJobState,
     canSummarize: Boolean,
-    isPlaying: Boolean,
-    isActive: Boolean,
-    position: Int,
-    duration: Int,
-    onPlayPause: () -> Unit,
-    onSeek: (Int) -> Unit,
     onSummarize: () -> Unit,
     onCopyTranscript: () -> Unit,
     onCopySummary: () -> Unit,
@@ -433,44 +406,6 @@ private fun TranscriptionJobCard(
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f)
                 )
-                if (job.uri != null) {
-                    IconButton(onClick = onPlayPause) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (isPlaying) "Pause" else "Play"
-                        )
-                    }
-                }
-            }
-
-            if (isActive && duration > 0) {
-                var dragging by remember { mutableStateOf(false) }
-                var dragValue by remember { mutableFloatStateOf(0f) }
-                val sliderValue = if (dragging) dragValue else position.toFloat() / duration.toFloat()
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = formatTime(if (dragging) (dragValue * duration).toInt() else position),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Slider(
-                        value = sliderValue.coerceIn(0f, 1f),
-                        onValueChange = { dragValue = it; dragging = true },
-                        onValueChangeFinished = {
-                            onSeek((dragValue * duration).toInt())
-                            dragging = false
-                        },
-                        modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
-                    )
-                    Text(
-                        text = formatTime(duration),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
 
             Spacer(Modifier.height(4.dp))
@@ -677,9 +612,11 @@ private fun ApiKeyCard(
             Text(title, style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(
                 value = inputKey,
-                onValueChange = { inputKey = it; onSave(it) },
+                onValueChange = { inputKey = it },
                 label = { Text(if (apiKeyState is ApiKeyState.Present) "Replace saved key (optional)" else label) },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().onFocusChanged { focusState ->
+                    if (!focusState.isFocused && inputKey.isNotBlank()) onSave(inputKey)
+                },
                 visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = {
                     IconButton(onClick = { showKey = !showKey }) {
@@ -886,13 +823,6 @@ private fun ProviderRadioOption(
         Spacer(Modifier.width(8.dp))
         Text(text)
     }
-}
-
-private fun formatTime(ms: Int): String {
-    val totalSeconds = ms / 1000
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    return "%d:%02d".format(minutes, seconds)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
