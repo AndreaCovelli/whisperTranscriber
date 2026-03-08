@@ -5,6 +5,9 @@ When using libraries, use context7 to check for updated info.
 ## Build & Test Commands
 
 Always use the Gradle wrapper (`gradlew.bat` on Windows, `./gradlew` on Unix) — never invoke `gradle` directly. Set JAVA_HOME as terminal env variable to run the build.
+```bash
+$env:JAVA_HOME = "C:\Users\<User>\AppData\Local\Programs\Android Studio\jbr"
+```
 The required JDK (21) is declared in `gradle/gradle-daemon-jvm.properties` and resolved automatically via the Foojay toolchain resolver.
 
 ```bat

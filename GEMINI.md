@@ -1,5 +1,7 @@
 # WhisperTranscriber - Gemini CLI Context
 
+When using libraries, use context7 to check for updated info.
+
 ## Project Overview
 WhisperTranscriber is an Android application that transcribes audio files using AI, leveraging either AssemblyAI or Google Gemini. It allows users to share audio files from any app, processes them (including automatic conversion to 16 kHz mono WAV via MediaCodec when necessary), and returns transcripts.
 
@@ -35,7 +37,10 @@ Key features include:
 ## Building and Running
 The project uses the Gradle build system (Kotlin DSL).
 
-**Note:** Ensure that your Java environment variable (e.g., `JAVA_HOME`) is correctly set in your terminal before running Gradle commands.
+**Note:** Ensure that your Java environment variable (e.g., `JAVA_HOME`) is correctly set in your terminal as an environment variable before running Gradle commands:
+```
+$env:JAVA_HOME = "C:\Users\<User>\AppData\Local\Programs\Android Studio\jbr"
+```
 
 - **Build Debug APK:**
   ```bash
