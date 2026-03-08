@@ -30,7 +30,7 @@ class AudioPlayerManager(private val context: Context) {
             mediaPlayer = MediaPlayer().apply {
                 setDataSource(context, uri)
                 setOnCompletionListener {
-                    _isPlaying.value = false
+                    stop()
                 }
                 setOnErrorListener { _, _, _ ->
                     _isPlaying.value = false

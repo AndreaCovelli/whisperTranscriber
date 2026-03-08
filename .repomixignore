@@ -5,3 +5,4 @@
 
 **/.idea/**/*.xml
 **/build/**/*.xml
+.kotlin/errors/

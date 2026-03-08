@@ -678,9 +678,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             // The Retrofit interface handles the upload regardless of the RequestBody implementation
-            val apiKeyString = String(apiKey)
             val uploadResponse = try {
-                api.uploadFile(apiKeyString, requestFileBody)
+                api.uploadFile(String(apiKey), requestFileBody)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 if (e is HttpException) {
@@ -695,19 +694,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             onStatus("2/4 Creating transcript...")
             val transcriptRequest = TranscriptRequest(audioUrl = audioUrl)
-            var transcriptResponse = api.createTranscript(apiKeyString, transcriptRequest)
+            var transcriptResponse = api.createTranscript(String(apiKey), transcriptRequest)
             val transcriptId = transcriptResponse.id
 
             onStatus("3/4 Waiting for result...")
             // Increased timeout from 36 (3 min) to 120 (10 min) for longer files
             repeat(120) {
-                transcriptResponse = api.getTranscript(apiKeyString, transcriptId)
+                transcriptResponse = api.getTranscript(String(apiKey), transcriptId)
                 when (transcriptResponse.status) {
                     "completed" -> {
                         val detectedLanguage = transcriptResponse.languageCode ?: "Unknown"
                         val newTranscription = transcriptResponse.text ?: "No text found."
                         // Cleanup remote transcript
-                        runCatching { api.deleteTranscript(apiKeyString, transcriptId) }
+                        runCatching { api.deleteTranscript(String(apiKey), transcriptId) }
                         onStatus("4/4 Success")
                         return TranscriptionData(
                             text = newTranscription,
@@ -716,7 +715,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     }
                     "error" -> {
-                        runCatching { api.deleteTranscript(apiKeyString, transcriptId) }
+                        runCatching { api.deleteTranscript(String(apiKey), transcriptId) }
                         throw IllegalStateException("Transcription failed. ${transcriptResponse.error.orEmpty()}")
                     }
                     else -> { /* continue waiting */ }

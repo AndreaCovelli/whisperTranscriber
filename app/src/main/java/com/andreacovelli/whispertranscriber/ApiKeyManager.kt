@@ -115,6 +115,7 @@ class ApiKeyManager(private val context: Context) {
             val chars = CharArray(cb.remaining())
             cb.get(chars)
             bytes.fill(0)
+            if (cb.hasArray()) cb.array().fill('\u0000')
             chars
         } catch (e: Exception) {
             null
