@@ -96,6 +96,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val ERR_MODEL_NOT_FOUND = "Model \"%s\" not found"
         private const val ERR_HTTP_VERIFY = "HTTP %d: could not verify model"
 
+        private val HTTP_STATUS_REGEX = Regex("""\b([45]\d{2})\b""")
+
         // Natively supported Gemini MIME types
         private val SUPPORTED_GEMINI_MIME_TYPES = setOf(
             "audio/wav",
@@ -711,8 +713,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             if (e is HttpException) {
-                val msg = if (e.code() == 401) "Unauthorized. Check your AssemblyAI API key." else "HTTP ${e.code()} ${e.message()}"
-                throw IllegalStateException(msg, e)
+                throw IllegalStateException(friendlyHttpError(e.code(), "AssemblyAI"), e)
             } else {
                 throw IllegalStateException("Network or API error: ${e.message}", e)
             }
@@ -789,9 +790,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         } catch (e: Exception) {
             if (e is CancellationException) throw e
-            throw IllegalStateException("Gemini error: ${e.message ?: e::class.java.simpleName}", e)
+            val httpCode = if (e is HttpException) e.code() else extractHttpStatusFromMessage(e)
+            val msg = if (httpCode != null) {
+                friendlyHttpError(httpCode, "Gemini")
+            } else {
+                "Gemini error: ${e.message ?: e::class.java.simpleName}"
+            }
+            throw IllegalStateException(msg, e)
         }
     }
+
+    private fun friendlyHttpError(code: Int, provider: String): String = when {
+        code == 401 -> "Unauthorized. Check your $provider API key."
+        code == 429 -> "Rate limit exceeded. Please wait a moment and try again."
+        code in 500..599 -> "Server error (HTTP $code). $provider's servers are experiencing issues. Please try again later."
+        else -> "HTTP $code: unexpected error from $provider."
+    }
+
+    private fun extractHttpStatusFromMessage(e: Exception): Int? =
+        HTTP_STATUS_REGEX.find(e.message ?: "")?.groupValues?.get(1)?.toIntOrNull()
 
     // Per-job summarization for multi-file flow
     fun summarizeJob(jobId: String) {
