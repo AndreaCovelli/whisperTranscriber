@@ -202,6 +202,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         startJobProcessor()
     }
 
+    override fun onCleared() {
+        super.onCleared()
+        audioPlayer.stop()
+    }
+
     // Job Processor Loop
     private fun startJobProcessor() {
         // Check if already running, but also check if the previous run failed due to missing API key and retry

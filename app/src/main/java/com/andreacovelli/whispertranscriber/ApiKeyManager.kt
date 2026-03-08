@@ -89,8 +89,8 @@ class ApiKeyManager(private val context: Context) {
     }
 
     // Read flows for UI state (does not expose keys)
-    val assemblyApiKeyStateFlow: Flow<ApiKeyState> = context.dataStore.data.map { p ->
-        val enc = p[ASSEMBLY_API_KEY_ENC]
+    private fun getApiKeyStateFlow(key: Preferences.Key<String>): Flow<ApiKeyState> = context.dataStore.data.map { p ->
+        val enc = p[key]
         if (enc == null) ApiKeyState.Missing
         else {
             try {
@@ -102,26 +102,18 @@ class ApiKeyManager(private val context: Context) {
         }
     }
 
-    val geminiApiKeyStateFlow: Flow<ApiKeyState> = context.dataStore.data.map { p ->
-        val enc = p[GEMINI_API_KEY_ENC]
-        if (enc == null) ApiKeyState.Missing
-        else {
-            try {
-                KeystoreCrypto.decryptFromBase64(enc)?.fill(0)
-                ApiKeyState.Present
-            } catch (e: Exception) {
-                ApiKeyState.Error(e.message ?: "Keystore decryption failed")
-            }
-        }
-    }
+    val assemblyApiKeyStateFlow: Flow<ApiKeyState> = getApiKeyStateFlow(ASSEMBLY_API_KEY_ENC)
+    val geminiApiKeyStateFlow: Flow<ApiKeyState> = getApiKeyStateFlow(GEMINI_API_KEY_ENC)
 
     // Suspend functions to securely read keys on-demand
-    suspend fun getAssemblyApiKey(): CharArray? {
+    private suspend fun getApiKey(key: Preferences.Key<String>): CharArray? {
         val prefs = context.dataStore.data.firstOrNull() ?: return null
-        val enc = prefs[ASSEMBLY_API_KEY_ENC] ?: return null
+        val enc = prefs[key] ?: return null
         return try {
             val bytes = KeystoreCrypto.decryptFromBase64(enc) ?: return null
-            val chars = StandardCharsets.UTF_8.decode(java.nio.ByteBuffer.wrap(bytes)).array()
+            val cb = StandardCharsets.UTF_8.decode(java.nio.ByteBuffer.wrap(bytes))
+            val chars = CharArray(cb.remaining())
+            cb.get(chars)
             bytes.fill(0)
             chars
         } catch (e: Exception) {
@@ -129,18 +121,8 @@ class ApiKeyManager(private val context: Context) {
         }
     }
 
-    suspend fun getGeminiApiKey(): CharArray? {
-        val prefs = context.dataStore.data.firstOrNull() ?: return null
-        val enc = prefs[GEMINI_API_KEY_ENC] ?: return null
-        return try {
-            val bytes = KeystoreCrypto.decryptFromBase64(enc) ?: return null
-            val chars = StandardCharsets.UTF_8.decode(java.nio.ByteBuffer.wrap(bytes)).array()
-            bytes.fill(0)
-            chars
-        } catch (e: Exception) {
-            null
-        }
-    }
+    suspend fun getAssemblyApiKey(): CharArray? = getApiKey(ASSEMBLY_API_KEY_ENC)
+    suspend fun getGeminiApiKey(): CharArray? = getApiKey(GEMINI_API_KEY_ENC)
 
     val customGeminiModelNameFlow: Flow<String?> = context.dataStore.data.map { p ->
         p[GEMINI_CUSTOM_MODEL_NAME]?.takeIf { it.isNotBlank() }

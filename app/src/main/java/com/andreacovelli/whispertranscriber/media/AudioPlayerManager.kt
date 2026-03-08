@@ -44,7 +44,7 @@ class AudioPlayerManager(private val context: Context) {
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            android.util.Log.e("AudioPlayerManager", "Error playing audio for URI: $uri", e)
             stop()
         }
     }
