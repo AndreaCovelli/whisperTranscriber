@@ -3,4 +3,5 @@
 # *.log
 # tmp/
 
-**/*.xml
+**/.idea/**/*.xml
+**/build/**/*.xml

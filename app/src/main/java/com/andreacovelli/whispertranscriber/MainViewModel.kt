@@ -572,30 +572,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     throw IllegalStateException("Internal error: AssemblyAI source (File or Uri) is missing.")
                 }
                 val keyChars = settings.getAssemblyApiKey() ?: throw IllegalStateException("API key missing or corrupted")
-                val keyString = String(keyChars)
-                keyChars.fill('\u0000')
 
-                transcribeWithAssemblyReturn(
-                    source = sourceForAssembly,
-                    apiKey = keyString,
-                    onStatus = { s -> updateJob(jobId) { it.copy(status = "AssemblyAI: $s") } }
-                )
+                try {
+                    transcribeWithAssemblyReturn(
+                        source = sourceForAssembly,
+                        apiKey = keyChars,
+                        onStatus = { s -> updateJob(jobId) { it.copy(status = "AssemblyAI: $s") } }
+                    )
+                } finally {
+                    keyChars.fill('\u0000')
+                }
             } else {
                 // Ensure geminiModel and data are not null
                 if (geminiModel == null) throw IllegalStateException("Gemini model not specified.")
                 if (bytesForGemini == null || mimeTypeForGemini == null) throw IllegalStateException("Internal error: Gemini audio data is missing.")
 
                 val keyChars = settings.getGeminiApiKey() ?: throw IllegalStateException("API key missing or corrupted")
-                val keyString = String(keyChars)
-                keyChars.fill('\u0000')
 
-                transcribeWithGeminiReturn(
-                    audioBytes = bytesForGemini,
-                    mimeType = mimeTypeForGemini,
-                    apiKey = keyString,
-                    modelName = geminiModel,
-                    onStatus = { s -> updateJob(jobId) { it.copy(status = "Gemini: $s") } }
-                )
+                try {
+                    transcribeWithGeminiReturn(
+                        audioBytes = bytesForGemini,
+                        mimeType = mimeTypeForGemini,
+                        apiKey = keyChars,
+                        modelName = geminiModel,
+                        onStatus = { s -> updateJob(jobId) { it.copy(status = "Gemini: $s") } }
+                    )
+                } finally {
+                    keyChars.fill('\u0000')
+                }
             }
 
             // Persist in history
@@ -656,7 +660,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Updated transcribeWithAssemblyReturn (Increased Timeout, supports File or Uri via streaming)
     private suspend fun transcribeWithAssemblyReturn(
         source: Any, // Accepts File (converted) or Uri (original)
-        apiKey: String,
+        apiKey: CharArray,
         onStatus: (String) -> Unit
     ): TranscriptionData {
         try {
@@ -678,24 +682,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             // The Retrofit interface handles the upload regardless of the RequestBody implementation
-            val uploadResponse = api.uploadFile(apiKey, requestFileBody)
+            val apiKeyString = String(apiKey)
+            val uploadResponse = try {
+                api.uploadFile(apiKeyString, requestFileBody)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                if (e is HttpException) {
+                    val msg = if (e.code() == 401) "Unauthorized. Check your AssemblyAI API key." else "HTTP ${e.code()} ${e.message()}"
+                    throw IllegalStateException(msg, e)
+                } else {
+                    throw IllegalStateException("Network or API error: ${e.message}", e)
+                }
+            }
+
             val audioUrl = uploadResponse.uploadUrl
 
             onStatus("2/4 Creating transcript...")
             val transcriptRequest = TranscriptRequest(audioUrl = audioUrl)
-            var transcriptResponse = api.createTranscript(apiKey, transcriptRequest)
+            var transcriptResponse = api.createTranscript(apiKeyString, transcriptRequest)
             val transcriptId = transcriptResponse.id
 
             onStatus("3/4 Waiting for result...")
             // Increased timeout from 36 (3 min) to 120 (10 min) for longer files
             repeat(120) {
-                transcriptResponse = api.getTranscript(apiKey, transcriptId)
+                transcriptResponse = api.getTranscript(apiKeyString, transcriptId)
                 when (transcriptResponse.status) {
                     "completed" -> {
                         val detectedLanguage = transcriptResponse.languageCode ?: "Unknown"
                         val newTranscription = transcriptResponse.text ?: "No text found."
                         // Cleanup remote transcript
-                        runCatching { api.deleteTranscript(apiKey, transcriptId) }
+                        runCatching { api.deleteTranscript(apiKeyString, transcriptId) }
                         onStatus("4/4 Success")
                         return TranscriptionData(
                             text = newTranscription,
@@ -704,7 +720,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     }
                     "error" -> {
-                        runCatching { api.deleteTranscript(apiKey, transcriptId) }
+                        runCatching { api.deleteTranscript(apiKeyString, transcriptId) }
                         throw IllegalStateException("Transcription failed. ${transcriptResponse.error.orEmpty()}")
                     }
                     else -> { /* continue waiting */ }
@@ -728,7 +744,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun transcribeWithGeminiReturn(
         audioBytes: ByteArray,
         mimeType: String,
-        apiKey: String,
+        apiKey: CharArray,
         modelName: String, // Accept the model name string
         onStatus: (String) -> Unit
     ): TranscriptionData {
@@ -774,7 +790,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 Part.fromBytes(audioBytes, mimeType)
             )
 
-            val client = Client.builder().apiKey(apiKey).build()
+            val client = Client.builder().apiKey(String(apiKey)).build()
             val response: GenerateContentResponse = withContext(ioDispatcher) {
                 // Use the dynamic model name
                 client.models.generateContent(modelName, content, config)
