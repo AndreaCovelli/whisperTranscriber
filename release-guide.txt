@@ -1,0 +1,58 @@
+ Step 1 — Create a release keystore
+
+  Run this in PowerShell (pick your own values for the -dname fields):
+
+   $keytool = "C:\Program Files\Android\Android Studio\jbr\bin\keytool.exe"
+
+   & $keytool -genkeypair `
+     -keystore "$env:USERPROFILE\.android\whispertranscriber-release.jks" `
+     -alias whispertranscriber `
+     -keyalg RSA -keysize 2048 -validity 10000 `
+     -dname "CN=Your Name, O=Your Org, C=IT"
+
+  It will prompt for a store password and a key password — pick strong ones and save them in a password manager.
+
+  ----------------------------------------------------------------------------------------------------------------------
+
+  Step 2 — Derive the 4 secret values
+
+   # RELEASE_KEYSTORE_BASE64
+   [Convert]::ToBase64String(
+     [IO.File]::ReadAllBytes("$env:USERPROFILE\.android\whispertranscriber-release.jks")
+   ) | Set-Clipboard
+   # Now paste it as the RELEASE_KEYSTORE_BASE64 secret value
+
+   # The other three come from what you chose above:
+   # KEYSTORE_PASSWORD  → the store password you entered
+   # KEY_ALIAS          → whispertranscriber   (or whatever alias you used)
+   # KEY_PASSWORD       → the key password you entered
+
+  ----------------------------------------------------------------------------------------------------------------------
+
+  Step 3 — Add secrets to GitHub
+
+  Go to: Your repo → Settings → Secrets and variables → Actions → New repository secret
+
+  Add all four:
+
+  ┌───────────────────────────┬──────────────────────────────────────────────────────────────┐
+  │ Secret                    │ Value                                                        │
+  ├───────────────────────────┼──────────────────────────────────────────────────────────────┤
+  │ RELEASE_KEYSTORE_BASE64   │ output of the [Convert]::ToBase64String(...) command above   │
+  ├───────────────────────────┼──────────────────────────────────────────────────────────────┤
+  │ KEYSTORE_PASSWORD         │ store password from Step 1                                   │
+  ├───────────────────────────┼──────────────────────────────────────────────────────────────┤
+  │ KEY_ALIAS                 │ whispertranscriber                                           │
+  ├───────────────────────────┼──────────────────────────────────────────────────────────────┤
+  │ KEY_PASSWORD              │ key password from Step 1                                     │
+  └───────────────────────────┴──────────────────────────────────────────────────────────────┘
+
+  ----------------------------------------------------------------------------------------------------------------------
+
+  Step 4 — Tag and release
+
+   git tag v1.0.0
+   git push origin v1.0.0
+
+   ⚠️ Back up whispertranscriber-release.jks somewhere safe (cloud storage, password manager). If you lose it, you can
+   never update the app under the same signature.

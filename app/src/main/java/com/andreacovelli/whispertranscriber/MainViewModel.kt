@@ -53,8 +53,8 @@ sealed class CustomModelValidation {
 data class UiState(
     val status: String = "Waiting for audios...",
     val provider: TranscriptionProvider = TranscriptionProvider.ASSEMBLY_AI,
-    val assemblyApiKey: String = "",
-    val geminiApiKey: String = "",
+    val assemblyApiKeyState: ApiKeyState = ApiKeyState.Missing,
+    val geminiApiKeyState: ApiKeyState = ApiKeyState.Missing,
     val customGeminiModelName: String = "",
     val customModelValidation: CustomModelValidation = CustomModelValidation.Idle,
     val jobs: List<TranscriptionJobState> = emptyList()
@@ -172,13 +172,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             launch {
-                settings.assemblyApiKeyFlow.collect { key ->
-                    _uiState.update { it.copy(assemblyApiKey = key.orEmpty()) }
+                settings.assemblyApiKeyStateFlow.collect { state ->
+                    _uiState.update { it.copy(assemblyApiKeyState = state) }
                 }
             }
             launch {
-                settings.geminiApiKeyFlow.collect { key ->
-                    _uiState.update { it.copy(geminiApiKey = key.orEmpty()) }
+                settings.geminiApiKeyStateFlow.collect { state ->
+                    _uiState.update { it.copy(geminiApiKeyState = state) }
                 }
             }
             launch {
@@ -208,15 +208,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         processorJob = viewModelScope.launch {
             // Fetch latest settings before processing
             val persistedProvider = settings.providerFlow.firstOrNull() ?: _uiState.value.provider
-            val persistedAssemblyKey = settings.assemblyApiKeyFlow.firstOrNull().orEmpty()
-            val persistedGeminiKey = settings.geminiApiKeyFlow.firstOrNull().orEmpty()
+            val persistedAssemblyKey = settings.assemblyApiKeyStateFlow.firstOrNull() ?: _uiState.value.assemblyApiKeyState
+            val persistedGeminiKey = settings.geminiApiKeyStateFlow.firstOrNull() ?: _uiState.value.geminiApiKeyState
 
             // Update keys in state
             _uiState.update {
                 it.copy(
                     provider = persistedProvider,
-                    assemblyApiKey = persistedAssemblyKey,
-                    geminiApiKey = persistedGeminiKey
+                    assemblyApiKeyState = persistedAssemblyKey,
+                    geminiApiKeyState = persistedGeminiKey
                 )
             }
 
@@ -238,11 +238,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 else -> persistedProvider.modelName
             }
 
-            if (neededKey.isBlank()) {
+            if (neededKey != ApiKeyState.Present) {
                 // Only show error if there are jobs queued/pending.
                 if (_uiState.value.jobs.any { it.status == "Queued" } || _uiState.value.status.contains("Queuing")) {
+                    val msg = if (neededKey is ApiKeyState.Error) {
+                        "Error: Keystore decryption failed. Please re-save your API key."
+                    } else {
+                        "Error: ${if (usingAssembly) "AssemblyAI" else "Gemini"} API Key is not set. Please configure in Settings."
+                    }
                     _uiState.update {
-                        it.copy(status = "Error: ${if (usingAssembly) "AssemblyAI" else "Gemini"} API Key is not set. Please configure in Settings.")
+                        it.copy(status = msg)
                     }
                 }
                 // Stop processor; it will be restarted when settings change or new job arrives.
@@ -273,7 +278,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         uri = jobState.uri!!,
                         displayName = jobState.displayName,
                         usingAssembly = usingAssembly,
-                        apiKey = neededKey,
                         geminiModel = geminiModelName // Pass the specific model name string
                     )
                     processedCount++
@@ -297,14 +301,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     fun setAssemblyKey(k: String) {
-        _uiState.update { it.copy(assemblyApiKey = k) }
         viewModelScope.launch {
             settings.saveAssemblyApiKey(k)
             startJobProcessor() // Restart processor if it was waiting for key
         }
     }
     fun setGeminiKey(k: String) {
-        _uiState.update { it.copy(geminiApiKey = k) }
         viewModelScope.launch {
             settings.saveGeminiApiKey(k)
             startJobProcessor() // Restart processor if it was waiting for key
@@ -321,18 +323,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(customModelValidation = CustomModelValidation.Error(ERR_ENTER_MODEL_NAME)) }
             return
         }
-        val apiKey = _uiState.value.geminiApiKey
-        if (apiKey.isBlank()) {
-            _uiState.update { it.copy(customModelValidation = CustomModelValidation.Error(ERR_ENTER_GEMINI_KEY)) }
-            return
-        }
         _uiState.update { it.copy(customModelValidation = CustomModelValidation.Validating) }
         viewModelScope.launch {
+            val keyChars = settings.getGeminiApiKey()
+            if (keyChars == null || keyChars.isEmpty()) {
+                val keyState = _uiState.value.geminiApiKeyState
+                val errMsg = if (keyState is ApiKeyState.Error)
+                    "Keystore error: ${keyState.message}. Please re-enter your key."
+                else ERR_ENTER_GEMINI_KEY
+                _uiState.update { it.copy(customModelValidation = CustomModelValidation.Error(errMsg)) }
+                return@launch
+            }
+
             try {
                 val url = "$GEMINI_MODELS_BASE_URL/$trimmed"
                 val request = Request.Builder()
                     .url(url)
-                    .header(GEMINI_API_KEY_HEADER, apiKey)
+                    .header(GEMINI_API_KEY_HEADER, String(keyChars).also { keyChars.fill('\u0000') })
                     .build()
                 val (isSuccess, code, bodyText) = withContext(ioDispatcher) {
                     httpClient.newCall(request).execute().use { resp ->
@@ -368,13 +375,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun forgetAssemblyKey() {
         viewModelScope.launch {
             settings.forgetAssemblyApiKey()
-            _uiState.update { it.copy(assemblyApiKey = "") }
         }
     }
     fun forgetGeminiKey() {
         viewModelScope.launch {
             settings.forgetGeminiApiKey()
-            _uiState.update { it.copy(geminiApiKey = "") }
         }
     }
 
@@ -467,7 +472,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun processSingleJob(jobId: String, uri: Uri, displayName: String, usingAssembly: Boolean, apiKey: String, geminiModel: String?) {
+    private suspend fun processSingleJob(jobId: String, uri: Uri, displayName: String, usingAssembly: Boolean, geminiModel: String?) {
         val app = getApplication<Application>()
         val contentResolver = app.contentResolver
 
@@ -557,23 +562,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (sourceForAssembly == null) {
                     throw IllegalStateException("Internal error: AssemblyAI source (File or Uri) is missing.")
                 }
-                transcribeWithAssemblyReturn(
-                    source = sourceForAssembly,
-                    apiKey = apiKey,
-                    onStatus = { s -> updateJob(jobId) { it.copy(status = "AssemblyAI: $s") } }
-                )
+                val keyChars = settings.getAssemblyApiKey() ?: throw IllegalStateException("API key missing or corrupted")
+
+                try {
+                    transcribeWithAssemblyReturn(
+                        source = sourceForAssembly,
+                        apiKey = keyChars,
+                        onStatus = { s -> updateJob(jobId) { it.copy(status = "AssemblyAI: $s") } }
+                    )
+                } finally {
+                    keyChars.fill('\u0000')
+                }
             } else {
                 // Ensure geminiModel and data are not null
                 if (geminiModel == null) throw IllegalStateException("Gemini model not specified.")
                 if (bytesForGemini == null || mimeTypeForGemini == null) throw IllegalStateException("Internal error: Gemini audio data is missing.")
 
-                transcribeWithGeminiReturn(
-                    audioBytes = bytesForGemini,
-                    mimeType = mimeTypeForGemini,
-                    apiKey = apiKey,
-                    modelName = geminiModel,
-                    onStatus = { s -> updateJob(jobId) { it.copy(status = "Gemini: $s") } }
-                )
+                val keyChars = settings.getGeminiApiKey() ?: throw IllegalStateException("API key missing or corrupted")
+
+                try {
+                    transcribeWithGeminiReturn(
+                        audioBytes = bytesForGemini,
+                        mimeType = mimeTypeForGemini,
+                        apiKey = keyChars,
+                        modelName = geminiModel,
+                        onStatus = { s -> updateJob(jobId) { it.copy(status = "Gemini: $s") } }
+                    )
+                } finally {
+                    keyChars.fill('\u0000')
+                }
             }
 
             // Persist in history
@@ -634,7 +651,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Updated transcribeWithAssemblyReturn (Increased Timeout, supports File or Uri via streaming)
     private suspend fun transcribeWithAssemblyReturn(
         source: Any, // Accepts File (converted) or Uri (original)
-        apiKey: String,
+        apiKey: CharArray,
         onStatus: (String) -> Unit
     ): TranscriptionData {
         try {
@@ -656,24 +673,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             // The Retrofit interface handles the upload regardless of the RequestBody implementation
-            val uploadResponse = api.uploadFile(apiKey, requestFileBody)
+            val uploadResponse = api.uploadFile(String(apiKey), requestFileBody)
+
             val audioUrl = uploadResponse.uploadUrl
 
             onStatus("2/4 Creating transcript...")
             val transcriptRequest = TranscriptRequest(audioUrl = audioUrl)
-            var transcriptResponse = api.createTranscript(apiKey, transcriptRequest)
+            var transcriptResponse = api.createTranscript(String(apiKey), transcriptRequest)
             val transcriptId = transcriptResponse.id
 
             onStatus("3/4 Waiting for result...")
             // Increased timeout from 36 (3 min) to 120 (10 min) for longer files
             repeat(120) {
-                transcriptResponse = api.getTranscript(apiKey, transcriptId)
+                transcriptResponse = api.getTranscript(String(apiKey), transcriptId)
                 when (transcriptResponse.status) {
                     "completed" -> {
                         val detectedLanguage = transcriptResponse.languageCode ?: "Unknown"
                         val newTranscription = transcriptResponse.text ?: "No text found."
                         // Cleanup remote transcript
-                        runCatching { api.deleteTranscript(apiKey, transcriptId) }
+                        runCatching { api.deleteTranscript(String(apiKey), transcriptId) }
                         onStatus("4/4 Success")
                         return TranscriptionData(
                             text = newTranscription,
@@ -682,7 +700,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     }
                     "error" -> {
-                        runCatching { api.deleteTranscript(apiKey, transcriptId) }
+                        runCatching { api.deleteTranscript(String(apiKey), transcriptId) }
                         throw IllegalStateException("Transcription failed. ${transcriptResponse.error.orEmpty()}")
                     }
                     else -> { /* continue waiting */ }
@@ -706,7 +724,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun transcribeWithGeminiReturn(
         audioBytes: ByteArray,
         mimeType: String,
-        apiKey: String,
+        apiKey: CharArray,
         modelName: String, // Accept the model name string
         onStatus: (String) -> Unit
     ): TranscriptionData {
@@ -752,7 +770,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 Part.fromBytes(audioBytes, mimeType)
             )
 
-            val client = Client.builder().apiKey(apiKey).build()
+            val client = Client.builder().apiKey(String(apiKey)).build()
             val response: GenerateContentResponse = withContext(ioDispatcher) {
                 // Use the dynamic model name
                 client.models.generateContent(modelName, content, config)
@@ -785,11 +803,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update { it.copy(status = "Nothing to summarize for ${job.displayName}.") }
                 return@launch
             }
-            val apiKey = state.geminiApiKey
-            if (apiKey.isBlank()) {
-                _uiState.update { it.copy(status = "Error: Gemini API Key is not set (Settings).") }
+            val keyChars = settings.getGeminiApiKey()
+            if (keyChars == null || keyChars.isEmpty()) {
+                _uiState.update { it.copy(status = "Error: Gemini API Key is not set (Settings) or Keystore error.") }
                 return@launch
             }
+            val apiKey = String(keyChars)
+            keyChars.fill('\u0000')
 
             // Determine which model to use for summarization.
             // We default to the currently selected provider if it's Gemini, otherwise use Flash as a sensible default if API key is present.

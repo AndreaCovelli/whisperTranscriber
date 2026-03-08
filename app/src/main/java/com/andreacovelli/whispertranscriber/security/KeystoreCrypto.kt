@@ -45,19 +45,16 @@ object KeystoreCrypto {
         return "$ivB64:$ctB64"
     }
 
+    @Throws(java.security.GeneralSecurityException::class)
     fun decryptFromBase64(data: String): ByteArray? {
         if (data.isBlank()) return null
         val parts = data.split(":")
         if (parts.size != 2) return null
-        return try {
-            val iv = Base64.decode(parts[0], Base64.NO_WRAP)
-            val ciphertext = Base64.decode(parts[1], Base64.NO_WRAP)
-            val cipher = Cipher.getInstance(TRANSFORMATION)
-            val spec = GCMParameterSpec(128, iv)
-            cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), spec)
-            cipher.doFinal(ciphertext)
-        } catch (_: Exception) {
-            null
-        }
+        val iv = Base64.decode(parts[0], Base64.NO_WRAP)
+        val ciphertext = Base64.decode(parts[1], Base64.NO_WRAP)
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        val spec = GCMParameterSpec(128, iv)
+        cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), spec)
+        return cipher.doFinal(ciphertext)
     }
 }

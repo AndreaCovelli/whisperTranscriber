@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
@@ -65,6 +66,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.itemKey
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.ui.theme.WhisperTranscriberTheme
 import java.time.Instant
@@ -347,7 +350,7 @@ fun MainScreen(
                 items(uiState.jobs, key = { it.id }) { job ->
                     TranscriptionJobCard(
                         job = job,
-                        canSummarize = uiState.geminiApiKey.isNotBlank(),
+                        canSummarize = uiState.geminiApiKeyState is ApiKeyState.Present,
                         onSummarize = { viewModel.summarizeJob(job.id) },
                         onCopyTranscript = {
                             scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", job.transcript))) }
@@ -393,10 +396,18 @@ private fun TranscriptionJobCard(
                     )
                 )
         ) {
-            Text(
-                text = job.displayName.ifBlank { "Audio file" },
-                style = MaterialTheme.typography.titleMedium
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = job.displayName.ifBlank { "Audio file" },
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
             Spacer(Modifier.height(4.dp))
 
             val secondary = buildString {
@@ -559,8 +570,8 @@ fun SettingsScreen(
             ApiKeyCard(
                 title = "AssemblyAI API Key",
                 label = "Enter AssemblyAI API key",
-                keyValue = uiState.assemblyApiKey,
-                onValueChange = viewModel::setAssemblyKey,
+                apiKeyState = uiState.assemblyApiKeyState,
+                onSave = viewModel::setAssemblyKey,
                 onForget = viewModel::forgetAssemblyKey,
                 forgetMessage = "AssemblyAI key forgotten",
                 snackbarHostState = snackbarHostState
@@ -569,8 +580,8 @@ fun SettingsScreen(
             ApiKeyCard(
                 title = "Gemini API Key",
                 label = "Enter Gemini API key",
-                keyValue = uiState.geminiApiKey,
-                onValueChange = viewModel::setGeminiKey,
+                apiKeyState = uiState.geminiApiKeyState,
+                onSave = viewModel::setGeminiKey,
                 onForget = viewModel::forgetGeminiKey,
                 forgetMessage = "Gemini key forgotten",
                 snackbarHostState = snackbarHostState
@@ -583,14 +594,16 @@ fun SettingsScreen(
 private fun ApiKeyCard(
     title: String,
     label: String,
-    keyValue: String,
-    onValueChange: (String) -> Unit,
+    apiKeyState: ApiKeyState,
+    onSave: (String) -> Unit,
     onForget: () -> Unit,
     forgetMessage: String,
     snackbarHostState: SnackbarHostState
 ) {
     val scope = rememberCoroutineScope()
+    var inputKey by remember { mutableStateOf("") }
     var showKey by remember { mutableStateOf(false) }
+
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -598,10 +611,12 @@ private fun ApiKeyCard(
         ) {
             Text(title, style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(
-                value = keyValue,
-                onValueChange = onValueChange,
-                label = { Text(label) },
-                modifier = Modifier.fillMaxWidth(),
+                value = inputKey,
+                onValueChange = { inputKey = it },
+                label = { Text(if (apiKeyState is ApiKeyState.Present) "Replace saved key (optional)" else label) },
+                modifier = Modifier.fillMaxWidth().onFocusChanged { focusState ->
+                    if (!focusState.isFocused && inputKey.isNotBlank()) onSave(inputKey)
+                },
                 visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = {
                     IconButton(onClick = { showKey = !showKey }) {
@@ -613,7 +628,7 @@ private fun ApiKeyCard(
                 },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
             )
-            if (keyValue.isNotBlank()) {
+            if (apiKeyState is ApiKeyState.Present) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -628,6 +643,23 @@ private fun ApiKeyCard(
                         "Encrypted & saved",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else if (apiKeyState is ApiKeyState.Error) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Error,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                    Text(
+                        "Keystore Error: ${apiKeyState.message}. Please re-enter your key.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
                     )
                 }
             }
@@ -793,20 +825,18 @@ private fun ProviderRadioOption(
     }
 }
 
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(
     historyViewModel: HistoryViewModel = viewModel(),
     onNavigateBack: () -> Unit
 ) {
-    val historyItems by historyViewModel.historyState.collectAsStateWithLifecycle()
+    val pagedItems = historyViewModel.pagedHistoryItems.collectAsLazyPagingItems()
     val clipboardManager = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
     val searchQuery by historyViewModel.searchQuery.collectAsStateWithLifecycle()
-    val filteredItems by historyViewModel.filteredHistoryItems.collectAsStateWithLifecycle()
     var showDeleteAllDialog by remember { mutableStateOf(false) }
 
     val expandedIdsSaver = listSaver<Set<Int>, Int>(
@@ -842,7 +872,7 @@ fun HistoryScreen(
                     }
                 },
                 actions = {
-                    if (historyItems.isNotEmpty()) {
+                    if (pagedItems.itemCount > 0 || searchQuery.isNotEmpty()) {
                         IconButton(onClick = { showDeleteAllDialog = true }) {
                             Icon(Icons.Default.DeleteSweep, "Delete all history")
                         }
@@ -861,7 +891,7 @@ fun HistoryScreen(
                     indication = null
                 ) { focusManager.clearFocus() }
         ) {
-            if (historyItems.isNotEmpty()) {
+            if (pagedItems.itemCount > 0 || searchQuery.isNotEmpty()) {
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { historyViewModel.setSearchQuery(it) },
@@ -879,7 +909,7 @@ fun HistoryScreen(
                     } else null
                 )
             }
-            if (filteredItems.isEmpty()) {
+            if (pagedItems.itemCount == 0) {
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -887,7 +917,7 @@ fun HistoryScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        if (historyItems.isEmpty()) "No history yet."
+                        if (searchQuery.isEmpty()) "No history yet."
                         else "No results for \"$searchQuery\"",
                         style = MaterialTheme.typography.bodyLarge
                     )
@@ -897,22 +927,28 @@ fun HistoryScreen(
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(vertical = 8.dp)
                 ) {
-                    items(filteredItems, key = { it.id }) { item ->
-                        HistoryItemCard(
-                            item = item,
-                            expanded = expandedIds.contains(item.id),
-                            onToggleExpand = {
-                                @Suppress("UNUSED_VALUE")
-                                expandedIds = if (expandedIds.contains(item.id))
-                                    expandedIds - item.id else expandedIds + item.id
-                            },
-                            onCopy = { text ->
-                                scope.launch { clipboardManager.setClipEntry(ClipEntry(ClipData.newPlainText("", text))) }
-                                Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
-                            },
-                            onDelete = { historyViewModel.deleteHistoryItem(item) },
-                            searchQuery = searchQuery
-                        )
+                    items(
+                        count = pagedItems.itemCount,
+                        key = pagedItems.itemKey { it.id }
+                    ) { index ->
+                        val item = pagedItems[index]
+                        if (item != null) {
+                            HistoryItemCard(
+                                item = item,
+                                expanded = expandedIds.contains(item.id),
+                                onToggleExpand = {
+                                    @Suppress("UNUSED_VALUE")
+                                    expandedIds = if (expandedIds.contains(item.id))
+                                        expandedIds - item.id else expandedIds + item.id
+                                },
+                                onCopy = { text ->
+                                    scope.launch { clipboardManager.setClipEntry(ClipEntry(ClipData.newPlainText("", text))) }
+                                    Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                                },
+                                onDelete = { historyViewModel.deleteHistoryItem(item) },
+                                searchQuery = searchQuery
+                            )
+                        }
                     }
                 }
             }

@@ -3,15 +3,19 @@ package com.andreacovelli.whispertranscriber
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
 import com.andreacovelli.whispertranscriber.data.AppDatabase
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistoryDao
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 
 class HistoryViewModel(application: Application) : AndroidViewModel(application) {
@@ -23,13 +27,6 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
         historyDao = database.transcriptionHistoryDao()
     }
 
-    val historyState = historyDao.getAllHistory()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
-
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
@@ -37,18 +34,21 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
         _searchQuery.value = query
     }
 
-    val filteredHistoryItems = combine(historyState, _searchQuery) { items, query ->
-        if (query.isBlank()) items
-        else items.filter {
-            it.text.contains(query, ignoreCase = true) ||
-            it.displayName.contains(query, ignoreCase = true) ||
-            it.summary.contains(query, ignoreCase = true)
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val pagedHistoryItems: Flow<PagingData<TranscriptionHistory>> = _searchQuery
+        .flatMapLatest { query ->
+            Pager(
+                config = PagingConfig(pageSize = 20, enablePlaceholders = true),
+                pagingSourceFactory = {
+                    if (query.isBlank()) {
+                        historyDao.getAllHistoryPaged()
+                    } else {
+                        historyDao.searchHistoryPaged(query)
+                    }
+                }
+            ).flow
         }
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = emptyList()
-    )
+        .cachedIn(viewModelScope)
 
     fun deleteHistoryItem(item: TranscriptionHistory) {
         viewModelScope.launch {

@@ -1,6 +1,7 @@
 package com.andreacovelli.whispertranscriber.data
 
 import android.content.Context
+import androidx.paging.PagingSource
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Delete
@@ -40,6 +41,12 @@ interface TranscriptionHistoryDao {
 
     @Query("SELECT * FROM transcription_history ORDER BY timestamp DESC")
     fun getAllHistory(): Flow<List<TranscriptionHistory>>
+
+    @Query("SELECT * FROM transcription_history ORDER BY timestamp DESC")
+    fun getAllHistoryPaged(): PagingSource<Int, TranscriptionHistory>
+
+    @Query("SELECT * FROM transcription_history WHERE displayName LIKE '%' || :query || '%' OR text LIKE '%' || :query || '%' OR summary LIKE '%' || :query || '%' ORDER BY timestamp DESC")
+    fun searchHistoryPaged(query: String): PagingSource<Int, TranscriptionHistory>
 
     @Query("SELECT * FROM transcription_history WHERE id = :id")
     fun getHistoryItemById(id: Int): Flow<TranscriptionHistory?>
