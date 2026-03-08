@@ -9,6 +9,8 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.andreacovelli.whispertranscriber.security.KeystoreCrypto
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.firstOrNull
+import java.nio.charset.StandardCharsets
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
@@ -20,6 +22,12 @@ enum class TranscriptionProvider(val modelName: String? = null) {
     GEMINI_CUSTOM; // model name stored separately in DataStore
 
     fun isGemini(): Boolean = this != ASSEMBLY_AI
+}
+
+sealed class ApiKeyState {
+    object Missing : ApiKeyState()
+    object Present : ApiKeyState()
+    data class Error(val message: String) : ApiKeyState()
 }
 
 class ApiKeyManager(private val context: Context) {
@@ -80,18 +88,57 @@ class ApiKeyManager(private val context: Context) {
         }
     }
 
-    // migrateToEncryptedIfNeeded() removed as requested.
-
-    // Read (decrypt only when needed)
-    val assemblyApiKeyFlow: Flow<String?> = context.dataStore.data.map { p ->
-        p[ASSEMBLY_API_KEY_ENC]?.let { enc ->
-            KeystoreCrypto.decryptFromBase64(enc)?.toString(Charsets.UTF_8)
+    // Read flows for UI state (does not expose keys)
+    val assemblyApiKeyStateFlow: Flow<ApiKeyState> = context.dataStore.data.map { p ->
+        val enc = p[ASSEMBLY_API_KEY_ENC]
+        if (enc == null) ApiKeyState.Missing
+        else {
+            try {
+                KeystoreCrypto.decryptFromBase64(enc)?.fill(0)
+                ApiKeyState.Present
+            } catch (e: Exception) {
+                ApiKeyState.Error(e.message ?: "Keystore decryption failed")
+            }
         }
     }
 
-    val geminiApiKeyFlow: Flow<String?> = context.dataStore.data.map { p ->
-        p[GEMINI_API_KEY_ENC]?.let { enc ->
-            KeystoreCrypto.decryptFromBase64(enc)?.toString(Charsets.UTF_8)
+    val geminiApiKeyStateFlow: Flow<ApiKeyState> = context.dataStore.data.map { p ->
+        val enc = p[GEMINI_API_KEY_ENC]
+        if (enc == null) ApiKeyState.Missing
+        else {
+            try {
+                KeystoreCrypto.decryptFromBase64(enc)?.fill(0)
+                ApiKeyState.Present
+            } catch (e: Exception) {
+                ApiKeyState.Error(e.message ?: "Keystore decryption failed")
+            }
+        }
+    }
+
+    // Suspend functions to securely read keys on-demand
+    suspend fun getAssemblyApiKey(): CharArray? {
+        val prefs = context.dataStore.data.firstOrNull() ?: return null
+        val enc = prefs[ASSEMBLY_API_KEY_ENC] ?: return null
+        return try {
+            val bytes = KeystoreCrypto.decryptFromBase64(enc) ?: return null
+            val chars = StandardCharsets.UTF_8.decode(java.nio.ByteBuffer.wrap(bytes)).array()
+            bytes.fill(0)
+            chars
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    suspend fun getGeminiApiKey(): CharArray? {
+        val prefs = context.dataStore.data.firstOrNull() ?: return null
+        val enc = prefs[GEMINI_API_KEY_ENC] ?: return null
+        return try {
+            val bytes = KeystoreCrypto.decryptFromBase64(enc) ?: return null
+            val chars = StandardCharsets.UTF_8.decode(java.nio.ByteBuffer.wrap(bytes)).array()
+            bytes.fill(0)
+            chars
+        } catch (e: Exception) {
+            null
         }
     }
 
@@ -108,7 +155,6 @@ class ApiKeyManager(private val context: Context) {
                 TranscriptionProvider.ASSEMBLY_AI
             }
         } catch (_: IllegalArgumentException) {
-            // Handle case where stored value might be obsolete (e.g., if GEMINI_25_FLASH was stored before)
             if (providerName == "GEMINI_25_FLASH") {
                 TranscriptionProvider.GEMINI_FLASH
             } else {
