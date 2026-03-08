@@ -174,13 +174,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             launch {
-                settings.assemblyApiKeyFlow.collect { key ->
-                    _uiState.update { it.copy(assemblyApiKey = key.orEmpty()) }
+                settings.assemblyApiKeyStateFlow.collect { state ->
+                    _uiState.update { it.copy(assemblyApiKeyState = state) }
                 }
             }
             launch {
-                settings.geminiApiKeyFlow.collect { key ->
-                    _uiState.update { it.copy(geminiApiKey = key.orEmpty()) }
+                settings.geminiApiKeyStateFlow.collect { state ->
+                    _uiState.update { it.copy(geminiApiKeyState = state) }
                 }
             }
             launch {
@@ -308,14 +308,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     fun setAssemblyKey(k: String) {
-        _uiState.update { it.copy(assemblyApiKey = k) }
         viewModelScope.launch {
             settings.saveAssemblyApiKey(k)
             startJobProcessor() // Restart processor if it was waiting for key
         }
     }
     fun setGeminiKey(k: String) {
-        _uiState.update { it.copy(geminiApiKey = k) }
         viewModelScope.launch {
             settings.saveGeminiApiKey(k)
             startJobProcessor() // Restart processor if it was waiting for key
@@ -382,13 +380,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun forgetAssemblyKey() {
         viewModelScope.launch {
             settings.forgetAssemblyApiKey()
-            _uiState.update { it.copy(assemblyApiKey = "") }
         }
     }
     fun forgetGeminiKey() {
         viewModelScope.launch {
             settings.forgetGeminiApiKey()
-            _uiState.update { it.copy(geminiApiKey = "") }
         }
     }
 

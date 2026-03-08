@@ -27,12 +27,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Visibility
@@ -65,6 +69,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.itemKey
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.ui.theme.WhisperTranscriberTheme
 import java.time.Instant
@@ -350,7 +356,7 @@ fun MainScreen(
 
                     TranscriptionJobCard(
                         job = job,
-                        canSummarize = uiState.geminiApiKey.isNotBlank(),
+                        canSummarize = uiState.geminiApiKeyState is ApiKeyState.Present,
                         isPlaying = isPlaying && currentUri == job.uri,
                         onPlayPause = {
                             if (job.uri != null) {
@@ -859,10 +865,6 @@ private fun ProviderRadioOption(
         Text(text)
     }
 }
-
-
-import androidx.paging.compose.collectAsLazyPagingItems
-import androidx.paging.compose.itemKey
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
