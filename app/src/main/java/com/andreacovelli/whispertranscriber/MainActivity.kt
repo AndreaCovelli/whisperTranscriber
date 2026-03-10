@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Visibility
@@ -366,7 +367,8 @@ fun MainScreen(
                                 putExtra(Intent.EXTRA_TEXT, job.transcript)
                             }
                             context.startActivity(Intent.createChooser(sendIntent, null))
-                        }
+                        },
+                        onRetry = { viewModel.retryJob(job.id) }
                     )
                 }
             }
@@ -381,7 +383,8 @@ private fun TranscriptionJobCard(
     onSummarize: () -> Unit,
     onCopyTranscript: () -> Unit,
     onCopySummary: () -> Unit,
-    onShareTranscript: () -> Unit
+    onShareTranscript: () -> Unit,
+    onRetry: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth()
@@ -430,11 +433,24 @@ private fun TranscriptionJobCard(
 
             if (job.error != null) {
                 Spacer(Modifier.height(6.dp))
-                Text(
-                    job.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = job.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedButton(onClick = onRetry) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Retry", modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Retry")
+                    }
+                }
             }
 
             // Improved Progress Indication
