@@ -35,6 +35,8 @@ import retrofit2.HttpException
 import java.io.File
 import com.google.genai.Client
 import com.google.genai.types.Content
+import com.google.genai.types.File as GenAiFile
+import com.google.genai.types.UploadFileConfig
 import com.google.genai.types.GenerateContentConfig
 import com.google.genai.types.GenerateContentResponse
 import com.google.genai.types.Part
@@ -96,6 +98,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         private const val GEMINI_MODELS_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
         private const val GEMINI_API_KEY_HEADER = "x-goog-api-key"
+
+        private const val CONVERTED_FILE_PREFIX = "converted_"
+        private const val DIRECT_FILE_PREFIX = "direct_"
 
         private const val ERR_ENTER_MODEL_NAME = "Enter a model name"
         private const val ERR_ENTER_GEMINI_KEY = "Enter your Gemini API key first"
@@ -427,8 +432,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (!f.isFile) continue
             if (f.lastModified() >= cutoff) continue
 
-            val isConvertedWav = name.startsWith("converted_") && name.endsWith(".wav")
-            val isDirectTmp = name.startsWith("direct_") && name.endsWith(".tmp")
+            val isConvertedWav = name.startsWith(CONVERTED_FILE_PREFIX) && name.endsWith(".wav")
+            val isDirectTmp = name.startsWith(DIRECT_FILE_PREFIX) && name.endsWith(".tmp")
 
             if (isConvertedWav || isDirectTmp) {
                 runCatching { f.delete() }
@@ -527,7 +532,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 updateJob(jobId) { it.copy(status = "$conversionReason. Converting to 16 kHz WAV...", progress = 0f) }
 
                 val outputFile = withContext(ioDispatcher) {
-                    File.createTempFile("converted_${jobId.take(6)}", ".wav", app.cacheDir)
+                    File.createTempFile("${CONVERTED_FILE_PREFIX}${jobId.take(6)}", ".wav", app.cacheDir)
                 }
                 tempFileToClean = outputFile // Mark for cleanup
 
@@ -570,13 +575,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // Copy bytes directly from the URI stream to a temporary file efficiently
                     val tempFile = withContext(ioDispatcher) {
                         contentResolver.openInputStream(uri)?.use { input ->
-                            File.createTempFile("direct_${jobId.take(6)}", ".tmp", app.cacheDir).apply {
+                            File.createTempFile("${DIRECT_FILE_PREFIX}${jobId.take(6)}", ".tmp", app.cacheDir).apply {
                                 outputStream().use { output ->
                                     input.copyTo(output)
                                 }
                             }
                         }
                     } ?: throw IllegalStateException("Failed to read input audio file.")
+
+
                     
                     tempFileToClean = tempFile
                     fileForGemini = tempFile
@@ -772,7 +779,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         modelName: String // Accept the model name string
     ): kotlinx.coroutines.flow.Flow<TranscriptionResult> = kotlinx.coroutines.flow.flow {
         val client = Client.builder().apiKey(String(apiKey)).build()
-        var uploadedFile: com.google.genai.types.File? = null
+        var uploadedFile: GenAiFile? = null
 
         try {
             // Updated status to include upload method
@@ -781,7 +788,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             // File API Upload for all files (robustness against OOM)
             uploadedFile = withContext(ioDispatcher) {
-                val uploadConfig = com.google.genai.types.UploadFileConfig.builder()
+                val uploadConfig = UploadFileConfig.builder()
                     .mimeType(mimeType)
                     .build()
                 client.files.upload(audioFile.absolutePath, uploadConfig)
