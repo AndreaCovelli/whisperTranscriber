@@ -867,6 +867,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             client.files.delete(fileName, null)
                         }
                     }
+                }.onFailure {
+                    // Log cleanup failures for debugging purposes. This can help track orphaned remote files.
+                    android.util.Log.w("MainViewModel", "Failed to delete remote Gemini file: ${remoteFile.name()}", it)
                 }
             }
         }
