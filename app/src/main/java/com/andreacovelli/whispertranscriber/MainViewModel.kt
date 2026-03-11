@@ -863,7 +863,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             uploadedFile?.let { remoteFile ->
                 runCatching {
                     withContext(ioDispatcher) {
-                        client.files.delete(remoteFile.name().get(), null)
+                        remoteFile.name().ifPresent { fileName ->
+                            client.files.delete(fileName, null)
+                        }
                     }
                 }
             }
