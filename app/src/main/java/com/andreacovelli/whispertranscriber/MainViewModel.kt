@@ -573,11 +573,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // Copy bytes directly from the URI stream to a temporary file efficiently
                     val tempFile = withContext(ioDispatcher) {
                         contentResolver.openInputStream(uri)?.use { input ->
-                            val tFile = File.createTempFile("direct_${jobId.take(6)}", ".tmp", app.cacheDir)
-                            tFile.outputStream().use { output ->
-                                input.copyTo(output)
+                            File.createTempFile("direct_${jobId.take(6)}", ".tmp", app.cacheDir).apply {
+                                outputStream().use { output ->
+                                    input.copyTo(output)
+                                }
                             }
-                            tFile
                         }
                     } ?: throw IllegalStateException("Failed to read input audio file.")
                     
