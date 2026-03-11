@@ -97,6 +97,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val GEMINI_MODELS_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
         private const val GEMINI_API_KEY_HEADER = "x-goog-api-key"
 
+        private const val GEMINI_MAX_INLINE_BYTES = 19L * 1024L * 1024L // 19 MiB
+
         private const val ERR_ENTER_MODEL_NAME = "Enter a model name"
         private const val ERR_ENTER_GEMINI_KEY = "Enter your Gemini API key first"
         private const val ERR_MODEL_NOT_FOUND = "Model \"%s\" not found"
@@ -570,13 +572,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                     // Copy bytes directly from the URI stream to a temporary file efficiently
                     val tempFile = withContext(ioDispatcher) {
-                        val tFile = File.createTempFile("direct_${jobId.take(6)}", ".tmp", app.cacheDir)
                         contentResolver.openInputStream(uri)?.use { input ->
+                            val tFile = File.createTempFile("direct_${jobId.take(6)}", ".tmp", app.cacheDir)
                             tFile.outputStream().use { output ->
                                 input.copyTo(output)
                             }
+                            tFile
                         }
-                        tFile
                     } ?: throw IllegalStateException("Failed to read input audio file.")
                     
                     tempFileToClean = tempFile
@@ -777,7 +779,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         try {
             val sizeBytes = audioFile.length()
-            val maxInlineBytes = 19L * 1024L * 1024L
+            val maxInlineBytes = GEMINI_MAX_INLINE_BYTES
             val isLargeFile = sizeBytes > maxInlineBytes
 
             // Update status to include MIME type and upload method for clarity
