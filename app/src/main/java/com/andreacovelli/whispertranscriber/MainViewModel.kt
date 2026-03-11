@@ -422,18 +422,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val app = getApplication<Application>()
         val cache = app.cacheDir ?: return
         val cutoff = System.currentTimeMillis() - maxAgeMs
-        val prefix = "converted_"
-        val suffix = ".wav"
 
         val files = cache.listFiles() ?: return
         for (f in files) {
             val name = f.name
-            if (
-                f.isFile &&
-                name.startsWith(prefix) &&
-                name.endsWith(suffix) &&
-                f.lastModified() < cutoff
-            ) {
+            if (!f.isFile) continue
+            if (f.lastModified() >= cutoff) continue
+
+            val isConvertedWav = name.startsWith("converted_") && name.endsWith(".wav")
+            val isDirectTmp = name.startsWith("direct_") && name.endsWith(".tmp")
+
+            if (isConvertedWav || isDirectTmp) {
                 runCatching { f.delete() }
             }
         }
@@ -789,7 +788,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val audioPart = if (isLargeFile) {
                 // File API Upload for files > 19MB
                 uploadedFile = withContext(ioDispatcher) {
-                    client.files.upload(audioFile.absolutePath, null)
+                    client.files.upload(audioFile.absolutePath, mimeType)
                 }
                 Part.fromUri(
                     uploadedFile.uri().orElseThrow { IllegalStateException("Uploaded file is missing a URI.") },
