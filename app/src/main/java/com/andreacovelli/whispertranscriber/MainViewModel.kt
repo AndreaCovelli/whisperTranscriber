@@ -777,29 +777,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         var uploadedFile: com.google.genai.types.File? = null
 
         try {
-            val sizeBytes = audioFile.length()
-            val maxInlineBytes = GEMINI_MAX_INLINE_BYTES
-            val isLargeFile = sizeBytes > maxInlineBytes
-
-            // Update status to include MIME type and upload method for clarity
-            val methodMsg = if (isLargeFile) "via File API (>19MB)" else "inline"
+            // Updated status to include upload method
+            val methodMsg = "via File API"
             emit(TranscriptionResult.Loading("Uploading audio ($mimeType) $methodMsg..."))
 
-            val audioPart = if (isLargeFile) {
-                // File API Upload for files > 19MB
-                uploadedFile = withContext(ioDispatcher) {
-                    client.files.upload(audioFile.absolutePath, mimeType)
-                }
-                Part.fromUri(
-                    uploadedFile.uri().orElseThrow { IllegalStateException("Uploaded file is missing a URI.") },
-                    uploadedFile.mimeType().orElse(mimeType)
-                )
-
-            } else {
-                // Inline byte array for files <= 19MB
-                val bytes = withContext(ioDispatcher) { audioFile.readBytes() }
-                Part.fromBytes(bytes, mimeType)
+            // File API Upload for all files (robustness against OOM)
+            uploadedFile = withContext(ioDispatcher) {
+                val uploadConfig = com.google.genai.types.UploadFileConfig.builder()
+                    .mimeType(mimeType)
+                    .build()
+                client.files.upload(audioFile.absolutePath, uploadConfig)
             }
+            val audioPart = Part.fromUri(
+                uploadedFile!!.uri().orElseThrow { IllegalStateException("Uploaded file is missing a URI.") },
+                uploadedFile!!.mimeType().orElse(mimeType)
+            )
 
             emit(TranscriptionResult.Loading("Transcribing audio..."))
 
@@ -862,9 +854,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             uploadedFile?.let { remoteFile ->
                 runCatching {
                     withContext(ioDispatcher) {
-                        remoteFile.name().ifPresent { fileName ->
+                        remoteFile.name().ifPresentOrElse({ fileName ->
                             client.files.delete(fileName, null)
-                        }
+                        }, {
+                            android.util.Log.w("MainViewModel", "Could not delete remote Gemini file as its name was not available.")
+                        })
                     }
                 }.onFailure {
                     if (it is CancellationException) throw it
