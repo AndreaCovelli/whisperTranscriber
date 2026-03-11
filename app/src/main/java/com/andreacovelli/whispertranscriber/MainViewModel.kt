@@ -792,9 +792,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     client.files.upload(audioFile.absolutePath, null)
                 }
                 Part.fromUri(
-                    uploadedFile.uri().get(),
+                    uploadedFile.uri().orElseThrow { IllegalStateException("Uploaded file is missing a URI.") },
                     uploadedFile.mimeType().orElse(mimeType)
                 )
+
             } else {
                 // Inline byte array for files <= 19MB
                 val bytes = withContext(ioDispatcher) { audioFile.readBytes() }
