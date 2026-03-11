@@ -786,9 +786,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     .build()
                 client.files.upload(audioFile.absolutePath, uploadConfig)
             }
+            val currentUploadedFile = uploadedFile ?: throw IllegalStateException("File upload failed unexpectedly and did not produce a file object.")
             val audioPart = Part.fromUri(
-                uploadedFile!!.uri().orElseThrow { IllegalStateException("Uploaded file is missing a URI.") },
-                uploadedFile.mimeType().orElse(mimeType)
+                currentUploadedFile.uri().orElseThrow { IllegalStateException("Uploaded file is missing a URI.") },
+                currentUploadedFile.mimeType().orElse(mimeType)
             )
 
             emit(TranscriptionResult.Loading("Transcribing audio..."))
