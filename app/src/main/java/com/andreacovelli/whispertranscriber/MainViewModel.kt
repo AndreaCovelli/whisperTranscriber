@@ -614,7 +614,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 val keyChars = settings.getGeminiApiKey() ?: throw IllegalStateException("API key missing or corrupted")
                 val providerFlow = transcribeWithGeminiReturn(
-                    audioFile = fileForGemini!!,
+                    audioFile = fileForGemini,
                     mimeType = mimeTypeForGemini,
                     apiKey = keyChars,
                     modelName = geminiModel
@@ -868,8 +868,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                 }.onFailure {
+                    if (it is CancellationException) throw it
                     // Log cleanup failures for debugging purposes. This can help track orphaned remote files.
-                    android.util.Log.w("MainViewModel", "Failed to delete remote Gemini file: ${remoteFile.name()}", it)
+                    android.util.Log.w("MainViewModel", "Failed to delete remote Gemini file: ${remoteFile.name().orElse("[name not available]")}", it)
                 }
             }
         }
