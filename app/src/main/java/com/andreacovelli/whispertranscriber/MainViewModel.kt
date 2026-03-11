@@ -97,8 +97,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val GEMINI_MODELS_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
         private const val GEMINI_API_KEY_HEADER = "x-goog-api-key"
 
-        private const val GEMINI_MAX_INLINE_BYTES = 19L * 1024L * 1024L // 19 MiB
-
         private const val ERR_ENTER_MODEL_NAME = "Enter a model name"
         private const val ERR_ENTER_GEMINI_KEY = "Enter your Gemini API key first"
         private const val ERR_MODEL_NOT_FOUND = "Model \"%s\" not found"
@@ -790,7 +788,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             val audioPart = Part.fromUri(
                 uploadedFile!!.uri().orElseThrow { IllegalStateException("Uploaded file is missing a URI.") },
-                uploadedFile!!.mimeType().orElse(mimeType)
+                uploadedFile.mimeType().orElse(mimeType)
             )
 
             emit(TranscriptionResult.Loading("Transcribing audio..."))
@@ -869,10 +867,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun friendlyHttpError(code: Int, provider: String): String = when {
-        code == 401 -> "Unauthorized. Check your $provider API key."
-        code == 429 -> "Rate limit exceeded. Please wait a moment and try again."
-        code in 500..599 -> "Server error (HTTP $code). $provider's servers are experiencing issues. Please try again later."
+    private fun friendlyHttpError(code: Int, provider: String): String = when (code) {
+        401 -> "Unauthorized. Check your $provider API key."
+        429 -> "Rate limit exceeded. Please wait a moment and try again."
+        in 500..599 -> "Server error (HTTP $code). $provider's servers are experiencing issues. Please try again later."
         else -> "HTTP $code: unexpected error from $provider."
     }
 
