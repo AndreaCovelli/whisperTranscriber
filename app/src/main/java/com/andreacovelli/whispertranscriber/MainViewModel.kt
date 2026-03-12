@@ -35,6 +35,8 @@ import retrofit2.HttpException
 import java.io.File
 import com.google.genai.Client
 import com.google.genai.types.Content
+import com.google.genai.types.File as GenAiFile
+import com.google.genai.types.UploadFileConfig
 import com.google.genai.types.GenerateContentConfig
 import com.google.genai.types.GenerateContentResponse
 import com.google.genai.types.Part
@@ -96,6 +98,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         private const val GEMINI_MODELS_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
         private const val GEMINI_API_KEY_HEADER = "x-goog-api-key"
+
+        private const val CONVERTED_FILE_PREFIX = "converted_"
+        private const val DIRECT_FILE_PREFIX = "direct_"
 
         private const val ERR_ENTER_MODEL_NAME = "Enter a model name"
         private const val ERR_ENTER_GEMINI_KEY = "Enter your Gemini API key first"
@@ -420,18 +425,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val app = getApplication<Application>()
         val cache = app.cacheDir ?: return
         val cutoff = System.currentTimeMillis() - maxAgeMs
-        val prefix = "converted_"
-        val suffix = ".wav"
 
         val files = cache.listFiles() ?: return
         for (f in files) {
             val name = f.name
-            if (
-                f.isFile &&
-                name.startsWith(prefix) &&
-                name.endsWith(suffix) &&
-                f.lastModified() < cutoff
-            ) {
+            if (!f.isFile) continue
+            if (f.lastModified() >= cutoff) continue
+
+            val isConvertedWav = name.startsWith(CONVERTED_FILE_PREFIX) && name.endsWith(".wav")
+            val isDirectTmp = name.startsWith(DIRECT_FILE_PREFIX) && name.endsWith(".tmp")
+
+            if (isConvertedWav || isDirectTmp) {
                 runCatching { f.delete() }
             }
         }
@@ -509,12 +513,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             else -> inputMimeType !in SUPPORTED_GEMINI_MIME_TYPES // Gemini
         }
 
-        // This will hold the converted file if created, otherwise null. Used for cleanup.
-        var convertedTempFile: File? = null
+        // This will hold the temp file if created, otherwise null. Used for cleanup.
+        var tempFileToClean: File? = null
 
         try {
             // Data holders for transcription step
-            var bytesForGemini: ByteArray? = null
+            var fileForGemini: File? = null
             var mimeTypeForGemini: String? = null
             // For AssemblyAI, we use either the converted File or the original Uri for streaming
             var sourceForAssembly: Any? = null // Can be File or Uri
@@ -528,9 +532,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 updateJob(jobId) { it.copy(status = "$conversionReason. Converting to 16 kHz WAV...", progress = 0f) }
 
                 val outputFile = withContext(ioDispatcher) {
-                    File.createTempFile("converted_${jobId.take(6)}", ".wav", app.cacheDir)
+                    File.createTempFile("${CONVERTED_FILE_PREFIX}${jobId.take(6)}", ".wav", app.cacheDir)
                 }
-                convertedTempFile = outputFile // Mark for cleanup
+                tempFileToClean = outputFile // Mark for cleanup
 
                 HardwareAudioConverter.convertToWav(
                     context = app,
@@ -551,9 +555,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (usingAssembly) {
                     sourceForAssembly = outputFile
                 } else {
-                    // If converted for Gemini, load bytes from the temp file.
-                    updateJob(jobId) { it.copy(status = "Loading converted audio...") }
-                    bytesForGemini = withContext(ioDispatcher) { outputFile.readBytes() }
+                    // If converted for Gemini, use the temp file directly.
+                    updateJob(jobId) { it.copy(status = "Converted audio ready for Gemini...") }
+                    fileForGemini = outputFile
                     mimeTypeForGemini = "audio/wav"
                 }
 
@@ -566,14 +570,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     sourceForAssembly = uri
                 } else {
                     // Gemini
-                    updateJob(jobId) { it.copy(status = "Format supported ($inputMimeType). Loading audio directly...", progress = 0.5f) }
+                    updateJob(jobId) { it.copy(status = "Format supported ($inputMimeType). Copying audio for Gemini...", progress = 0.5f) }
 
-                    // Read bytes directly from the URI stream efficiently
-                    bytesForGemini = withContext(ioDispatcher) {
-                        contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    // Copy bytes directly from the URI stream to a temporary file efficiently
+                    val tempFile = withContext(ioDispatcher) {
+                        contentResolver.openInputStream(uri)?.use { input ->
+                            File.createTempFile("${DIRECT_FILE_PREFIX}${jobId.take(6)}", ".tmp", app.cacheDir).apply {
+                                outputStream().use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+                        }
                     } ?: throw IllegalStateException("Failed to read input audio file.")
-                    mimeTypeForGemini =
-                        inputMimeType // Guaranteed not null because conversionNeeded is false
+
+
+                    
+                    tempFileToClean = tempFile
+                    fileForGemini = tempFile
+                    mimeTypeForGemini = inputMimeType // Guaranteed not null because conversionNeeded is false
 
                     updateJob(jobId) { it.copy(progress = 1f) }
                 }
@@ -600,11 +614,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 // Ensure geminiModel and data are not null
                 if (geminiModel == null) throw IllegalStateException("Gemini model not specified.")
-                if (bytesForGemini == null || mimeTypeForGemini == null) throw IllegalStateException("Internal error: Gemini audio data is missing.")
+                if (fileForGemini == null || mimeTypeForGemini == null) throw IllegalStateException("Internal error: Gemini audio data is missing.")
 
                 val keyChars = settings.getGeminiApiKey() ?: throw IllegalStateException("API key missing or corrupted")
                 val providerFlow = transcribeWithGeminiReturn(
-                    audioBytes = bytesForGemini,
+                    audioFile = fileForGemini,
                     mimeType = mimeTypeForGemini,
                     apiKey = keyChars,
                     modelName = geminiModel
@@ -654,8 +668,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         } finally {
-            // Cleanup the temp file if it was created (i.e., if conversion happened)
-            convertedTempFile?.let { runCatching { it.delete() } }
+            // Cleanup the temp file if it was created
+            tempFileToClean?.let { runCatching { it.delete() } }
         }
     }
 
@@ -757,27 +771,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Updated transcribeWithGeminiReturn (Robustness, Model Selection, and Direct Bytes Input)
-    // MODIFIED: Changed signature to accept ByteArray and mimeType instead of File.
+    // Updated transcribeWithGeminiReturn (Robustness, Model Selection, and File API for Large Files)
     private fun transcribeWithGeminiReturn(
-        audioBytes: ByteArray,
+        audioFile: File,
         mimeType: String,
         apiKey: CharArray,
         modelName: String // Accept the model name string
     ): kotlinx.coroutines.flow.Flow<TranscriptionResult> = kotlinx.coroutines.flow.flow {
-        try {
-            // Use the size of the byte array
-            val sizeBytes = audioBytes.size.toLong()
-            // Adjusting limit slightly based on Gemini documentation (approx 20MB for inline data)
-            val maxBytes = 19L * 1024L * 1024L
-            if (sizeBytes > maxBytes) {
-                // Clarified error message using MiB
-                throw IllegalArgumentException("Audio is ${"%.1f".format(sizeBytes / (1024f * 1024f))} MiB. Gemini inline limit is ~20 MiB.")
-            }
+        val client = Client.builder().apiKey(String(apiKey)).build()
+        var uploadedFile: GenAiFile? = null
 
-            // Update status to include MIME type for clarity
-            emit(TranscriptionResult.Loading("Uploading audio ($mimeType) and transcribing..."))
-            // Removed file reading logic as bytes are now passed in.
+        try {
+            // Updated status to include upload method
+            val methodMsg = "via File API"
+            emit(TranscriptionResult.Loading("Uploading audio ($mimeType) $methodMsg..."))
+
+            // File API Upload for all files (robustness against OOM)
+            uploadedFile = withContext(ioDispatcher) {
+                val uploadConfig = UploadFileConfig.builder()
+                    .mimeType(mimeType)
+                    .build()
+                client.files.upload(audioFile.absolutePath, uploadConfig)
+            }
+            val currentUploadedFile = uploadedFile ?: throw IllegalStateException("File upload failed unexpectedly and did not produce a file object.")
+            val audioPart = Part.fromUri(
+                currentUploadedFile.uri().orElseThrow { IllegalStateException("Uploaded file is missing a URI.") },
+                currentUploadedFile.mimeType().orElse(mimeType)
+            )
+
+            emit(TranscriptionResult.Loading("Transcribing audio..."))
 
             // Use constants for schema types
             val responseSchema = Schema.builder()
@@ -803,11 +825,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             "language_code (BCP-47 like en-US) and text (full transcript). " +
                             "Do not include any extra commentary."
                 ),
-                // Use the provided bytes and the correct MIME type
-                Part.fromBytes(audioBytes, mimeType)
+                audioPart
             )
 
-            val client = Client.builder().apiKey(String(apiKey)).build()
             val response: GenerateContentResponse = withContext(ioDispatcher) {
                 // Use the dynamic model name
                 client.models.generateContent(modelName, content, config)
@@ -835,13 +855,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 "Gemini error: ${e.message ?: e::class.java.simpleName}"
             }
             emit(TranscriptionResult.Error(IllegalStateException(msg, e)))
+        } finally {
+            // Attempt to clean up the remote file after transcription
+            uploadedFile?.let { remoteFile ->
+                runCatching {
+                    withContext(ioDispatcher) {
+                        remoteFile.name().ifPresentOrElse({ fileName ->
+                            client.files.delete(fileName, null)
+                        }, {
+                            android.util.Log.w("MainViewModel", "Could not delete remote Gemini file as its name was not available.")
+                        })
+                    }
+                }.onFailure {
+                    if (it is CancellationException) throw it
+                    // Log cleanup failures for debugging purposes. This can help track orphaned remote files.
+                    android.util.Log.w("MainViewModel", "Failed to delete remote Gemini file: ${remoteFile.name().orElse("[name not available]")}", it)
+                }
+            }
         }
     }
 
-    private fun friendlyHttpError(code: Int, provider: String): String = when {
-        code == 401 -> "Unauthorized. Check your $provider API key."
-        code == 429 -> "Rate limit exceeded. Please wait a moment and try again."
-        code in 500..599 -> "Server error (HTTP $code). $provider's servers are experiencing issues. Please try again later."
+    private fun friendlyHttpError(code: Int, provider: String): String = when (code) {
+        401 -> "Unauthorized. Check your $provider API key."
+        429 -> "Rate limit exceeded. Please wait a moment and try again."
+        in 500..599 -> "Server error (HTTP $code). $provider's servers are experiencing issues. Please try again later."
         else -> "HTTP $code: unexpected error from $provider."
     }
 
