@@ -290,9 +290,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update { it.copy(status = "Ready to process queue...") }
             }
 
-            jobQueue.receiveAsFlow().collect { jobState ->
-                val latestJob = _uiState.value.jobs.find { it.id == jobState.id }
-                if (latestJob?.status == "Cancelled") return@collect
+            jobQueue.receiveAsFlow().collect { jobStateFromQueue ->
+                val jobState = _uiState.value.jobs.find { it.id == jobStateFromQueue.id }
+                if (jobState == null || jobState.status == "Cancelled") return@collect
 
                 _uiState.update { it.copy(status = "Processing: ${jobState.displayName}") }
                 updateJob(jobState.id) { it.copy(isRunning = true, status = "Starting...") }
