@@ -454,11 +454,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun forgetAssemblyKey() {
         viewModelScope.launch {
             settings.forgetAssemblyApiKey()
+            _uiState.update { it.copy(assemblyKeyValidation = KeyValidationState.Idle) }
         }
     }
     fun forgetGeminiKey() {
         viewModelScope.launch {
             settings.forgetGeminiApiKey()
+            _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Idle) }
         }
     }
 
