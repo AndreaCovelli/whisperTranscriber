@@ -369,7 +369,8 @@ fun MainScreen(
                             }
                             context.startActivity(Intent.createChooser(sendIntent, null))
                         },
-                        onRetry = { viewModel.retryJob(job.id) }
+                        onRetry = { viewModel.retryJob(job.id) },
+                        onCancel = { viewModel.cancelJob(job.id) }
                     )
                 }
             }
@@ -385,7 +386,8 @@ private fun TranscriptionJobCard(
     onCopyTranscript: () -> Unit,
     onCopySummary: () -> Unit,
     onShareTranscript: () -> Unit,
-    onRetry: () -> Unit
+    onRetry: () -> Unit,
+    onCancel: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth()
@@ -410,6 +412,11 @@ private fun TranscriptionJobCard(
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f)
                 )
+                if (job.transcript.isBlank() && job.error == null && (job.isRunning || job.status == "Queued")) {
+                    TextButton(onClick = onCancel) {
+                        Text("Cancel", color = MaterialTheme.colorScheme.error)
+                    }
+                }
             }
 
             Spacer(Modifier.height(4.dp))
@@ -588,6 +595,7 @@ fun SettingsScreen(
                 title = "AssemblyAI API Key",
                 label = "Enter AssemblyAI API key",
                 apiKeyState = uiState.assemblyApiKeyState,
+                keyValidationState = uiState.assemblyKeyValidation,
                 onSave = viewModel::setAssemblyKey,
                 onForget = viewModel::forgetAssemblyKey,
                 forgetMessage = "AssemblyAI key forgotten",
@@ -598,6 +606,7 @@ fun SettingsScreen(
                 title = "Gemini API Key",
                 label = "Enter Gemini API key",
                 apiKeyState = uiState.geminiApiKeyState,
+                keyValidationState = uiState.geminiKeyValidation,
                 onSave = viewModel::setGeminiKey,
                 onForget = viewModel::forgetGeminiKey,
                 forgetMessage = "Gemini key forgotten",
@@ -627,6 +636,7 @@ private fun ApiKeyCard(
     title: String,
     label: String,
     apiKeyState: ApiKeyState,
+    keyValidationState: KeyValidationState,
     onSave: (String) -> Unit,
     onForget: () -> Unit,
     forgetMessage: String,
@@ -660,41 +670,74 @@ private fun ApiKeyCard(
                 },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
             )
-            if (apiKeyState is ApiKeyState.Present) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Lock,
-                        contentDescription = null,
-                        modifier = Modifier.size(12.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        "Encrypted & saved",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            
+            when (keyValidationState) {
+                is KeyValidationState.Validating -> {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                        Text("Validating API key...", style = MaterialTheme.typography.labelSmall)
+                    }
                 }
-            } else if (apiKeyState is ApiKeyState.Error) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Error,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                    Text(
-                        "Keystore Error: ${apiKeyState.message}. Please re-enter your key.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error
-                    )
+                is KeyValidationState.Error -> {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Error,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                        Text(
+                            keyValidationState.message,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+                is KeyValidationState.Idle -> {
+                    if (apiKeyState is ApiKeyState.Present) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Lock,
+                                contentDescription = null,
+                                modifier = Modifier.size(12.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                "Encrypted & saved",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else if (apiKeyState is ApiKeyState.Error) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Error,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                            Text(
+                                "Keystore Error: ${apiKeyState.message}. Please re-enter your key.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
                 }
             }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
@@ -786,7 +829,7 @@ private fun ProviderSelector(
                             singleLine = true,
                             isError = customModelValidation is CustomModelValidation.Error
                         )
-                        when (val v = customModelValidation) {
+                        when (customModelValidation) {
                             is CustomModelValidation.Validating -> {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -808,7 +851,7 @@ private fun ProviderSelector(
                                         tint = MaterialTheme.colorScheme.primary
                                     )
                                     Text(
-                                        v.displayName,
+                                        customModelValidation.displayName,
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.primary
                                     )
@@ -816,7 +859,7 @@ private fun ProviderSelector(
                             }
                             is CustomModelValidation.Error -> {
                                 Text(
-                                    v.message,
+                                    customModelValidation.message,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.error
                                 )

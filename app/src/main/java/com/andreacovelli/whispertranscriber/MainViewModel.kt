@@ -52,11 +52,19 @@ sealed class CustomModelValidation {
     data class Error(val message: String) : CustomModelValidation()
 }
 
+sealed class KeyValidationState {
+    object Idle : KeyValidationState()
+    object Validating : KeyValidationState()
+    data class Error(val message: String) : KeyValidationState()
+}
+
 data class UiState(
     val status: String = "Waiting for audios...",
     val provider: TranscriptionProvider = TranscriptionProvider.ASSEMBLY_AI,
     val assemblyApiKeyState: ApiKeyState = ApiKeyState.Missing,
+    val assemblyKeyValidation: KeyValidationState = KeyValidationState.Idle,
     val geminiApiKeyState: ApiKeyState = ApiKeyState.Missing,
+    val geminiKeyValidation: KeyValidationState = KeyValidationState.Idle,
     val customGeminiModelName: String = "",
     val customModelValidation: CustomModelValidation = CustomModelValidation.Idle,
     val jobs: List<TranscriptionJobState> = emptyList()
@@ -166,7 +174,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val uiState = _uiState.asStateFlow()
 
     private val settings = ApiKeyManager(application)
-    private val httpClient = OkHttpClient()
     private val historyDao: TranscriptionHistoryDao
 
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
@@ -174,6 +181,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Job Queuing implementation
     private val jobQueue = Channel<TranscriptionJobState>(Channel.UNLIMITED)
     private var processorJob: Job? = null
+    private var currentJobId: String? = null
+    private var currentJobCoroutine: Job? = null
 
     init {
         viewModelScope.launch {
@@ -282,24 +291,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             jobQueue.receiveAsFlow().collect { jobState ->
+                val latestJob = _uiState.value.jobs.find { it.id == jobState.id }
+                if (latestJob?.status == "Cancelled") return@collect
+
                 _uiState.update { it.copy(status = "Processing: ${jobState.displayName}") }
                 updateJob(jobState.id) { it.copy(isRunning = true, status = "Starting...") }
 
-                try {
-                    processSingleJob(
-                        jobId = jobState.id,
-                        uri = jobState.uri!!,
-                        displayName = jobState.displayName,
-                        usingAssembly = usingAssembly,
-                        geminiModel = geminiModelName // Pass the specific model name string
-                    )
-                    processedCount++
-                } catch (_: CancellationException) {
-                    updateJob(jobState.id) { it.copy(status = "Cancelled", isRunning = false, error = "Cancelled") }
-                } catch (e: Exception) {
-                    val msg = e.message ?: e::class.java.simpleName
-                    updateJob(jobState.id) { it.copy(status = "Error", isRunning = false, error = msg) }
+                currentJobId = jobState.id
+                currentJobCoroutine = launch {
+                    try {
+                        processSingleJob(
+                            jobId = jobState.id,
+                            uri = jobState.uri!!,
+                            displayName = jobState.displayName,
+                            usingAssembly = usingAssembly,
+                            geminiModel = geminiModelName // Pass the specific model name string
+                        )
+                        processedCount++
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        val msg = e.message ?: e::class.java.simpleName
+                        updateJob(jobState.id) { it.copy(status = "Error", isRunning = false, error = msg) }
+                    }
                 }
+                currentJobCoroutine?.join()
+                currentJobId = null
+                currentJobCoroutine = null
+
                 _uiState.update { it.copy(status = "Processed $processedCount file(s). Waiting for more...") }
             }
         }
@@ -314,15 +333,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     fun setAssemblyKey(k: String) {
+        val trimmed = k.trim()
+        if (trimmed.isBlank()) return
+        _uiState.update { it.copy(assemblyKeyValidation = KeyValidationState.Validating) }
         viewModelScope.launch {
-            settings.saveAssemblyApiKey(k)
-            startJobProcessor() // Restart processor if it was waiting for key
+            try {
+                val response = withContext(ioDispatcher) {
+                    RetrofitClient.api.listTranscripts(trimmed)
+                }
+                if (response.isSuccessful || response.code() != 401) {
+                    settings.saveAssemblyApiKey(trimmed)
+                    _uiState.update { it.copy(assemblyKeyValidation = KeyValidationState.Idle) }
+                    startJobProcessor()
+                } else {
+                    _uiState.update { it.copy(assemblyKeyValidation = KeyValidationState.Error("Invalid API key")) }
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(assemblyKeyValidation = KeyValidationState.Error(e.message ?: "Validation failed")) }
+            }
         }
     }
+
     fun setGeminiKey(k: String) {
+        val trimmed = k.trim()
+        if (trimmed.isBlank()) return
+        _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Validating) }
         viewModelScope.launch {
-            settings.saveGeminiApiKey(k)
-            startJobProcessor() // Restart processor if it was waiting for key
+            try {
+                val request = Request.Builder()
+                    .url(GEMINI_MODELS_BASE_URL)
+                    .header(GEMINI_API_KEY_HEADER, trimmed)
+                    .build()
+                val isSuccess = withContext(ioDispatcher) {
+                    RetrofitClient.okHttpClient.newCall(request).execute().use { resp ->
+                        resp.isSuccessful
+                    }
+                }
+                if (isSuccess) {
+                    settings.saveGeminiApiKey(trimmed)
+                    _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Idle) }
+                    startJobProcessor()
+                } else {
+                    _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Error("Invalid API key")) }
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Error(e.message ?: "Validation failed")) }
+            }
         }
     }
 
@@ -355,7 +411,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     .header(GEMINI_API_KEY_HEADER, String(keyChars).also { keyChars.fill('\u0000') })
                     .build()
                 val (isSuccess, code, bodyText) = withContext(ioDispatcher) {
-                    httpClient.newCall(request).execute().use { resp ->
+                    RetrofitClient.okHttpClient.newCall(request).execute().use { resp ->
                         Triple(resp.isSuccessful, resp.code, resp.body.string())
                     }
                 }
@@ -394,6 +450,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             settings.forgetGeminiApiKey()
         }
+    }
+
+    fun cancelJob(jobId: String) {
+        if (currentJobId == jobId) {
+            currentJobCoroutine?.cancel()
+        }
+        updateJob(jobId) { it.copy(status = "Cancelled", isRunning = false, error = "Cancelled") }
     }
 
     fun clearCompletedJobs() {
