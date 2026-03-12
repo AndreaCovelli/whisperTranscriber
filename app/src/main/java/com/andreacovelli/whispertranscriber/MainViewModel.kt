@@ -471,6 +471,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun cancelJob(jobId: String) {
+        val job = _uiState.value.jobs.find { it.id == jobId }
+        // Don't act on a job that is already completed or has failed with an error.
+        if (job == null || job.transcript.isNotBlank() || (job.error != null && job.error != "Cancelled")) {
+            return
+        }
+
         if (currentJobId == jobId) {
             currentJobCoroutine?.cancel()
         }
