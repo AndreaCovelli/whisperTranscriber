@@ -838,12 +838,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val transcript = obj.optString("text").ifBlank { "No text found." }
             val language = obj.optString("language_code", "und")
 
+            val resolvedModel = response.modelVersion().filter(String::isNotBlank).orElse(modelName)
+
             emit(TranscriptionResult.Loading("Success"))
             emit(TranscriptionResult.Success(
                 TranscriptionData(
                     text = transcript,
                     language = language,
-                    model = modelName // Return the actual model used
+                    model = resolvedModel // Return the actual model used
                 )
             ))
         } catch (e: Exception) {
