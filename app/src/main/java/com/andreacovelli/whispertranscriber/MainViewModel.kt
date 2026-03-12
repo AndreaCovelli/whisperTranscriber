@@ -369,9 +369,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     .url(GEMINI_MODELS_BASE_URL)
                     .header(GEMINI_API_KEY_HEADER, trimmed)
                     .build()
-                val isSuccess = withContext(ioDispatcher) {
+                val (isSuccess, code) = withContext(ioDispatcher) {
                     RetrofitClient.okHttpClient.newCall(request).execute().use { resp ->
-                        resp.isSuccessful
+                        resp.isSuccessful to resp.code
                     }
                 }
                 if (isSuccess) {
@@ -379,7 +379,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Idle) }
                     startJobProcessor()
                 } else {
-                    _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Error("Invalid API key")) }
+                    val errorMessage = if (code == 400) {
+                        "Invalid API key"
+                    } else {
+                        "Validation failed: HTTP $code"
+                    }
+                    _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Error(errorMessage)) }
                 }
             } catch (e: Exception) {
                 _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Error(e.message ?: "Validation failed")) }

@@ -62,7 +62,7 @@ interface AssemblyAiApi {
         @Header("Authorization") apiKey: String,
         @Query("limit") limit: Int = 1
     ): retrofit2.Response<Void>
-}
+    }
 
 object RetrofitClient {
     private const val BASE_URL = "https://api.assemblyai.com/"
