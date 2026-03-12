@@ -396,6 +396,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(customModelValidation = CustomModelValidation.Idle) }
     }
 
+    fun resetAssemblyKeyValidation() {
+        _uiState.update { it.copy(assemblyKeyValidation = KeyValidationState.Idle) }
+    }
+
+    fun resetGeminiKeyValidation() {
+        _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Idle) }
+    }
+
     fun validateCustomGeminiModel(modelName: String) {
         val trimmed = modelName.trim()
         if (trimmed.isBlank()) {

@@ -598,6 +598,7 @@ fun SettingsScreen(
                 keyValidationState = uiState.assemblyKeyValidation,
                 onSave = viewModel::setAssemblyKey,
                 onForget = viewModel::forgetAssemblyKey,
+                onResetValidation = viewModel::resetAssemblyKeyValidation,
                 forgetMessage = "AssemblyAI key forgotten",
                 snackbarHostState = snackbarHostState
             )
@@ -609,6 +610,7 @@ fun SettingsScreen(
                 keyValidationState = uiState.geminiKeyValidation,
                 onSave = viewModel::setGeminiKey,
                 onForget = viewModel::forgetGeminiKey,
+                onResetValidation = viewModel::resetGeminiKeyValidation,
                 forgetMessage = "Gemini key forgotten",
                 snackbarHostState = snackbarHostState
             )
@@ -639,6 +641,7 @@ private fun ApiKeyCard(
     keyValidationState: KeyValidationState,
     onSave: (String) -> Unit,
     onForget: () -> Unit,
+    onResetValidation: () -> Unit,
     forgetMessage: String,
     snackbarHostState: SnackbarHostState
 ) {
@@ -654,7 +657,10 @@ private fun ApiKeyCard(
             Text(title, style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(
                 value = inputKey,
-                onValueChange = { inputKey = it },
+                onValueChange = {
+                    inputKey = it
+                    onResetValidation()
+                },
                 label = { Text(if (apiKeyState is ApiKeyState.Present) "Replace saved key (optional)" else label) },
                 modifier = Modifier.fillMaxWidth().onFocusChanged { focusState ->
                     if (!focusState.isFocused && inputKey.isNotBlank()) onSave(inputKey)
