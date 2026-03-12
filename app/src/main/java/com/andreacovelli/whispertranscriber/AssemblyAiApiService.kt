@@ -61,7 +61,7 @@ interface AssemblyAiApi {
     suspend fun listTranscripts(
         @Header("Authorization") apiKey: String,
         @Query("limit") limit: Int = 1
-    ): retrofit2.Response<okhttp3.ResponseBody>
+    ): retrofit2.Response<Void>
 }
 
 object RetrofitClient {
