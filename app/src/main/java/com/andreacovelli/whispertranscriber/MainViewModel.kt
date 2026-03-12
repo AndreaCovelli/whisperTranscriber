@@ -308,8 +308,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             geminiModel = geminiModelName // Pass the specific model name string
                         )
                         processedCount++
-                    } catch (e: CancellationException) {
-                        throw e
                     } catch (e: Exception) {
                         val msg = e.message ?: e::class.java.simpleName
                         updateJob(jobState.id) { it.copy(status = "Error", isRunning = false, error = msg) }
