@@ -841,6 +841,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val resolvedModel = try {
                 response.modelVersion().orElse(modelName).ifBlank { modelName }
             } catch (e: Exception) {
+                android.util.Log.w("MainViewModel", "Could not resolve model version from Gemini response, falling back to requested model name.", e)
                 modelName
             }
 
