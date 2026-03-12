@@ -838,12 +838,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val transcript = obj.optString("text").ifBlank { "No text found." }
             val language = obj.optString("language_code", "und")
 
-            val resolvedModel = try {
-                response.modelVersion().orElse(modelName).ifBlank { modelName }
-            } catch (e: Exception) {
-                android.util.Log.w("MainViewModel", "Could not resolve model version from Gemini response, falling back to requested model name.", e)
-                modelName
-            }
+            val resolvedModel = response.modelVersion().orElse(modelName).ifBlank { modelName }
 
             emit(TranscriptionResult.Loading("Success"))
             emit(TranscriptionResult.Success(
