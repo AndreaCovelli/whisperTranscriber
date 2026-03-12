@@ -744,6 +744,7 @@ private fun ApiKeyCard(
             ) {
                 TextButton(onClick = {
                     onForget()
+                    inputKey = ""
                     scope.launch { snackbarHostState.showSnackbar(forgetMessage) }
                 }) {
                     Text("Forget key")
