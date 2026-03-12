@@ -341,12 +341,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val response = withContext(ioDispatcher) {
                     RetrofitClient.api.listTranscripts(trimmed)
                 }
-                if (response.isSuccessful || response.code() != 401) {
+                if (response.isSuccessful) {
                     settings.saveAssemblyApiKey(trimmed)
                     _uiState.update { it.copy(assemblyKeyValidation = KeyValidationState.Idle) }
                     startJobProcessor()
                 } else {
-                    _uiState.update { it.copy(assemblyKeyValidation = KeyValidationState.Error("Invalid API key")) }
+                    val errorMessage = if (response.code() == 401) {
+                        "Invalid API key"
+                    } else {
+                        "Validation failed: HTTP ${response.code()}"
+                    }
+                    _uiState.update { it.copy(assemblyKeyValidation = KeyValidationState.Error(errorMessage)) }
                 }
             } catch (e: Exception) {
                 _uiState.update { it.copy(assemblyKeyValidation = KeyValidationState.Error(e.message ?: "Validation failed")) }
