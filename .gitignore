@@ -20,3 +20,7 @@ local.properties
 
 # AI tool outputs
 repomix-output.xml
+
+# Kotlin artifacts
+.kotlin/
+

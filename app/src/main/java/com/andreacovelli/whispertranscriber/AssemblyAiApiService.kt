@@ -12,6 +12,7 @@ import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
 import java.util.concurrent.TimeUnit
 
 data class UploadResponse(
@@ -55,12 +56,18 @@ interface AssemblyAiApi {
         @Header("Authorization") apiKey: String,
         @Path("id") id: String
     )
-}
+
+    @GET("v2/transcript")
+    suspend fun listTranscripts(
+        @Header("Authorization") apiKey: String,
+        @Query("limit") limit: Int = 1
+    ): retrofit2.Response<Void>
+    }
 
 object RetrofitClient {
     private const val BASE_URL = "https://api.assemblyai.com/"
 
-    private val client: OkHttpClient by lazy {
+    val okHttpClient: OkHttpClient by lazy {
         val logging = HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.NONE
             redactHeader("Authorization")
@@ -77,7 +84,7 @@ object RetrofitClient {
     val api: AssemblyAiApi by lazy {
         Retrofit.Builder()
             .baseUrl(BASE_URL)
-            .client(client)
+            .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(AssemblyAiApi::class.java)
