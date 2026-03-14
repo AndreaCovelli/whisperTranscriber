@@ -503,7 +503,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 isRunning = false,
                 transcript = "",
                 summary = "",
-                historyId = null
+                historyId = null,
+                language = "",
+                model = ""
             )
             updateJob(jobId) { resetJob }
             jobQueue.send(resetJob)
