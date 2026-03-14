@@ -554,14 +554,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             queueMutex.withLock {
-                val currentlyQueued = _uiState.value.jobs.count { it.status == "Queued" }
-                if (currentlyQueued + uris.size > MAX_QUEUE_SIZE) {
-                    _uiState.update { 
-                        it.copy(status = "Error: Cannot queue more than $MAX_QUEUE_SIZE files at once. Batch rejected.") 
-                    }
-                    return@launch
-                }
-
                 _uiState.update { it.copy(status = "Queuing ${uris.size} file(s)...") }
 
                 // Create jobs and add them to the queue
