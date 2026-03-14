@@ -500,7 +500,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 status = "Queued",
                 progress = 0f,
                 error = null,
-                isRunning = false
+                isRunning = false,
+                transcript = "",
+                summary = "",
+                historyId = null,
+                language = "",
+                model = ""
             )
             updateJob(jobId) { resetJob }
             jobQueue.send(resetJob)
