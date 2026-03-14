@@ -183,7 +183,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // Job Queuing implementation
     private val jobQueue = Channel<TranscriptionJobState>(MAX_QUEUE_SIZE)
-    private val processorMutex = Mutex()
+    private val processorMutex = Mutex() // Ensures single processor job
+    private val queueMutex = Mutex()     // Protects queue capacity checks and enqueuing
     private var processorJob: Job? = null
     private var currentJobId: String? = null
     private var currentJobCoroutine: Job? = null
@@ -516,7 +517,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 model = ""
             )
             updateJob(jobId) { resetJob }
-            jobQueue.trySend(resetJob)
+
+            queueMutex.withLock {
+                val result = jobQueue.trySend(resetJob)
+                if (result.isFailure) {
+                    updateJob(jobId) { it.copy(status = "Error", error = "Failed to retry: Queue is full.") }
+                }
+            }
             startJobProcessor()
         }
     }
@@ -546,28 +553,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (uris.isEmpty()) return
 
         viewModelScope.launch {
-            val currentlyQueued = _uiState.value.jobs.count { it.status == "Queued" }
-            if (currentlyQueued + uris.size > MAX_QUEUE_SIZE) {
-                _uiState.update { 
-                    it.copy(status = "Error: Cannot queue more than $MAX_QUEUE_SIZE files at once. Batch rejected.") 
+            queueMutex.withLock {
+                val currentlyQueued = _uiState.value.jobs.count { it.status == "Queued" }
+                if (currentlyQueued + uris.size > MAX_QUEUE_SIZE) {
+                    _uiState.update { 
+                        it.copy(status = "Error: Cannot queue more than $MAX_QUEUE_SIZE files at once. Batch rejected.") 
+                    }
+                    return@launch
                 }
-                return@launch
-            }
 
-            _uiState.update { it.copy(status = "Queuing ${uris.size} file(s)...") }
+                _uiState.update { it.copy(status = "Queuing ${uris.size} file(s)...") }
 
-            // Create jobs and add them to the queue
-            for ((index, uri) in uris.withIndex()) {
-                val displayName = resolveDisplayName(uri).ifBlank { uri.lastPathSegment ?: "Audio ${index + 1}" }
-                val jobState = TranscriptionJobState(
-                    uri = uri,
-                    displayName = displayName,
-                    status = "Queued",
-                    progress = 0f,
-                    isRunning = false // Starts as false, processor sets to true
-                )
-                addJob(jobState)
-                jobQueue.trySend(jobState) // Add to the processing channel
+                // Create jobs and add them to the queue
+                for ((index, uri) in uris.withIndex()) {
+                    val displayName = resolveDisplayName(uri).ifBlank { uri.lastPathSegment ?: "Audio ${index + 1}" }
+                    val jobState = TranscriptionJobState(
+                        uri = uri,
+                        displayName = displayName,
+                        status = "Queued",
+                        progress = 0f,
+                        isRunning = false // Starts as false, processor sets to true
+                    )
+                    addJob(jobState)
+                    val result = jobQueue.trySend(jobState) // Add to the processing channel
+                    if (result.isFailure) {
+                        updateJob(jobState.id) { 
+                            it.copy(status = "Error", error = "Failed to queue job: Queue is full.") 
+                        }
+                    }
+                }
             }
             // Ensure the processor is running
             startJobProcessor()
