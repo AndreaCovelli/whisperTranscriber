@@ -506,6 +506,14 @@ private fun TranscriptionJobCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
+                    OutlinedButton(
+                        onClick = onRetry,
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Redo", modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Redo")
+                    }
                     Button(
                         onClick = onSummarize,
                         enabled = canSummarize && !job.isSummarizing,
