@@ -22,10 +22,11 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.asRequestBody
@@ -101,6 +102,8 @@ sealed interface TranscriptionResult {
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
+        const val MAX_QUEUE_SIZE = 50
+
         private const val TYPE_OBJECT = "OBJECT"
         private const val TYPE_STRING = "STRING"
 
@@ -179,7 +182,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 
     // Job Queuing implementation
-    private val jobQueue = Channel<TranscriptionJobState>(Channel.UNLIMITED)
+    private val jobQueue = Channel<TranscriptionJobState>(MAX_QUEUE_SIZE)
+    private val processorMutex = Mutex()
     private var processorJob: Job? = null
     private var currentJobId: String? = null
     private var currentJobCoroutine: Job? = null
@@ -224,11 +228,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // Job Processor Loop
     private fun startJobProcessor() {
-        // Check if already running, but also check if the previous run failed due to missing API key and retry
-        if (processorJob?.isActive == true && _uiState.value.status.startsWith("Error:").not()) return
+        viewModelScope.launch {
+            processorMutex.withLock {
+                // Check if already running, but also check if the previous run failed due to missing API key and retry
+                if (processorJob?.isActive == true && _uiState.value.status.startsWith("Error:").not()) return@launch
 
-        processorJob = viewModelScope.launch {
-            // Fetch latest settings before processing
+                processorJob = launch {
+                    // Fetch latest settings before processing
             val persistedProvider = settings.providerFlow.firstOrNull() ?: _uiState.value.provider
             val persistedAssemblyKey = settings.assemblyApiKeyStateFlow.firstOrNull() ?: _uiState.value.assemblyApiKeyState
             val persistedGeminiKey = settings.geminiApiKeyStateFlow.firstOrNull() ?: _uiState.value.geminiApiKeyState
@@ -318,6 +324,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 currentJobCoroutine = null
 
                 _uiState.update { it.copy(status = "Processed $processedCount file(s). Waiting for more...") }
+            }
+        }
             }
         }
     }
@@ -508,7 +516,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 model = ""
             )
             updateJob(jobId) { resetJob }
-            jobQueue.send(resetJob)
+            jobQueue.trySend(resetJob)
             startJobProcessor()
         }
     }
@@ -538,6 +546,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (uris.isEmpty()) return
 
         viewModelScope.launch {
+            val currentlyQueued = _uiState.value.jobs.count { it.status == "Queued" }
+            if (currentlyQueued + uris.size > MAX_QUEUE_SIZE) {
+                _uiState.update { 
+                    it.copy(status = "Error: Cannot queue more than $MAX_QUEUE_SIZE files at once. Batch rejected.") 
+                }
+                return@launch
+            }
+
             _uiState.update { it.copy(status = "Queuing ${uris.size} file(s)...") }
 
             // Create jobs and add them to the queue
@@ -551,7 +567,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     isRunning = false // Starts as false, processor sets to true
                 )
                 addJob(jobState)
-                jobQueue.send(jobState) // Add to the processing channel
+                jobQueue.trySend(jobState) // Add to the processing channel
             }
             // Ensure the processor is running
             startJobProcessor()
