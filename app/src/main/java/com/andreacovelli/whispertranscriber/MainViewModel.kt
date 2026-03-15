@@ -318,11 +318,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun cancelJob(jobId: Int) {
         viewModelScope.launch {
-            val job = repository.getJob(jobId)
-            if (job == null || job.transcript.isNotBlank() || (job.error != null && job.error != "Cancelled")) {
-                return@launch
-            }
-            repository.updateJob(job.copy(status = "Cancelled", isRunning = false, error = "Cancelled"))
+            repository.updateError(jobId, "Cancelled", false, "Cancelled")
             WorkManager.getInstance(getApplication()).cancelUniqueWork("TranscriptionJob_$jobId")
         }
     }
@@ -441,7 +437,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 else -> TranscriptionProvider.GEMINI_FLASH.modelName!!
             }
 
-            repository.updateJob(job.copy(isSummarizing = true))
+            repository.setSummarizing(jobId, true)
             _uiState.update { it.copy(status = "Summarizing with $modelName...") }
             try {
                 val client = Client.builder().apiKey(apiKey).build()
@@ -477,7 +473,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                repository.updateJobById(jobId) { it.copy(isSummarizing = false) }
+                repository.setSummarizing(jobId, false)
                 _uiState.update {
                     it.copy(status = "Summarization error: ${e.message ?: e::class.java.simpleName}")
                 }

@@ -86,6 +86,24 @@ interface TranscriptionJobDao {
     @Delete
     suspend fun delete(job: TranscriptionJob)
 
+    @Query("UPDATE active_jobs SET isRunning = :isRunning, status = :status WHERE id = :id")
+    suspend fun updateRunning(id: Int, isRunning: Boolean, status: String)
+
+    @Query("UPDATE active_jobs SET status = :status, progress = :progress WHERE id = :id")
+    suspend fun updateStatusAndProgress(id: Int, status: String, progress: Float)
+
+    @Query("UPDATE active_jobs SET transcript = :transcript, language = :language, model = :model, historyId = :historyId, progress = :progress, isRunning = :isRunning, error = :error WHERE id = :id")
+    suspend fun updateResult(id: Int, transcript: String, language: String, model: String, historyId: Int?, progress: Float, isRunning: Boolean, error: String?)
+
+    @Query("UPDATE active_jobs SET error = :error, isRunning = :isRunning, status = :status WHERE id = :id")
+    suspend fun updateError(id: Int, error: String, isRunning: Boolean, status: String)
+
+    @Query("UPDATE active_jobs SET status = :status WHERE id = :id")
+    suspend fun updateStatus(id: Int, status: String)
+
+    @Query("UPDATE active_jobs SET isSummarizing = :isSummarizing WHERE id = :id")
+    suspend fun setSummarizing(id: Int, isSummarizing: Boolean)
+
     @Query("SELECT * FROM active_jobs ORDER BY timestamp ASC")
     fun getAllJobs(): Flow<List<TranscriptionJob>>
 

@@ -103,16 +103,16 @@ class TranscriptionWorker(
         setForeground(createForegroundInfo(progressText))
     }
 
-    override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+    override suspend fun doWork(): Result {
         val jobId = inputData.getInt("jobId", -1)
-        if (jobId == -1) return@withContext Result.failure()
+        if (jobId == -1) return Result.failure()
 
-        val job = repository.getJob(jobId) ?: return@withContext Result.failure()
-        if (job.status == "Cancelled") return@withContext Result.success()
+        val job = repository.getJob(jobId) ?: return Result.failure()
+        if (job.status == "Cancelled") return Result.success()
 
         try {
             setForeground(getForegroundInfo())
-            repository.updateJob(job.copy(isRunning = true, status = "Starting..."))
+            repository.updateRunning(jobId, true, "Starting...")
             updateNotification("Processing: ${job.displayName}")
 
             val persistedProvider = settings.providerFlow.firstOrNull() ?: TranscriptionProvider.ASSEMBLY_AI
@@ -129,13 +129,13 @@ class TranscriptionWorker(
                 usingAssembly = usingAssembly,
                 geminiModel = geminiModelName
             )
-            Result.success()
+            return Result.success()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             val msg = e.message ?: e::class.java.simpleName
-            repository.updateJobById(jobId) { it.copy(status = "Error", isRunning = false, error = msg) }
-            Result.failure()
+            repository.updateError(jobId, msg, false, "Error")
+            return Result.failure()
         }
     }
 
@@ -164,7 +164,7 @@ class TranscriptionWorker(
                 val providerName = if (usingAssembly) "AssemblyAI" else "Gemini"
                 val conversionReason = "Format not natively supported by $providerName $reasonSuffix"
 
-                repository.updateJobById(jobId) { it.copy(status = "$conversionReason. Converting to 16 kHz WAV...", progress = 0f) }
+                repository.updateStatusAndProgress(jobId, "$conversionReason. Converting to 16 kHz WAV...", 0f)
                 updateNotification("Converting audio...")
 
                 val outputFile = withContext(Dispatchers.IO) {
@@ -179,28 +179,27 @@ class TranscriptionWorker(
                     forceMono = true,
                     targetSampleRate = 16_000,
                     onProgress = { p ->
-                        repository.updateJobById(jobId) {
-                            it.copy(
-                                status = "Converting to 16 kHz WAV: ${"%.1f".format(p * 100)}%",
-                                progress = p
-                            )
-                        }
+                        repository.updateStatusAndProgress(
+                            jobId,
+                            "Converting to 16 kHz WAV: ${"%.1f".format(p * 100)}%",
+                            p
+                        )
                     }
                 )
 
                 if (usingAssembly) {
                     sourceForAssembly = outputFile
                 } else {
-                    repository.updateJobById(jobId) { it.copy(status = "Converted audio ready for Gemini...") }
+                    repository.updateStatus(jobId, "Converted audio ready for Gemini...")
                     fileForGemini = outputFile
                     mimeTypeForGemini = "audio/wav"
                 }
             } else {
                 if (usingAssembly) {
-                    repository.updateJobById(jobId) { it.copy(status = "Format supported ($inputMimeType). Preparing for direct upload...", progress = 1f) }
+                    repository.updateStatusAndProgress(jobId, "Format supported ($inputMimeType). Preparing for direct upload...", 1f)
                     sourceForAssembly = uri
                 } else {
-                    repository.updateJobById(jobId) { it.copy(status = "Format supported ($inputMimeType). Copying audio for Gemini...", progress = 0.5f) }
+                    repository.updateStatusAndProgress(jobId, "Format supported ($inputMimeType). Copying audio for Gemini...", 0.5f)
                     updateNotification("Copying audio...")
 
                     val tempFile = contentResolver.openInputStream(uri)?.use { input ->
@@ -215,7 +214,7 @@ class TranscriptionWorker(
                     fileForGemini = tempFile
                     mimeTypeForGemini = inputMimeType
 
-                    repository.updateJobById(jobId) { it.copy(progress = 1f) }
+                    repository.updateStatusAndProgress(jobId, "Preparing for Gemini upload...", 1f)
                 }
             }
 
@@ -235,7 +234,7 @@ class TranscriptionWorker(
                 when (result) {
                     is TranscriptionResult.Loading -> {
                         val providerMsg = "${if (usingAssembly) "AssemblyAI" else "Gemini"}: ${result.message}"
-                        repository.updateJobById(jobId) { it.copy(status = providerMsg) }
+                        repository.updateStatus(jobId, providerMsg)
                         updateNotification(providerMsg)
                     }
                     is TranscriptionResult.Success -> resultData = result.data
@@ -254,17 +253,16 @@ class TranscriptionWorker(
                 )
             ).toInt()
 
-            repository.updateJobById(jobId) {
-                it.copy(
-                    transcript = data.text,
-                    language = data.language.ifBlank { "Unknown" },
-                    model = data.model,
-                    historyId = historyId,
-                    progress = 1f,
-                    isRunning = false,
-                    error = null
-                )
-            }
+            repository.updateResult(
+                jobId,
+                data.text,
+                data.language.ifBlank { "Unknown" },
+                data.model,
+                historyId,
+                1f,
+                false,
+                null
+            )
         } finally {
             tempFileToClean?.let { runCatching { it.delete() } }
         }
