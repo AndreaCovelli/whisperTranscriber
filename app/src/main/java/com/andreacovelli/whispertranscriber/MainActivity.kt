@@ -1050,6 +1050,20 @@ fun HistoryScreen(
                                 },
                                 onClearSummary = { historyViewModel.clearSummary(item) },
                                 onDelete = { historyViewModel.deleteHistoryItem(item) },
+                                onShare = {
+                                    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        val content = buildString {
+                                            append(item.text)
+                                            if (item.summary.isNotBlank()) {
+                                                append("\n\nSummary:\n")
+                                                append(item.summary)
+                                            }
+                                        }
+                                        putExtra(Intent.EXTRA_TEXT, content)
+                                    }
+                                    context.startActivity(Intent.createChooser(sendIntent, "Share Transcription"))
+                                },
                                 searchQuery = searchQuery
                             )
                         }
@@ -1101,6 +1115,7 @@ fun HistoryItemCard(
     onCopy: (String) -> Unit,
     onClearSummary: () -> Unit,
     onDelete: () -> Unit,
+    onShare: () -> Unit,
     searchQuery: String = ""
 ) {
     val formattedDate = remember(item.timestamp) {
@@ -1164,10 +1179,10 @@ fun HistoryItemCard(
                 )
             }
             Spacer(Modifier.height(8.dp))
-            Row(
+            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.End
             ) {
                 if (item.summary.isNotBlank()) {
                     TextButton(onClick = onClearSummary) {
@@ -1177,7 +1192,7 @@ fun HistoryItemCard(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("Clear summary")
+                        Text("Clear summary", maxLines = 1, softWrap = false)
                     }
                 }
                 val copyActions = buildList {
@@ -1192,8 +1207,11 @@ fun HistoryItemCard(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("Copy $type")
+                        Text("Copy $type", maxLines = 1, softWrap = false)
                     }
+                }
+                IconButton(onClick = onShare) {
+                    Icon(Icons.Default.Share, "Share item")
                 }
                 IconButton(onClick = onDelete) {
                     Icon(Icons.Default.Delete, "Delete item", tint = MaterialTheme.colorScheme.error)
