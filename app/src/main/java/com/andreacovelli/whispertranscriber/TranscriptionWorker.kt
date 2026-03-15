@@ -88,7 +88,7 @@ class TranscriptionWorker(
         val notification: Notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setContentTitle("Transcribing Audio")
             .setContentText(progressText)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.mipmap.my_launcher)
             .setOngoing(true)
             .build()
 

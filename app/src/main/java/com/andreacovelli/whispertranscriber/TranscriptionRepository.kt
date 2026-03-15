@@ -1,13 +1,16 @@
 package com.andreacovelli.whispertranscriber
 
 import android.content.Context
+import androidx.room.withTransaction
 import com.andreacovelli.whispertranscriber.data.AppDatabase
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.data.TranscriptionJobDao
 import kotlinx.coroutines.flow.Flow
 
 class TranscriptionRepository(context: Context) {
-    private val jobDao: TranscriptionJobDao = AppDatabase.getDatabase(context).transcriptionJobDao()
+    private val db = AppDatabase.getDatabase(context)
+    private val jobDao: TranscriptionJobDao = db.transcriptionJobDao()
+    private val historyDao = db.transcriptionHistoryDao()
 
     val jobsState: Flow<List<TranscriptionJob>> = jobDao.getAllJobs()
 
@@ -39,8 +42,23 @@ class TranscriptionRepository(context: Context) {
         jobDao.updateStatus(id, status)
     }
 
+    suspend fun updateSummary(id: Int, summary: String) {
+        jobDao.updateSummary(id, summary)
+    }
+
     suspend fun setSummarizing(id: Int, isSummarizing: Boolean) {
         jobDao.setSummarizing(id, isSummarizing)
+    }
+
+    suspend fun clearJobSummary(jobId: Int) {
+        db.withTransaction {
+            val job = jobDao.getJobById(jobId) ?: return@withTransaction
+            jobDao.updateSummary(jobId, "")
+            val hid = job.historyId
+            if (hid != null) {
+                historyDao.updateSummary(hid, "")
+            }
+        }
     }
 
     suspend fun updateJobById(jobId: Int, transform: (TranscriptionJob) -> TranscriptionJob) {

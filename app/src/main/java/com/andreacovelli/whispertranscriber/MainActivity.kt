@@ -354,6 +354,7 @@ fun MainScreen(
                         job = job,
                         canSummarize = uiState.geminiApiKeyState is ApiKeyState.Present,
                         onSummarize = { viewModel.summarizeJob(job.id) },
+                        onClearSummary = { viewModel.clearSummary(job.id) },
                         onCopyTranscript = {
                             scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", job.transcript))) }
                             Toast.makeText(context, "Copied transcript", Toast.LENGTH_SHORT).show()
@@ -383,6 +384,7 @@ private fun TranscriptionJobCard(
     job: TranscriptionJobState,
     canSummarize: Boolean,
     onSummarize: () -> Unit,
+    onClearSummary: () -> Unit,
     onCopyTranscript: () -> Unit,
     onCopySummary: () -> Unit,
     onShareTranscript: () -> Unit,
@@ -534,8 +536,19 @@ private fun TranscriptionJobCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("Summary", style = MaterialTheme.typography.titleSmall)
-                        IconButton(onClick = onCopySummary) {
-                            Icon(Icons.Filled.ContentCopy, "Copy Summary")
+                        Row {
+                            TextButton(onClick = onClearSummary) {
+                                Icon(
+                                    Icons.Default.DeleteSweep,
+                                    contentDescription = "Clear Summary",
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text("Clear")
+                            }
+                            IconButton(onClick = onCopySummary) {
+                                Icon(Icons.Filled.ContentCopy, "Copy Summary")
+                            }
                         }
                     }
                     SelectionContainer {
@@ -1035,6 +1048,7 @@ fun HistoryScreen(
                                     scope.launch { clipboardManager.setClipEntry(ClipEntry(ClipData.newPlainText("", text))) }
                                     Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                                 },
+                                onClearSummary = { historyViewModel.clearSummary(item) },
                                 onDelete = { historyViewModel.deleteHistoryItem(item) },
                                 searchQuery = searchQuery
                             )
@@ -1085,6 +1099,7 @@ fun HistoryItemCard(
     expanded: Boolean,
     onToggleExpand: () -> Unit,
     onCopy: (String) -> Unit,
+    onClearSummary: () -> Unit,
     onDelete: () -> Unit,
     searchQuery: String = ""
 ) {
@@ -1154,6 +1169,17 @@ fun HistoryItemCard(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                if (item.summary.isNotBlank()) {
+                    TextButton(onClick = onClearSummary) {
+                        Icon(
+                            Icons.Default.DeleteSweep,
+                            contentDescription = "Clear summary",
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("Clear summary")
+                    }
+                }
                 val copyActions = buildList {
                     add("text" to item.text)
                     if (item.summary.isNotBlank()) add("summary" to item.summary)

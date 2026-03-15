@@ -405,6 +405,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun clearSummary(jobId: Int) {
+        viewModelScope.launch {
+            repository.clearJobSummary(jobId)
+        }
+    }
+
     fun summarizeJob(jobId: Int) {
         viewModelScope.launch {
             val state = _uiState.value
