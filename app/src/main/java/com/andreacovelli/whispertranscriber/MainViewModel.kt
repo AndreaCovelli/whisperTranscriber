@@ -9,14 +9,15 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.work.workDataOf
 import com.andreacovelli.whispertranscriber.data.AppDatabase
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistoryDao
+import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -26,9 +27,8 @@ import com.google.genai.types.Content
 import com.google.genai.types.GenerateContentConfig
 import com.google.genai.types.Part
 import org.json.JSONObject
-import java.util.UUID
 import java.util.concurrent.TimeUnit
-import java.io.File
+import androidx.core.net.toUri
 
 sealed class CustomModelValidation {
     object Idle : CustomModelValidation()
@@ -56,7 +56,7 @@ data class UiState(
 )
 
 data class TranscriptionJobState(
-    val id: String = UUID.randomUUID().toString(),
+    val id: Int = 0,
     val uri: Uri? = null,
     val displayName: String = "",
     val status: String = "Queued",
@@ -69,6 +69,22 @@ data class TranscriptionJobState(
     val error: String? = null,
     val isRunning: Boolean = false,
     val isSummarizing: Boolean = false
+)
+
+fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
+    id = id,
+    uri = uri.toUri(),
+    displayName = displayName,
+    status = status,
+    progress = progress,
+    transcript = transcript,
+    language = language,
+    model = model,
+    summary = summary,
+    historyId = historyId,
+    error = error,
+    isRunning = isRunning,
+    isSummarizing = isSummarizing
 )
 
 data class TranscriptionData(
@@ -103,6 +119,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val settings = ApiKeyManager(application)
     private val historyDao: TranscriptionHistoryDao
+    private val repository = TranscriptionRepository(application)
 
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 
@@ -129,8 +146,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             launch {
-                TranscriptionRepository.jobsState.collect { jobsList ->
-                    _uiState.update { it.copy(jobs = jobsList) }
+                repository.jobsState.collect { jobsList ->
+                    _uiState.update { it.copy(jobs = jobsList.map { it.toUiState() }) }
                 }
             }
         }
@@ -143,11 +160,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         historyDao = database.transcriptionHistoryDao()
     }
 
-    private fun enqueueWorker() {
-        val workRequest = OneTimeWorkRequestBuilder<TranscriptionWorker>().build()
+    private fun enqueueWorker(jobId: Int) {
+        val workRequest = OneTimeWorkRequestBuilder<TranscriptionWorker>()
+            .setInputData(workDataOf("jobId" to jobId))
+            .build()
         WorkManager.getInstance(getApplication()).enqueueUniqueWork(
-            "TranscriptionWork",
-            ExistingWorkPolicy.KEEP,
+            "TranscriptionJob_$jobId",
+            ExistingWorkPolicy.REPLACE,
             workRequest
         )
     }
@@ -297,21 +316,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun cancelJob(jobId: String) {
-        val job = _uiState.value.jobs.find { it.id == jobId }
-        if (job == null || job.transcript.isNotBlank() || (job.error != null && job.error != "Cancelled")) {
-            return
+    fun cancelJob(jobId: Int) {
+        viewModelScope.launch {
+            val job = repository.getJob(jobId)
+            if (job == null || job.transcript.isNotBlank() || (job.error != null && job.error != "Cancelled")) {
+                return@launch
+            }
+            repository.updateJob(job.copy(status = "Cancelled", isRunning = false, error = "Cancelled"))
+            WorkManager.getInstance(getApplication()).cancelUniqueWork("TranscriptionJob_$jobId")
         }
-        TranscriptionRepository.updateJob(jobId) { it.copy(status = "Cancelled", isRunning = false, error = "Cancelled") }
     }
 
     fun clearCompletedJobs() {
-        TranscriptionRepository.clearCompletedJobs()
+        viewModelScope.launch {
+            repository.clearCompletedJobs()
+        }
     }
 
-    fun retryJob(jobId: String) {
+    fun retryJob(jobId: Int) {
         viewModelScope.launch {
-            val job = _uiState.value.jobs.find { it.id == jobId } ?: return@launch
+            val job = repository.getJob(jobId) ?: return@launch
             val resetJob = job.copy(
                 status = "Queued",
                 progress = 0f,
@@ -323,14 +347,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 language = "",
                 model = ""
             )
-            TranscriptionRepository.updateJob(jobId) { resetJob }
-
-            val result = TranscriptionRepository.jobQueue.trySend(resetJob)
-            if (result.isFailure) {
-                TranscriptionRepository.updateJob(jobId) { it.copy(status = "Error", error = "Failed to retry: Queue is full.") }
-            } else {
-                enqueueWorker()
-            }
+            repository.updateJob(resetJob)
+            enqueueWorker(jobId)
         }
     }
 
@@ -362,22 +380,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             for ((index, uri) in uris.withIndex()) {
                 val displayName = resolveDisplayName(uri).ifBlank { uri.lastPathSegment ?: "Audio ${index + 1}" }
-                val jobState = TranscriptionJobState(
-                    uri = uri,
+                val job = TranscriptionJob(
+                    uri = uri.toString(),
                     displayName = displayName,
                     status = "Queued",
                     progress = 0f,
                     isRunning = false
                 )
-                TranscriptionRepository.addJob(jobState)
-                val result = TranscriptionRepository.jobQueue.trySend(jobState)
-                if (result.isFailure) {
-                    TranscriptionRepository.updateJob(jobState.id) { 
-                        it.copy(status = "Error", error = "Failed to queue job: Queue is full.") 
-                    }
-                }
+                val jobId = repository.addJob(job).toInt()
+                enqueueWorker(jobId)
             }
-            enqueueWorker()
         }
     }
 
@@ -397,10 +409,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun summarizeJob(jobId: String) {
+    fun summarizeJob(jobId: Int) {
         viewModelScope.launch {
             val state = _uiState.value
-            val job = state.jobs.find { it.id == jobId } ?: return@launch
+            val job = repository.getJob(jobId) ?: return@launch
             val text = job.transcript
             if (text.isBlank()) {
                 _uiState.update { it.copy(status = "Nothing to summarize for ${job.displayName}.") }
@@ -420,7 +432,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val customName = state.customGeminiModelName
                     if (customName.isBlank()) {
                         _uiState.update { it.copy(status = "Error: No custom Gemini model set for summarization.") }
-                        TranscriptionRepository.updateJob(jobId) { it.copy(isSummarizing = false) }
+                        repository.updateJob(job.copy(isSummarizing = false))
                         return@launch
                     }
                     customName
@@ -429,7 +441,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 else -> TranscriptionProvider.GEMINI_FLASH.modelName!!
             }
 
-            TranscriptionRepository.updateJob(jobId) { it.copy(isSummarizing = true) }
+            repository.updateJob(job.copy(isSummarizing = true))
             _uiState.update { it.copy(status = "Summarizing with $modelName...") }
             try {
                 val client = Client.builder().apiKey(apiKey).build()
@@ -454,7 +466,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 val summary = response.text()?.trim().orEmpty().ifBlank { "No summary generated." }
 
-                TranscriptionRepository.updateJob(jobId) { it.copy(isSummarizing = false, summary = summary) }
+                repository.updateJobById(jobId) { it.copy(isSummarizing = false, summary = summary) }
                 _uiState.update { it.copy(status = "Summary generated.") }
 
                 withContext(ioDispatcher) {
@@ -465,7 +477,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                TranscriptionRepository.updateJob(jobId) { it.copy(isSummarizing = false) }
+                repository.updateJobById(jobId) { it.copy(isSummarizing = false) }
                 _uiState.update {
                     it.copy(status = "Summarization error: ${e.message ?: e::class.java.simpleName}")
                 }

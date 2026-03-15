@@ -12,6 +12,7 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.Update
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
@@ -25,6 +26,25 @@ data class TranscriptionHistory(
     val model: String = "",
     val summary: String = "",
     val displayName: String = "",
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "active_jobs")
+data class TranscriptionJob(
+    @PrimaryKey(autoGenerate = true)
+    val id: Int = 0,
+    val uri: String,
+    val displayName: String,
+    val status: String = "Queued",
+    val progress: Float = 0f,
+    val transcript: String = "",
+    val language: String = "",
+    val model: String = "",
+    val summary: String = "",
+    val error: String? = null,
+    val isRunning: Boolean = false,
+    val isSummarizing: Boolean = false,
+    val historyId: Int? = null,
     val timestamp: Long = System.currentTimeMillis()
 )
 
@@ -55,9 +75,31 @@ interface TranscriptionHistoryDao {
     suspend fun updateSummary(id: Int, summary: String)
 }
 
-@Database(entities = [TranscriptionHistory::class], version = 4, exportSchema = false)
+@Dao
+interface TranscriptionJobDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(job: TranscriptionJob): Long
+
+    @Update
+    suspend fun update(job: TranscriptionJob)
+
+    @Delete
+    suspend fun delete(job: TranscriptionJob)
+
+    @Query("SELECT * FROM active_jobs ORDER BY timestamp ASC")
+    fun getAllJobs(): Flow<List<TranscriptionJob>>
+
+    @Query("SELECT * FROM active_jobs WHERE id = :id")
+    suspend fun getJobById(id: Int): TranscriptionJob?
+
+    @Query("DELETE FROM active_jobs WHERE isRunning = 0 AND (transcript != '' OR error IS NOT NULL)")
+    suspend fun clearCompleted()
+}
+
+@Database(entities = [TranscriptionHistory::class, TranscriptionJob::class], version = 5, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun transcriptionHistoryDao(): TranscriptionHistoryDao
+    abstract fun transcriptionJobDao(): TranscriptionJobDao
 
     companion object {
         @Volatile
@@ -81,6 +123,29 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `active_jobs` (
+                        `id` INTEGER PRIMARY KEY AUTO_INCREMENT NOT NULL, 
+                        `uri` TEXT NOT NULL, 
+                        `displayName` TEXT NOT NULL, 
+                        `status` TEXT NOT NULL, 
+                        `progress` REAL NOT NULL, 
+                        `transcript` TEXT NOT NULL, 
+                        `language` TEXT NOT NULL, 
+                        `model` TEXT NOT NULL, 
+                        `summary` TEXT NOT NULL, 
+                        `error` TEXT, 
+                        `isRunning` INTEGER NOT NULL, 
+                        `isSummarizing` INTEGER NOT NULL, 
+                        `historyId` INTEGER, 
+                        `timestamp` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -88,7 +153,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "transcription_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                 INSTANCE = instance
                 instance

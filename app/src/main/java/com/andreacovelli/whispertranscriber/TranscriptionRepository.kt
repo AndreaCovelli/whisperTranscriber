@@ -1,38 +1,40 @@
 package com.andreacovelli.whispertranscriber
 
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
+import android.content.Context
+import com.andreacovelli.whispertranscriber.data.AppDatabase
+import com.andreacovelli.whispertranscriber.data.TranscriptionJob
+import com.andreacovelli.whispertranscriber.data.TranscriptionJobDao
+import kotlinx.coroutines.flow.Flow
 
-object TranscriptionRepository {
-    const val MAX_QUEUE_SIZE = 50
+class TranscriptionRepository(context: Context) {
+    private val jobDao: TranscriptionJobDao = AppDatabase.getDatabase(context).transcriptionJobDao()
 
-    val jobQueue = Channel<TranscriptionJobState>(MAX_QUEUE_SIZE)
+    val jobsState: Flow<List<TranscriptionJob>> = jobDao.getAllJobs()
 
-    private val _jobsState = MutableStateFlow<List<TranscriptionJobState>>(emptyList())
-    val jobsState: StateFlow<List<TranscriptionJobState>> = _jobsState.asStateFlow()
-
-    fun addJob(job: TranscriptionJobState) {
-        _jobsState.update { it + job }
+    suspend fun addJob(job: TranscriptionJob): Long {
+        return jobDao.insert(job)
     }
 
-    fun updateJob(jobId: String, transform: (TranscriptionJobState) -> TranscriptionJobState) {
-        _jobsState.update { state ->
-            state.map { if (it.id == jobId) transform(it) else it }
+    suspend fun updateJob(job: TranscriptionJob) {
+        jobDao.update(job)
+    }
+
+    suspend fun updateJobById(jobId: Int, transform: (TranscriptionJob) -> TranscriptionJob) {
+        val currentJob = jobDao.getJobById(jobId)
+        if (currentJob != null) {
+            jobDao.update(transform(currentJob))
         }
     }
 
-    fun getJob(jobId: String): TranscriptionJobState? {
-        return _jobsState.value.find { it.id == jobId }
+    suspend fun getJob(jobId: Int): TranscriptionJob? {
+        return jobDao.getJobById(jobId)
     }
 
-    fun clearCompletedJobs() {
-        _jobsState.update { state ->
-            state.filter { job ->
-                job.isRunning || (job.transcript.isBlank() && job.error == null)
-            }
-        }
+    suspend fun deleteJob(job: TranscriptionJob) {
+        jobDao.delete(job)
+    }
+
+    suspend fun clearCompletedJobs() {
+        jobDao.clearCompleted()
     }
 }

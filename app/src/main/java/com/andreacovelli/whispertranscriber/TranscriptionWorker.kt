@@ -8,7 +8,6 @@ import android.content.Context
 import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.os.Build
-import android.provider.OpenableColumns
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
@@ -20,7 +19,6 @@ import com.google.genai.Client
 import com.google.genai.types.Content
 import com.google.genai.types.File as GenAiFile
 import com.google.genai.types.GenerateContentConfig
-import com.google.genai.types.GenerateContentResponse
 import com.google.genai.types.Part
 import com.google.genai.types.Schema
 import com.google.genai.types.UploadFileConfig
@@ -28,7 +26,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
@@ -39,6 +36,7 @@ import okio.source
 import org.json.JSONObject
 import retrofit2.HttpException
 import java.io.File
+import androidx.core.net.toUri
 
 class TranscriptionWorker(
     appContext: Context,
@@ -47,6 +45,7 @@ class TranscriptionWorker(
 
     private val notificationManager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     private val settings = ApiKeyManager(appContext)
+    private val repository = TranscriptionRepository(appContext)
 
     companion object {
         const val NOTIFICATION_ID = 1001
@@ -79,14 +78,12 @@ class TranscriptionWorker(
     }
 
     private fun createForegroundInfo(progressText: String): ForegroundInfo {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Transcription Service",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            notificationManager.createNotificationChannel(channel)
-        }
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "Transcription Service",
+            NotificationManager.IMPORTANCE_LOW
+        )
+        notificationManager.createNotificationChannel(channel)
 
         val notification: Notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setContentTitle("Transcribing Audio")
@@ -107,49 +104,42 @@ class TranscriptionWorker(
     }
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        val jobId = inputData.getInt("jobId", -1)
+        if (jobId == -1) return@withContext Result.failure()
+
+        val job = repository.getJob(jobId) ?: return@withContext Result.failure()
+        if (job.status == "Cancelled") return@withContext Result.success()
+
         try {
             setForeground(getForegroundInfo())
+            repository.updateJob(job.copy(isRunning = true, status = "Starting..."))
+            updateNotification("Processing: ${job.displayName}")
 
-            // Loop until channel is empty
-            while (true) {
-                val jobState = TranscriptionRepository.jobQueue.tryReceive().getOrNull() ?: break
-                if (jobState.status == "Cancelled") continue
-
-                TranscriptionRepository.updateJob(jobState.id) { it.copy(isRunning = true, status = "Starting...") }
-                updateNotification("Processing: ${jobState.displayName}")
-
-                try {
-                    val persistedProvider = settings.providerFlow.firstOrNull() ?: TranscriptionProvider.ASSEMBLY_AI
-                    val usingAssembly = persistedProvider == TranscriptionProvider.ASSEMBLY_AI
-                    val geminiModelName = when (persistedProvider) {
-                        TranscriptionProvider.GEMINI_CUSTOM -> settings.customGeminiModelNameFlow.firstOrNull()
-                        else -> persistedProvider.modelName
-                    }
-
-                    processSingleJob(
-                        jobId = jobState.id,
-                        uri = jobState.uri!!,
-                        displayName = jobState.displayName,
-                        usingAssembly = usingAssembly,
-                        geminiModel = geminiModelName
-                    )
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    val msg = e.message ?: e::class.java.simpleName
-                    TranscriptionRepository.updateJob(jobState.id) { it.copy(status = "Error", isRunning = false, error = msg) }
-                }
+            val persistedProvider = settings.providerFlow.firstOrNull() ?: TranscriptionProvider.ASSEMBLY_AI
+            val usingAssembly = persistedProvider == TranscriptionProvider.ASSEMBLY_AI
+            val geminiModelName = when (persistedProvider) {
+                TranscriptionProvider.GEMINI_CUSTOM -> settings.customGeminiModelNameFlow.firstOrNull()
+                else -> persistedProvider.modelName
             }
 
+            processSingleJob(
+                jobId = jobId,
+                uri = job.uri.toUri(),
+                displayName = job.displayName,
+                usingAssembly = usingAssembly,
+                geminiModel = geminiModelName
+            )
             Result.success()
-        } catch (e: CancellationException) {
-            Result.failure()
+        } catch (_: CancellationException) {
+            Result.retry()
         } catch (e: Exception) {
+            val msg = e.message ?: e::class.java.simpleName
+            repository.updateJobById(jobId) { it.copy(status = "Error", isRunning = false, error = msg) }
             Result.failure()
         }
     }
 
-    private suspend fun processSingleJob(jobId: String, uri: Uri, displayName: String, usingAssembly: Boolean, geminiModel: String?) {
+    private suspend fun processSingleJob(jobId: Int, uri: Uri, displayName: String, usingAssembly: Boolean, geminiModel: String?) {
         val app = applicationContext as Application
         val contentResolver = app.contentResolver
         val historyDao = AppDatabase.getDatabase(app).transcriptionHistoryDao()
@@ -174,10 +164,12 @@ class TranscriptionWorker(
                 val providerName = if (usingAssembly) "AssemblyAI" else "Gemini"
                 val conversionReason = "Format not natively supported by $providerName $reasonSuffix"
 
-                TranscriptionRepository.updateJob(jobId) { it.copy(status = "$conversionReason. Converting to 16 kHz WAV...", progress = 0f) }
+                repository.updateJobById(jobId) { it.copy(status = "$conversionReason. Converting to 16 kHz WAV...", progress = 0f) }
                 updateNotification("Converting audio...")
 
-                val outputFile = File.createTempFile("${CONVERTED_FILE_PREFIX}${jobId.take(6)}", ".wav", app.cacheDir)
+                val outputFile = withContext(Dispatchers.IO) {
+                    File.createTempFile("${CONVERTED_FILE_PREFIX}${jobId}", ".wav", app.cacheDir)
+                }
                 tempFileToClean = outputFile
 
                 HardwareAudioConverter.convertToWav(
@@ -187,7 +179,7 @@ class TranscriptionWorker(
                     forceMono = true,
                     targetSampleRate = 16_000,
                     onProgress = { p ->
-                        TranscriptionRepository.updateJob(jobId) {
+                        repository.updateJobById(jobId) {
                             it.copy(
                                 status = "Converting to 16 kHz WAV: ${"%.1f".format(p * 100)}%",
                                 progress = p
@@ -199,20 +191,20 @@ class TranscriptionWorker(
                 if (usingAssembly) {
                     sourceForAssembly = outputFile
                 } else {
-                    TranscriptionRepository.updateJob(jobId) { it.copy(status = "Converted audio ready for Gemini...") }
+                    repository.updateJobById(jobId) { it.copy(status = "Converted audio ready for Gemini...") }
                     fileForGemini = outputFile
                     mimeTypeForGemini = "audio/wav"
                 }
             } else {
                 if (usingAssembly) {
-                    TranscriptionRepository.updateJob(jobId) { it.copy(status = "Format supported ($inputMimeType). Preparing for direct upload...", progress = 1f) }
+                    repository.updateJobById(jobId) { it.copy(status = "Format supported ($inputMimeType). Preparing for direct upload...", progress = 1f) }
                     sourceForAssembly = uri
                 } else {
-                    TranscriptionRepository.updateJob(jobId) { it.copy(status = "Format supported ($inputMimeType). Copying audio for Gemini...", progress = 0.5f) }
+                    repository.updateJobById(jobId) { it.copy(status = "Format supported ($inputMimeType). Copying audio for Gemini...", progress = 0.5f) }
                     updateNotification("Copying audio...")
 
                     val tempFile = contentResolver.openInputStream(uri)?.use { input ->
-                        File.createTempFile("${DIRECT_FILE_PREFIX}${jobId.take(6)}", ".tmp", app.cacheDir).apply {
+                        File.createTempFile("${DIRECT_FILE_PREFIX}${jobId}", ".tmp", app.cacheDir).apply {
                             outputStream().use { output ->
                                 input.copyTo(output)
                             }
@@ -223,7 +215,7 @@ class TranscriptionWorker(
                     fileForGemini = tempFile
                     mimeTypeForGemini = inputMimeType
 
-                    TranscriptionRepository.updateJob(jobId) { it.copy(progress = 1f) }
+                    repository.updateJobById(jobId) { it.copy(progress = 1f) }
                 }
             }
 
@@ -243,7 +235,7 @@ class TranscriptionWorker(
                 when (result) {
                     is TranscriptionResult.Loading -> {
                         val providerMsg = "${if (usingAssembly) "AssemblyAI" else "Gemini"}: ${result.message}"
-                        TranscriptionRepository.updateJob(jobId) { it.copy(status = providerMsg) }
+                        repository.updateJobById(jobId) { it.copy(status = providerMsg) }
                         updateNotification(providerMsg)
                     }
                     is TranscriptionResult.Success -> resultData = result.data
@@ -262,7 +254,7 @@ class TranscriptionWorker(
                 )
             ).toInt()
 
-            TranscriptionRepository.updateJob(jobId) {
+            repository.updateJobById(jobId) {
                 it.copy(
                     transcript = data.text,
                     language = data.language.ifBlank { "Unknown" },
@@ -304,7 +296,7 @@ class TranscriptionWorker(
     private fun transcribeWithAssemblyReturn(
         source: Any,
         apiKey: CharArray,
-        jobId: String
+        jobId: Int
     ): kotlinx.coroutines.flow.Flow<TranscriptionResult> = kotlinx.coroutines.flow.flow {
         try {
             emit(TranscriptionResult.Loading("1/4 Uploading file..."))
@@ -326,7 +318,7 @@ class TranscriptionWorker(
 
             emit(TranscriptionResult.Loading("3/4 Waiting for result..."))
             repeat(120) {
-                val jobState = TranscriptionRepository.getJob(jobId)
+                val jobState = repository.getJob(jobId)
                 if (jobState?.status == "Cancelled") throw CancellationException("Job cancelled")
 
                 transcriptResponse = api.getTranscript(String(apiKey), transcriptId)
@@ -361,7 +353,7 @@ class TranscriptionWorker(
         mimeType: String,
         apiKey: CharArray,
         modelName: String,
-        jobId: String
+        jobId: Int
     ): kotlinx.coroutines.flow.Flow<TranscriptionResult> = kotlinx.coroutines.flow.flow {
         val client = Client.builder().apiKey(String(apiKey)).build()
         var uploadedFile: GenAiFile? = null
@@ -383,7 +375,7 @@ class TranscriptionWorker(
             val config = GenerateContentConfig.builder().responseMimeType("application/json").responseSchema(responseSchema).build()
             val content = Content.fromParts(Part.fromText("Transcribe the provided audio. Return only a compact JSON object with fields: language_code (BCP-47 like en-US) and text (full transcript). Do not include any extra commentary."), audioPart)
 
-            val jobState = TranscriptionRepository.getJob(jobId)
+            val jobState = repository.getJob(jobId)
             if (jobState?.status == "Cancelled") throw CancellationException("Job cancelled")
 
             val response = withContext(Dispatchers.IO) { client.models.generateContent(modelName, content, config) }
@@ -406,8 +398,15 @@ class TranscriptionWorker(
             uploadedFile?.let { remoteFile ->
                 runCatching {
                     withContext(Dispatchers.IO) {
-                        remoteFile.name().ifPresentOrElse({ fileName -> client.files.delete(fileName, null) }, {})
+                        remoteFile.name().ifPresentOrElse({ fileName ->
+                            client.files.delete(fileName, null)
+                        }, {
+                            android.util.Log.w("TranscriptionWorker", "Could not delete remote Gemini file as its name was not available.")
+                        })
                     }
+                }.onFailure {
+                    if (it is CancellationException) throw it
+                    android.util.Log.w("TranscriptionWorker", "Failed to delete remote Gemini file: ${remoteFile.name().orElse("[name not available]")}", it)
                 }
             }
         }

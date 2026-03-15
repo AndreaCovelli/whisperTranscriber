@@ -38,7 +38,7 @@ object HardwareAudioConverter {
         outputFile: File,
         forceMono: Boolean = true,
         targetSampleRate: Int = 16_000,
-        onProgress: ((Float) -> Unit)? = null
+        onProgress: (suspend (Float) -> Unit)? = null
     ): Result = withContext(Dispatchers.IO) {
         require(targetSampleRate > 0)
 
