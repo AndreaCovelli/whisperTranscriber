@@ -428,7 +428,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val customName = state.customGeminiModelName
                     if (customName.isBlank()) {
                         _uiState.update { it.copy(status = "Error: No custom Gemini model set for summarization.") }
-                        repository.updateJob(job.copy(isSummarizing = false))
+                        repository.setSummarizing(jobId, false)
                         return@launch
                     }
                     customName

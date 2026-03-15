@@ -316,9 +316,6 @@ class TranscriptionWorker(
 
             emit(TranscriptionResult.Loading("3/4 Waiting for result..."))
             repeat(120) {
-                val jobState = repository.getJob(jobId)
-                if (jobState?.status == "Cancelled") throw CancellationException("Job cancelled")
-
                 transcriptResponse = api.getTranscript(String(apiKey), transcriptId)
                 when (transcriptResponse.status) {
                     "completed" -> {
@@ -372,9 +369,6 @@ class TranscriptionWorker(
 
             val config = GenerateContentConfig.builder().responseMimeType("application/json").responseSchema(responseSchema).build()
             val content = Content.fromParts(Part.fromText("Transcribe the provided audio. Return only a compact JSON object with fields: language_code (BCP-47 like en-US) and text (full transcript). Do not include any extra commentary."), audioPart)
-
-            val jobState = repository.getJob(jobId)
-            if (jobState?.status == "Cancelled") throw CancellationException("Job cancelled")
 
             val response = withContext(Dispatchers.IO) { client.models.generateContent(modelName, content, config) }
 
