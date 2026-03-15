@@ -30,10 +30,6 @@ class TranscriptionRepository(context: Context) {
         return jobDao.getJobById(jobId)
     }
 
-    suspend fun deleteJob(job: TranscriptionJob) {
-        jobDao.delete(job)
-    }
-
     suspend fun clearCompletedJobs() {
         jobDao.clearCompleted()
     }

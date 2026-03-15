@@ -130,8 +130,8 @@ class TranscriptionWorker(
                 geminiModel = geminiModelName
             )
             Result.success()
-        } catch (_: CancellationException) {
-            Result.retry()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             val msg = e.message ?: e::class.java.simpleName
             repository.updateJobById(jobId) { it.copy(status = "Error", isRunning = false, error = msg) }

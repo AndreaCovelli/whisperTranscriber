@@ -127,7 +127,7 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""
                     CREATE TABLE IF NOT EXISTS `active_jobs` (
-                        `id` INTEGER PRIMARY KEY AUTO_INCREMENT NOT NULL, 
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
                         `uri` TEXT NOT NULL, 
                         `displayName` TEXT NOT NULL, 
                         `status` TEXT NOT NULL, 
