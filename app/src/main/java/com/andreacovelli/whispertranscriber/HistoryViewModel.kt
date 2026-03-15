@@ -50,6 +50,12 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
         }
         .cachedIn(viewModelScope)
 
+    fun clearSummary(item: TranscriptionHistory) {
+        viewModelScope.launch {
+            historyDao.updateSummary(item.id, "")
+        }
+    }
+
     fun deleteHistoryItem(item: TranscriptionHistory) {
         viewModelScope.launch {
             historyDao.delete(item)

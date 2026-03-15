@@ -405,6 +405,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun clearSummary(jobId: Int) {
+        viewModelScope.launch {
+            val job = repository.getJob(jobId) ?: return@launch
+            repository.updateJobById(jobId) { it.copy(summary = "") }
+            withContext(ioDispatcher) {
+                val hid = job.historyId
+                if (hid != null) {
+                    historyDao.updateSummary(hid, "")
+                }
+            }
+        }
+    }
+
     fun summarizeJob(jobId: Int) {
         viewModelScope.launch {
             val state = _uiState.value

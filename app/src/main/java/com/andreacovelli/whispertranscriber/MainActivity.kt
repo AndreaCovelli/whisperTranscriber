@@ -354,6 +354,7 @@ fun MainScreen(
                         job = job,
                         canSummarize = uiState.geminiApiKeyState is ApiKeyState.Present,
                         onSummarize = { viewModel.summarizeJob(job.id) },
+                        onClearSummary = { viewModel.clearSummary(job.id) },
                         onCopyTranscript = {
                             scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", job.transcript))) }
                             Toast.makeText(context, "Copied transcript", Toast.LENGTH_SHORT).show()
@@ -383,6 +384,7 @@ private fun TranscriptionJobCard(
     job: TranscriptionJobState,
     canSummarize: Boolean,
     onSummarize: () -> Unit,
+    onClearSummary: () -> Unit,
     onCopyTranscript: () -> Unit,
     onCopySummary: () -> Unit,
     onShareTranscript: () -> Unit,
@@ -534,8 +536,13 @@ private fun TranscriptionJobCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("Summary", style = MaterialTheme.typography.titleSmall)
-                        IconButton(onClick = onCopySummary) {
-                            Icon(Icons.Filled.ContentCopy, "Copy Summary")
+                        Row {
+                            TextButton(onClick = onClearSummary) {
+                                Text("Clear")
+                            }
+                            IconButton(onClick = onCopySummary) {
+                                Icon(Icons.Filled.ContentCopy, "Copy Summary")
+                            }
                         }
                     }
                     SelectionContainer {
@@ -1035,6 +1042,7 @@ fun HistoryScreen(
                                     scope.launch { clipboardManager.setClipEntry(ClipEntry(ClipData.newPlainText("", text))) }
                                     Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                                 },
+                                onClearSummary = { historyViewModel.clearSummary(item) },
                                 onDelete = { historyViewModel.deleteHistoryItem(item) },
                                 searchQuery = searchQuery
                             )
@@ -1085,6 +1093,7 @@ fun HistoryItemCard(
     expanded: Boolean,
     onToggleExpand: () -> Unit,
     onCopy: (String) -> Unit,
+    onClearSummary: () -> Unit,
     onDelete: () -> Unit,
     searchQuery: String = ""
 ) {
@@ -1123,7 +1132,16 @@ fun HistoryItemCard(
                 Text(rememberHighlightedText(item.text, searchQuery), style = MaterialTheme.typography.bodyMedium)
                 if (item.summary.isNotBlank()) {
                     Spacer(Modifier.height(12.dp))
-                    Text("Summary", style = MaterialTheme.typography.titleSmall)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Summary", style = MaterialTheme.typography.titleSmall)
+                        TextButton(onClick = onClearSummary) {
+                            Text("Clear")
+                        }
+                    }
                     Spacer(Modifier.height(4.dp))
                     Text(rememberHighlightedText(item.summary, searchQuery), style = MaterialTheme.typography.bodyMedium)
                 }
