@@ -221,12 +221,12 @@ class TranscriptionWorker(
             val flow = if (usingAssembly) {
                 if (sourceForAssembly == null) throw IllegalStateException("Internal error: AssemblyAI source is missing.")
                 val keyChars = settings.getAssemblyApiKey() ?: throw IllegalStateException("API key missing or corrupted")
-                transcribeWithAssemblyReturn(sourceForAssembly, keyChars, jobId)
+                transcribeWithAssemblyReturn(sourceForAssembly, keyChars)
             } else {
                 if (geminiModel == null) throw IllegalStateException("Gemini model not specified.")
                 if (fileForGemini == null || mimeTypeForGemini == null) throw IllegalStateException("Internal error: Gemini audio data missing.")
                 val keyChars = settings.getGeminiApiKey() ?: throw IllegalStateException("API key missing or corrupted")
-                transcribeWithGeminiReturn(fileForGemini, mimeTypeForGemini, keyChars, geminiModel, jobId)
+                transcribeWithGeminiReturn(fileForGemini, mimeTypeForGemini, keyChars, geminiModel)
             }
 
             var resultData: TranscriptionData? = null
@@ -293,8 +293,7 @@ class TranscriptionWorker(
 
     private fun transcribeWithAssemblyReturn(
         source: Any,
-        apiKey: CharArray,
-        jobId: Int
+        apiKey: CharArray
     ): kotlinx.coroutines.flow.Flow<TranscriptionResult> = kotlinx.coroutines.flow.flow {
         try {
             emit(TranscriptionResult.Loading("1/4 Uploading file..."))
@@ -347,8 +346,7 @@ class TranscriptionWorker(
         audioFile: File,
         mimeType: String,
         apiKey: CharArray,
-        modelName: String,
-        jobId: Int
+        modelName: String
     ): kotlinx.coroutines.flow.Flow<TranscriptionResult> = kotlinx.coroutines.flow.flow {
         val client = Client.builder().apiKey(String(apiKey)).build()
         var uploadedFile: GenAiFile? = null

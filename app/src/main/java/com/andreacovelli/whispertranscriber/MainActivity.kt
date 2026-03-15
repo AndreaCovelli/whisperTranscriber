@@ -940,7 +940,7 @@ fun HistoryScreen(
     val context = LocalContext.current
 
     val searchQuery by historyViewModel.searchQuery.collectAsStateWithLifecycle()
-    var showDeleteAllDialog by remember { mutableStateOf(false) }
+    val (showDeleteAllDialog, setShowDeleteAllDialog) = remember { mutableStateOf(false) }
 
     val expandedIdsSaver = listSaver<Set<Int>, Int>(
         save = { it.toList() },
@@ -950,17 +950,17 @@ fun HistoryScreen(
 
     if (showDeleteAllDialog) {
         AlertDialog(
-            onDismissRequest = { showDeleteAllDialog = false },
+            onDismissRequest = { setShowDeleteAllDialog(false) },
             title = { Text("Delete all history?") },
             text = { Text("This will permanently remove all transcription history.") },
             confirmButton = {
                 TextButton(onClick = {
                     historyViewModel.deleteAllHistory()
-                    showDeleteAllDialog = false
+                    setShowDeleteAllDialog(false)
                 }) { Text("Delete all", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteAllDialog = false }) { Text("Cancel") }
+                TextButton(onClick = { setShowDeleteAllDialog(false) }) { Text("Cancel") }
             }
         )
     }
@@ -976,7 +976,7 @@ fun HistoryScreen(
                 },
                 actions = {
                     if (pagedItems.itemCount > 0 || searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { showDeleteAllDialog = true }) {
+                        IconButton(onClick = { setShowDeleteAllDialog(true) }) {
                             Icon(Icons.Default.DeleteSweep, "Delete all history")
                         }
                     }
