@@ -1,4 +1,9 @@
 <resources>
     <string name="app_name">WhisperTranscriber</string>
     <string name="app_version_info">Version: %1$s (%2$d)</string>
+    <string name="summary_header">\n\nSummary:\n</string>
+    <string name="share_transcription_title">Share Transcription</string>
+    <string name="clear_summary">Clear summary</string>
+    <string name="copy_type">Copy %1$s</string>
+    <string name="share_item_description">Share item</string>
 </resources>

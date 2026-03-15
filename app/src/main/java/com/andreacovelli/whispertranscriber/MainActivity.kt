@@ -1056,13 +1056,13 @@ fun HistoryScreen(
                                         val content = buildString {
                                             append(item.text)
                                             if (item.summary.isNotBlank()) {
-                                                append("\n\nSummary:\n")
+                                                append(context.getString(R.string.summary_header))
                                                 append(item.summary)
                                             }
                                         }
                                         putExtra(Intent.EXTRA_TEXT, content)
                                     }
-                                    context.startActivity(Intent.createChooser(sendIntent, "Share Transcription"))
+                                    context.startActivity(Intent.createChooser(sendIntent, context.getString(R.string.share_transcription_title)))
                                 },
                                 searchQuery = searchQuery
                             )
@@ -1192,7 +1192,7 @@ fun HistoryItemCard(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("Clear summary", maxLines = 1, softWrap = false)
+                        Text(stringResource(R.string.clear_summary), maxLines = 1, softWrap = false)
                     }
                 }
                 val copyActions = buildList {
@@ -1207,11 +1207,11 @@ fun HistoryItemCard(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("Copy $type", maxLines = 1, softWrap = false)
+                        Text(stringResource(R.string.copy_type, type), maxLines = 1, softWrap = false)
                     }
                 }
                 IconButton(onClick = onShare) {
-                    Icon(Icons.Default.Share, "Share item")
+                    Icon(Icons.Default.Share, stringResource(R.string.share_item_description))
                 }
                 IconButton(onClick = onDelete) {
                     Icon(Icons.Default.Delete, "Delete item", tint = MaterialTheme.colorScheme.error)
