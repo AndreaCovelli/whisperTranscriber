@@ -39,6 +39,10 @@ class TranscriptionRepository(context: Context) {
         jobDao.updateStatus(id, status)
     }
 
+    suspend fun updateSummary(id: Int, summary: String) {
+        jobDao.updateSummary(id, summary)
+    }
+
     suspend fun setSummarizing(id: Int, isSummarizing: Boolean) {
         jobDao.setSummarizing(id, isSummarizing)
     }

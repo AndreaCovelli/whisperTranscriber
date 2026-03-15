@@ -408,7 +408,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun clearSummary(jobId: Int) {
         viewModelScope.launch {
             val job = repository.getJob(jobId) ?: return@launch
-            repository.updateJobById(jobId) { it.copy(summary = "") }
+            repository.updateSummary(jobId, "")
             withContext(ioDispatcher) {
                 val hid = job.historyId
                 if (hid != null) {
