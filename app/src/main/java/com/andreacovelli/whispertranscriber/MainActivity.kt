@@ -1132,16 +1132,7 @@ fun HistoryItemCard(
                 Text(rememberHighlightedText(item.text, searchQuery), style = MaterialTheme.typography.bodyMedium)
                 if (item.summary.isNotBlank()) {
                     Spacer(Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Summary", style = MaterialTheme.typography.titleSmall)
-                        TextButton(onClick = onClearSummary) {
-                            Text("Clear")
-                        }
-                    }
+                    Text("Summary", style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(4.dp))
                     Text(rememberHighlightedText(item.summary, searchQuery), style = MaterialTheme.typography.bodyMedium)
                 }
@@ -1172,6 +1163,17 @@ fun HistoryItemCard(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                if (item.summary.isNotBlank()) {
+                    TextButton(onClick = onClearSummary) {
+                        Icon(
+                            Icons.Default.DeleteSweep,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("Clear summary")
+                    }
+                }
                 val copyActions = buildList {
                     add("text" to item.text)
                     if (item.summary.isNotBlank()) add("summary" to item.summary)
