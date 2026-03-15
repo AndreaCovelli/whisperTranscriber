@@ -538,6 +538,12 @@ private fun TranscriptionJobCard(
                         Text("Summary", style = MaterialTheme.typography.titleSmall)
                         Row {
                             TextButton(onClick = onClearSummary) {
+                                Icon(
+                                    Icons.Default.DeleteSweep,
+                                    contentDescription = "Clear Summary",
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
                                 Text("Clear")
                             }
                             IconButton(onClick = onCopySummary) {
@@ -1167,7 +1173,7 @@ fun HistoryItemCard(
                     TextButton(onClick = onClearSummary) {
                         Icon(
                             Icons.Default.DeleteSweep,
-                            contentDescription = null,
+                            contentDescription = "Clear summary",
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.width(4.dp))
