@@ -15,13 +15,13 @@ import java.nio.charset.StandardCharsets
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
 enum class TranscriptionProvider(val modelName: String? = null) {
-    ASSEMBLY_AI,
+    ELEVEN_LABS,
     GEMINI_FLASH_LITE("gemini-flash-lite-latest"),
     GEMINI_FLASH("gemini-flash-latest"),
     GEMINI_PRO("gemini-pro-latest"),
     GEMINI_CUSTOM; // model name stored separately in DataStore
 
-    fun isGemini(): Boolean = this != ASSEMBLY_AI
+    fun isGemini(): Boolean = this != ELEVEN_LABS
 }
 
 sealed class ApiKeyState {
@@ -32,7 +32,7 @@ sealed class ApiKeyState {
 
 class ApiKeyManager(private val context: Context) {
     companion object {
-        private val ASSEMBLY_API_KEY_ENC = stringPreferencesKey("assembly_ai_api_key_enc")
+        private val ELEVEN_LABS_API_KEY_ENC = stringPreferencesKey("eleven_labs_api_key_enc")
         private val GEMINI_API_KEY_ENC = stringPreferencesKey("gemini_api_key_enc")
         private val GEMINI_CUSTOM_MODEL_NAME = stringPreferencesKey("gemini_custom_model_name")
 
@@ -40,14 +40,14 @@ class ApiKeyManager(private val context: Context) {
     }
 
     // Save (encrypt before persisting)
-    suspend fun saveAssemblyApiKey(key: String) {
+    suspend fun saveElevenLabsApiKey(key: String) {
         val trimmed = key.trim()
         context.dataStore.edit { prefs ->
             if (trimmed.isEmpty()) {
-                prefs.remove(ASSEMBLY_API_KEY_ENC)
+                prefs.remove(ELEVEN_LABS_API_KEY_ENC)
             } else {
                 val enc = KeystoreCrypto.encryptToBase64(trimmed.toByteArray(Charsets.UTF_8))
-                prefs[ASSEMBLY_API_KEY_ENC] = enc
+                prefs[ELEVEN_LABS_API_KEY_ENC] = enc
             }
         }
     }
@@ -76,9 +76,9 @@ class ApiKeyManager(private val context: Context) {
     }
 
     // Quick wipe actions
-    suspend fun forgetAssemblyApiKey() {
+    suspend fun forgetElevenLabsApiKey() {
         context.dataStore.edit {
-            it.remove(ASSEMBLY_API_KEY_ENC)
+            it.remove(ELEVEN_LABS_API_KEY_ENC)
         }
     }
 
@@ -102,7 +102,7 @@ class ApiKeyManager(private val context: Context) {
         }
     }
 
-    val assemblyApiKeyStateFlow: Flow<ApiKeyState> = getApiKeyStateFlow(ASSEMBLY_API_KEY_ENC)
+    val elevenLabsApiKeyStateFlow: Flow<ApiKeyState> = getApiKeyStateFlow(ELEVEN_LABS_API_KEY_ENC)
     val geminiApiKeyStateFlow: Flow<ApiKeyState> = getApiKeyStateFlow(GEMINI_API_KEY_ENC)
 
     // Suspend functions to securely read keys on-demand
@@ -122,7 +122,7 @@ class ApiKeyManager(private val context: Context) {
         }
     }
 
-    suspend fun getAssemblyApiKey(): CharArray? = getApiKey(ASSEMBLY_API_KEY_ENC)
+    suspend fun getElevenLabsApiKey(): CharArray? = getApiKey(ELEVEN_LABS_API_KEY_ENC)
     suspend fun getGeminiApiKey(): CharArray? = getApiKey(GEMINI_API_KEY_ENC)
 
     val customGeminiModelNameFlow: Flow<String?> = context.dataStore.data.map { p ->
@@ -135,13 +135,13 @@ class ApiKeyManager(private val context: Context) {
             if (providerName != null) {
                 TranscriptionProvider.valueOf(providerName)
             } else {
-                TranscriptionProvider.ASSEMBLY_AI
+                TranscriptionProvider.ELEVEN_LABS
             }
         } catch (_: IllegalArgumentException) {
             if (providerName == "GEMINI_25_FLASH") {
                 TranscriptionProvider.GEMINI_FLASH
             } else {
-                TranscriptionProvider.ASSEMBLY_AI
+                TranscriptionProvider.ELEVEN_LABS
             }
         }
     }

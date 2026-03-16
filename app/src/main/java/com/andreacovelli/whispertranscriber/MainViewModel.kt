@@ -45,9 +45,9 @@ sealed class KeyValidationState {
 
 data class UiState(
     val status: String = "Waiting for audios...",
-    val provider: TranscriptionProvider = TranscriptionProvider.ASSEMBLY_AI,
-    val assemblyApiKeyState: ApiKeyState = ApiKeyState.Missing,
-    val assemblyKeyValidation: KeyValidationState = KeyValidationState.Idle,
+    val provider: TranscriptionProvider = TranscriptionProvider.ELEVEN_LABS,
+    val elevenLabsApiKeyState: ApiKeyState = ApiKeyState.Missing,
+    val elevenLabsKeyValidation: KeyValidationState = KeyValidationState.Idle,
     val geminiApiKeyState: ApiKeyState = ApiKeyState.Missing,
     val geminiKeyValidation: KeyValidationState = KeyValidationState.Idle,
     val customGeminiModelName: String = "",
@@ -131,8 +131,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             launch {
-                settings.assemblyApiKeyStateFlow.collect { state ->
-                    _uiState.update { it.copy(assemblyApiKeyState = state) }
+                settings.elevenLabsApiKeyStateFlow.collect { state ->
+                    _uiState.update { it.copy(elevenLabsApiKeyState = state) }
                 }
             }
             launch {
@@ -178,28 +178,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun setAssemblyKey(k: String) {
+    fun setElevenLabsKey(k: String) {
         val trimmed = k.trim()
         if (trimmed.isBlank()) return
-        _uiState.update { it.copy(assemblyKeyValidation = KeyValidationState.Validating) }
+        _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Validating) }
         viewModelScope.launch {
             try {
                 val response = withContext(ioDispatcher) {
-                    RetrofitClient.api.listTranscripts(trimmed)
+                    RetrofitClient.api.getUser(trimmed)
                 }
                 if (response.isSuccessful) {
-                    settings.saveAssemblyApiKey(trimmed)
-                    _uiState.update { it.copy(assemblyKeyValidation = KeyValidationState.Idle) }
+                    settings.saveElevenLabsApiKey(trimmed)
+                    _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Idle) }
                 } else {
                     val errorMessage = if (response.code() == 401) {
                         "Invalid API key"
                     } else {
                         "Validation failed: HTTP ${response.code()}"
                     }
-                    _uiState.update { it.copy(assemblyKeyValidation = KeyValidationState.Error(errorMessage)) }
+                    _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Error(errorMessage)) }
                 }
             } catch (e: Exception) {
-                _uiState.update { it.copy(assemblyKeyValidation = KeyValidationState.Error(e.message ?: "Validation failed")) }
+                _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Error(e.message ?: "Validation failed")) }
             }
         }
     }
@@ -240,8 +240,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(customModelValidation = CustomModelValidation.Idle) }
     }
 
-    fun resetAssemblyKeyValidation() {
-        _uiState.update { it.copy(assemblyKeyValidation = KeyValidationState.Idle) }
+    fun resetElevenLabsKeyValidation() {
+        _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Idle) }
     }
 
     fun resetGeminiKeyValidation() {
@@ -303,10 +303,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun forgetAssemblyKey() {
+    fun forgetElevenLabsKey() {
         viewModelScope.launch {
-            settings.forgetAssemblyApiKey()
-            _uiState.update { it.copy(assemblyKeyValidation = KeyValidationState.Idle) }
+            settings.forgetElevenLabsApiKey()
+            _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Idle) }
         }
     }
     fun forgetGeminiKey() {

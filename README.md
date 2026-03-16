@@ -1,12 +1,13 @@
 # WhisperTranscriber
 
-An Android app that transcribes audio files using AI — powered by [AssemblyAI](https://www.assemblyai.com/) or [Google Gemini](https://ai.google.dev/). Share one or more audio files with the app from any file manager or audio player, and receive transcripts in seconds.
+An Android app that transcribes audio files using AI — powered by [ElevenLabs](https://elevenlabs.io/) or [Google Gemini](https://ai.google.dev/).
+ Share one or more audio files with the app from any file manager or audio player, and receive transcripts in seconds.
 
 ---
 
 ## Features
 
-- **Multi-provider transcription** — choose between AssemblyAI or Gemini (Flash Lite, Flash, Pro, or a custom model)
+- **Multi-provider transcription** — choose between ElevenLabs or Gemini (Flash Lite, Flash, Pro, or a custom model)
 - **Batch processing** — share multiple audio files at once; jobs are queued and processed sequentially
 - **AI summarization** — generate a concise summary of any transcript (requires a Gemini API key)
 - **Transcription history** — all transcripts are saved locally in a searchable Room database
@@ -23,7 +24,7 @@ An Android app that transcribes audio files using AI — powered by [AssemblyAI]
 | **Minimum Android** | 8.0 Oreo (API 26) |
 | **Target / Compile SDK** | 36 (Android 15) |
 | **JDK** | 21 (resolved automatically via Gradle toolchain) |
-| **API key** | AssemblyAI **or** Gemini (at least one required) |
+| **API key** | ElevenLabs **or** Gemini (at least one required) |
 
 ---
 
@@ -67,7 +68,7 @@ All configuration is done inside the app — no config files or build secrets ne
 
 ### Getting API keys
 
-- **AssemblyAI**: Sign up at [assemblyai.com](https://www.assemblyai.com/) and copy your API key from the dashboard
+- **ElevenLabs**: Sign up at [elevenlabs.io](https://elevenlabs.io/) and copy your API key from your profile.
 - **Gemini**: Generate a key at [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
 
 ### Custom Gemini model
@@ -78,14 +79,14 @@ Select **Custom Model** in Settings and type any valid Gemini model identifier (
 
 ## How It Works
 
-### AssemblyAI flow
+### ElevenLabs flow
 
-1. Audio file is uploaded to AssemblyAI's servers
-2. A transcript job is created referencing the uploaded URL
-3. The app polls the status endpoint every 5 seconds (up to ~10 minutes)
-4. The finished transcript is saved to local history; the remote file is deleted
+1. The audio file is sent in a single request to the ElevenLabs Scribe v2 API.
+2. The API processes the audio and returns the full transcript in the response.
+3. The finished transcript is saved to local history.
 
 ### Gemini flow
+
 
 1. Audio bytes are sent inline with the transcription prompt
 2. The model returns a structured JSON response containing the detected language code and transcript text
@@ -101,7 +102,7 @@ When the selected provider does not natively support the file's MIME type, `Hard
 
 | Provider | Accepted MIME types |
 |---|---|
-| **AssemblyAI** | `audio/3gpp`, `audio/aac`, `audio/ac3`, `audio/aiff`, `audio/amr`, `audio/flac`, `audio/mp4`, `audio/mpeg` (MP3), `audio/ogg`, `audio/opus`, `audio/wav`, `audio/webm`, `audio/x-ms-wma`, `video/mp4`, `video/3gpp`, `video/webm`, `video/quicktime`, `video/avi`, and more |
+| **ElevenLabs** | `audio/mp3`, `audio/mpeg`, `audio/wav`, `audio/x-wav`, `audio/m4a`, `audio/x-m4a`, `audio/flac`, `audio/x-flac`, `audio/ogg`, `audio/vorbis`, `audio/opus`, `audio/webm`, `audio/aac`, `audio/aiff`, `audio/x-aiff` |
 | **Gemini** | `audio/wav`, `audio/mp3`, `audio/aiff`, `audio/aac`, `audio/ogg`, `audio/flac` |
 | **Auto-converted** | Any format not in the list above is converted to 16 kHz mono WAV automatically |
 
@@ -130,7 +131,7 @@ MainActivity.kt              — Single Activity, NavHost, share-intent handling
 MainViewModel.kt             — Job queue (Channel), transcription orchestration
 HistoryViewModel.kt          — Room history as StateFlow
 ApiKeyManager.kt             — Encrypted credential storage (DataStore + Keystore)
-AssemblyAiApiService.kt      — Retrofit interface for AssemblyAI v2 REST API
+ElevenLabsApiService.kt      — Retrofit interface for ElevenLabs v2 REST API
 data/HistoryDatabase.kt      — Room entity, DAO, and migrations (schema v4)
 security/KeystoreCrypto.kt   — AES-256-GCM encryption helpers
 media/HardwareAudioConverter.kt — MediaCodec audio → 16 kHz mono WAV
@@ -159,7 +160,7 @@ ui/theme/                    — Material Design 3 theme, colors, typography
 | Lifecycle / ViewModel | 2.10.0 | MVVM lifecycle management |
 | Room | 2.8.4 | Local SQLite database |
 | DataStore Preferences | 1.2.0 | Persistent key-value storage |
-| Retrofit + Gson | 3.0.0 | AssemblyAI REST client |
+| Retrofit + Gson | 3.0.0 | ElevenLabs REST client |
 | OkHttp Logging Interceptor | 5.3.2 | HTTP debug logging |
 | Google Generative AI SDK | 1.42.0 | Gemini API client |
 | KSP | 2.3.6 | Room annotation processing |
@@ -171,7 +172,7 @@ ui/theme/                    — Material Design 3 theme, colors, typography
 
 | Permission | Reason |
 |---|---|
-| `android.permission.INTERNET` | Required to call AssemblyAI and Gemini APIs |
+| `android.permission.INTERNET` | Required to call ElevenLabs and Gemini APIs |
 
 Audio files are accessed via Android share intents — no `READ_EXTERNAL_STORAGE` permission is needed.
 

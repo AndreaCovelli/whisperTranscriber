@@ -257,7 +257,7 @@ fun MainScreen(
         }
     ) { paddingValues ->
         val providerLabel = when (uiState.provider) {
-            TranscriptionProvider.ASSEMBLY_AI -> "Using: AssemblyAI"
+            TranscriptionProvider.ELEVEN_LABS -> "Using: ElevenLabs"
             TranscriptionProvider.GEMINI_FLASH_LITE -> "Using: Gemini Flash Lite"
             TranscriptionProvider.GEMINI_FLASH -> "Using: Gemini Flash"
             TranscriptionProvider.GEMINI_PRO -> "Using: Gemini Pro"
@@ -617,14 +617,14 @@ fun SettingsScreen(
             }
 
             ApiKeyCard(
-                title = "AssemblyAI API Key",
-                label = "Enter AssemblyAI API key",
-                apiKeyState = uiState.assemblyApiKeyState,
-                keyValidationState = uiState.assemblyKeyValidation,
-                onSave = viewModel::setAssemblyKey,
-                onForget = viewModel::forgetAssemblyKey,
-                onResetValidation = viewModel::resetAssemblyKeyValidation,
-                forgetMessage = "AssemblyAI key forgotten",
+                title = "ElevenLabs API Key",
+                label = "Enter ElevenLabs API key",
+                apiKeyState = uiState.elevenLabsApiKeyState,
+                keyValidationState = uiState.elevenLabsKeyValidation,
+                onSave = viewModel::setElevenLabsKey,
+                onForget = viewModel::forgetElevenLabsKey,
+                onResetValidation = viewModel::resetElevenLabsKeyValidation,
+                forgetMessage = "ElevenLabs key forgotten",
                 snackbarHostState = snackbarHostState
             )
 
@@ -800,9 +800,9 @@ private fun ProviderSelector(
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         ProviderRadioOption(
-            text = "AssemblyAI",
-            isSelected = selected == TranscriptionProvider.ASSEMBLY_AI,
-            onClick = { onSelect(TranscriptionProvider.ASSEMBLY_AI) }
+            text = "ElevenLabs",
+            isSelected = selected == TranscriptionProvider.ELEVEN_LABS,
+            onClick = { onSelect(TranscriptionProvider.ELEVEN_LABS) }
         )
 
         Spacer(Modifier.height(8.dp))

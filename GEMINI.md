@@ -3,10 +3,10 @@
 When using libraries, use context7 to check for updated info.
 
 ## Project Overview
-WhisperTranscriber is an Android application that transcribes audio files using AI, leveraging either AssemblyAI or Google Gemini. It allows users to share audio files from any app, processes them (including automatic conversion to 16 kHz mono WAV via MediaCodec when necessary), and returns transcripts.
+WhisperTranscriber is an Android application that transcribes audio files using AI, leveraging either ElevenLabs or Google Gemini. It allows users to share audio files from any app, processes them (including automatic conversion to 16 kHz mono WAV via MediaCodec when necessary), and returns transcripts.
 
 Key features include:
-- **Multi-provider Transcription:** AssemblyAI and Google Gemini (supports custom models).
+- **Multi-provider Transcription:** ElevenLabs and Google Gemini (supports custom models).
 - **Batch Processing:** Queued sequential processing of multiple shared audio files.
 - **AI Summarization:** Transcript summarization using the Gemini API.
 - **Local History:** Transcripts are saved locally in a searchable Room SQLite database.
@@ -21,7 +21,7 @@ Key features include:
 - **Navigation:** Jetpack Navigation Compose
 - **Local Storage:** Room Database (schema v4), DataStore Preferences
 - **Networking:** Retrofit, OkHttp Logging Interceptor
-- **AI Integrations:** AssemblyAI REST API, Google Generative AI SDK
+- **AI Integrations:** ElevenLabs REST API, Google Generative AI SDK
 
 ## Development Conventions
 - **UI State Management:** UI state is exposed as `StateFlow` from ViewModels and collected in Compose using `collectAsStateWithLifecycle()`.

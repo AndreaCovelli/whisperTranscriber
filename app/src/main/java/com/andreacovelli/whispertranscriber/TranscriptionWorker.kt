@@ -24,11 +24,11 @@ import com.google.genai.types.Schema
 import com.google.genai.types.UploadFileConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import okio.BufferedSink
@@ -64,12 +64,12 @@ class TranscriptionWorker(
             "audio/aac", "audio/ogg", "audio/vorbis", "audio/flac", "audio/x-flac"
         )
 
-        private val SUPPORTED_ASSEMBLYAI_MIME_TYPES = setOf(
-            "audio/3gpp", "audio/aac", "audio/x-hx-aac-adts", "audio/ac3", "audio/aiff", "audio/x-aiff",
-            "audio/amr", "audio/amr-wb", "audio/ape", "audio/basic", "audio/flac", "audio/x-flac",
-            "video/x-flv", "audio/mp4", "audio/x-m4a", "audio/mpeg", "audio/mp3", "audio/ogg",
-            "application/ogg", "audio/opus", "audio/wav", "audio/x-wav", "audio/x-ms-wma", "audio/webm",
-            "audio/wavpack", "video/mp4", "video/3gpp", "video/webm", "video/quicktime", "video/x-msvideo"
+        private const val ELEVEN_LABS_MODEL_ID = "scribe_v2"
+
+        private val SUPPORTED_ELEVENLABS_MIME_TYPES = setOf(
+            "audio/mp3", "audio/mpeg", "audio/wav", "audio/x-wav", "audio/x-m4a", "audio/m4a",
+            "audio/flac", "audio/x-flac", "audio/ogg", "audio/vorbis", "audio/opus", "audio/webm",
+            "audio/aac", "audio/aiff", "audio/x-aiff"
         )
     }
 
@@ -115,8 +115,8 @@ class TranscriptionWorker(
             repository.updateRunning(jobId, true, "Starting...")
             updateNotification("Processing: ${job.displayName}")
 
-            val persistedProvider = settings.providerFlow.firstOrNull() ?: TranscriptionProvider.ASSEMBLY_AI
-            val usingAssembly = persistedProvider == TranscriptionProvider.ASSEMBLY_AI
+            val persistedProvider = settings.providerFlow.firstOrNull() ?: TranscriptionProvider.ELEVEN_LABS
+            val usingElevenLabs = persistedProvider == TranscriptionProvider.ELEVEN_LABS
             val geminiModelName = when (persistedProvider) {
                 TranscriptionProvider.GEMINI_CUSTOM -> settings.customGeminiModelNameFlow.firstOrNull()
                 else -> persistedProvider.modelName
@@ -126,7 +126,7 @@ class TranscriptionWorker(
                 jobId = jobId,
                 uri = job.uri.toUri(),
                 displayName = job.displayName,
-                usingAssembly = usingAssembly,
+                usingElevenLabs = usingElevenLabs,
                 geminiModel = geminiModelName
             )
             return Result.success()
@@ -139,7 +139,7 @@ class TranscriptionWorker(
         }
     }
 
-    private suspend fun processSingleJob(jobId: Int, uri: Uri, displayName: String, usingAssembly: Boolean, geminiModel: String?) {
+    private suspend fun processSingleJob(jobId: Int, uri: Uri, displayName: String, usingElevenLabs: Boolean, geminiModel: String?) {
         val app = applicationContext as Application
         val contentResolver = app.contentResolver
         val historyDao = AppDatabase.getDatabase(app).transcriptionHistoryDao()
@@ -148,7 +148,7 @@ class TranscriptionWorker(
 
         val conversionNeeded = when {
             inputMimeType == null -> true
-            usingAssembly -> inputMimeType !in SUPPORTED_ASSEMBLYAI_MIME_TYPES
+            usingElevenLabs -> inputMimeType !in SUPPORTED_ELEVENLABS_MIME_TYPES
             else -> inputMimeType !in SUPPORTED_GEMINI_MIME_TYPES
         }
 
@@ -157,11 +157,11 @@ class TranscriptionWorker(
         try {
             var fileForGemini: File? = null
             var mimeTypeForGemini: String? = null
-            var sourceForAssembly: Any? = null
+            var sourceForElevenLabs: Any? = null
 
             if (conversionNeeded) {
                 val reasonSuffix = if (inputMimeType == null) "(Unknown format)" else "($inputMimeType)"
-                val providerName = if (usingAssembly) "AssemblyAI" else "Gemini"
+                val providerName = if (usingElevenLabs) "ElevenLabs" else "Gemini"
                 val conversionReason = "Format not natively supported by $providerName $reasonSuffix"
 
                 repository.updateStatusAndProgress(jobId, "$conversionReason. Converting to 16 kHz WAV...", 0f)
@@ -187,17 +187,17 @@ class TranscriptionWorker(
                     }
                 )
 
-                if (usingAssembly) {
-                    sourceForAssembly = outputFile
+                if (usingElevenLabs) {
+                    sourceForElevenLabs = outputFile
                 } else {
                     repository.updateStatus(jobId, "Converted audio ready for Gemini...")
                     fileForGemini = outputFile
                     mimeTypeForGemini = "audio/wav"
                 }
             } else {
-                if (usingAssembly) {
+                if (usingElevenLabs) {
                     repository.updateStatusAndProgress(jobId, "Format supported ($inputMimeType). Preparing for direct upload...", 1f)
-                    sourceForAssembly = uri
+                    sourceForElevenLabs = uri
                 } else {
                     repository.updateStatusAndProgress(jobId, "Format supported ($inputMimeType). Copying audio for Gemini...", 0.5f)
                     updateNotification("Copying audio...")
@@ -218,10 +218,10 @@ class TranscriptionWorker(
                 }
             }
 
-            val flow = if (usingAssembly) {
-                if (sourceForAssembly == null) throw IllegalStateException("Internal error: AssemblyAI source is missing.")
-                val keyChars = settings.getAssemblyApiKey() ?: throw IllegalStateException("API key missing or corrupted")
-                transcribeWithAssemblyReturn(sourceForAssembly, keyChars)
+            val flow = if (usingElevenLabs) {
+                if (sourceForElevenLabs == null) throw IllegalStateException("Internal error: ElevenLabs source is missing.")
+                val keyChars = settings.getElevenLabsApiKey() ?: throw IllegalStateException("API key missing or corrupted")
+                transcribeWithElevenLabsReturn(sourceForElevenLabs, keyChars)
             } else {
                 if (geminiModel == null) throw IllegalStateException("Gemini model not specified.")
                 if (fileForGemini == null || mimeTypeForGemini == null) throw IllegalStateException("Internal error: Gemini audio data missing.")
@@ -233,7 +233,7 @@ class TranscriptionWorker(
             flow.collect { result ->
                 when (result) {
                     is TranscriptionResult.Loading -> {
-                        val providerMsg = "${if (usingAssembly) "AssemblyAI" else "Gemini"}: ${result.message}"
+                        val providerMsg = "${if (usingElevenLabs) "ElevenLabs" else "Gemini"}: ${result.message}"
                         repository.updateStatus(jobId, providerMsg)
                         updateNotification(providerMsg)
                     }
@@ -291,12 +291,12 @@ class TranscriptionWorker(
         }
     }
 
-    private fun transcribeWithAssemblyReturn(
+    private fun transcribeWithElevenLabsReturn(
         source: Any,
         apiKey: CharArray
     ): kotlinx.coroutines.flow.Flow<TranscriptionResult> = kotlinx.coroutines.flow.flow {
         try {
-            emit(TranscriptionResult.Loading("1/4 Uploading file..."))
+            emit(TranscriptionResult.Loading("Uploading and transcribing..."))
             val api = RetrofitClient.api
 
             val requestFileBody = when (source) {
@@ -305,37 +305,19 @@ class TranscriptionWorker(
                 else -> throw IllegalArgumentException("Unsupported source type")
             }
 
-            val uploadResponse = api.uploadFile(String(apiKey), requestFileBody)
-            val audioUrl = uploadResponse.uploadUrl
+            val filePart = MultipartBody.Part.createFormData("file", "audio_file", requestFileBody)
+            val modelIdPart = MultipartBody.Part.createFormData("model_id", ELEVEN_LABS_MODEL_ID)
 
-            emit(TranscriptionResult.Loading("2/4 Creating transcript..."))
-            val transcriptRequest = TranscriptRequest(audioUrl = audioUrl)
-            var transcriptResponse = api.createTranscript(String(apiKey), transcriptRequest)
-            val transcriptId = transcriptResponse.id
-
-            emit(TranscriptionResult.Loading("3/4 Waiting for result..."))
-            repeat(120) {
-                transcriptResponse = api.getTranscript(String(apiKey), transcriptId)
-                when (transcriptResponse.status) {
-                    "completed" -> {
-                        val detectedLanguage = transcriptResponse.languageCode ?: "Unknown"
-                        val newTranscription = transcriptResponse.text ?: "No text found."
-                        runCatching { api.deleteTranscript(String(apiKey), transcriptId) }
-                        emit(TranscriptionResult.Loading("4/4 Success"))
-                        emit(TranscriptionResult.Success(TranscriptionData(newTranscription, detectedLanguage, "AssemblyAI")))
-                        return@flow
-                    }
-                    "error" -> {
-                        runCatching { api.deleteTranscript(String(apiKey), transcriptId) }
-                        throw IllegalStateException("Transcription failed. ${transcriptResponse.error.orEmpty()}")
-                    }
-                }
-                delay(5_000L)
-            }
-            throw IllegalStateException("Timed out waiting for transcription.")
+            val response = api.transcribe(String(apiKey), filePart, modelIdPart)
+            
+            val detectedLanguage = response.languageCode ?: "Unknown"
+            val text = response.text
+            
+            emit(TranscriptionResult.Loading("Success"))
+            emit(TranscriptionResult.Success(TranscriptionData(text, detectedLanguage, "ElevenLabs Scribe v2")))
         } catch (e: Exception) {
             if (e is CancellationException) throw e
-            if (e is HttpException) emit(TranscriptionResult.Error(IllegalStateException(friendlyHttpError(e.code(), "AssemblyAI"), e)))
+            if (e is HttpException) emit(TranscriptionResult.Error(IllegalStateException(friendlyHttpError(e.code(), "ElevenLabs"), e)))
             else emit(TranscriptionResult.Error(IllegalStateException("Network or API error: ${e.message}", e)))
         } finally {
             apiKey.fill('\u0000')
