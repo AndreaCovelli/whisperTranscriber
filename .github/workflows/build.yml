@@ -16,13 +16,17 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
-        cache: gradle
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    - name: Build with Gradle
-      run: ./gradlew assembleDebug --no-daemon
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        # Cache configuration cache and other data
+        cache-read-only: false
+        generate-job-summary: true
 
-    - name: Run Unit Tests
-      run: ./gradlew testDebugUnitTest --no-daemon
+    - name: Build and Test with Gradle
+      # Run assemble and tests in a single command to reuse the configuration cache
+      run: ./gradlew assembleDebug testDebugUnitTest --no-daemon
