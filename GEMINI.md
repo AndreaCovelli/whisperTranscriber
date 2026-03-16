@@ -15,7 +15,7 @@ Key features include:
 
 ## Architecture & Technology Stack
 - **Platform:** Android (Min SDK 26, Target SDK 36)
-- **Language:** Kotlin (Java 17 compatibility)
+- **Language:** Kotlin (Java 21 compatibility)
 - **UI Framework:** Jetpack Compose (Material Design 3)
 - **Architecture Pattern:** Single-Activity MVVM (Model-View-ViewModel)
 - **Navigation:** Jetpack Navigation Compose
