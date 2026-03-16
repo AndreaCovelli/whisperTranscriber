@@ -3,6 +3,17 @@ name: CI
 on:
   pull_request:
     branches: [ "main" ]
+    paths:
+      - 'app/**'
+      - 'gradle/**'
+      - '*.kts'
+      - 'gradlew*'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
