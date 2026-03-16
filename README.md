@@ -69,6 +69,7 @@ All configuration is done inside the app — no config files or build secrets ne
 ### Getting API keys
 
 - **ElevenLabs**: Sign up at [elevenlabs.io](https://elevenlabs.io/) and copy your API key from your profile.
+  - Set these permissions for the API key: `GET /v1/user` and `POST /v1/speech-to-text`.
 - **Gemini**: Generate a key at [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
 
 ### Custom Gemini model
