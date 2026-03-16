@@ -71,4 +71,8 @@ class TranscriptionRepository(context: Context) {
     suspend fun clearCompletedJobs() {
         jobDao.clearCompleted()
     }
+
+    suspend fun deleteJob(jobId: Int) {
+        jobDao.deleteById(jobId)
+    }
 }

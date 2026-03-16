@@ -375,7 +375,8 @@ fun MainScreen(
                             context.startActivity(Intent.createChooser(sendIntent, null))
                         },
                         onRetry = { viewModel.retryJob(job.id) },
-                        onCancel = { viewModel.cancelJob(job.id) }
+                        onCancel = { viewModel.cancelJob(job.id) },
+                        onDelete = { viewModel.deleteJob(job.id) }
                     )
                 }
             }
@@ -393,7 +394,8 @@ private fun TranscriptionJobCard(
     onCopySummary: () -> Unit,
     onShareTranscript: () -> Unit,
     onRetry: () -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    onDelete: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth()
@@ -421,6 +423,14 @@ private fun TranscriptionJobCard(
                 if (job.transcript.isBlank() && job.error == null && (job.isRunning || job.status == "Queued")) {
                     TextButton(onClick = onCancel) {
                         Text("Cancel", color = MaterialTheme.colorScheme.error)
+                    }
+                } else if (!job.isRunning && (job.transcript.isNotBlank() || job.error != null)) {
+                    IconButton(onClick = onDelete) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete job",
+                            tint = MaterialTheme.colorScheme.error
+                        )
                     }
                 }
             }

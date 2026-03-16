@@ -329,6 +329,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun deleteJob(jobId: Int) {
+        viewModelScope.launch {
+            repository.deleteJob(jobId)
+        }
+    }
+
     fun retryJob(jobId: Int) {
         viewModelScope.launch {
             val job = repository.getJob(jobId) ?: return@launch
