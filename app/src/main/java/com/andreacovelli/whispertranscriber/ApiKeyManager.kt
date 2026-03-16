@@ -138,7 +138,11 @@ class ApiKeyManager(private val context: Context) {
                 TranscriptionProvider.ELEVEN_LABS
             }
         } catch (_: IllegalArgumentException) {
-            TranscriptionProvider.ELEVEN_LABS
+            if (providerName == "GEMINI_25_FLASH") {
+                TranscriptionProvider.GEMINI_FLASH
+            } else {
+                TranscriptionProvider.ELEVEN_LABS
+            }
         }
     }
 }

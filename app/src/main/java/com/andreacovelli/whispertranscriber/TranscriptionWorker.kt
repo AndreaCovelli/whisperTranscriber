@@ -64,6 +64,8 @@ class TranscriptionWorker(
             "audio/aac", "audio/ogg", "audio/vorbis", "audio/flac", "audio/x-flac"
         )
 
+        private const val ELEVEN_LABS_MODEL_ID = "scribe_v2"
+
         private val SUPPORTED_ELEVENLABS_MIME_TYPES = setOf(
             "audio/mp3", "audio/mpeg", "audio/wav", "audio/x-wav", "audio/x-m4a", "audio/m4a",
             "audio/flac", "audio/x-flac", "audio/ogg", "audio/vorbis", "audio/opus", "audio/webm",
@@ -304,7 +306,7 @@ class TranscriptionWorker(
             }
 
             val filePart = MultipartBody.Part.createFormData("file", "audio_file", requestFileBody)
-            val modelIdPart = MultipartBody.Part.createFormData("model_id", "scribe_v2")
+            val modelIdPart = MultipartBody.Part.createFormData("model_id", ELEVEN_LABS_MODEL_ID)
 
             val response = api.transcribe(String(apiKey), filePart, modelIdPart)
             

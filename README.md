@@ -68,7 +68,7 @@ All configuration is done inside the app — no config files or build secrets ne
 
 ### Getting API keys
 
-- **ElevenLabs**: Sign up at [ElevenLabs.com](https://www.ElevenLabs.com/) and copy your API key from the dashboard
+- **ElevenLabs**: Sign up at [elevenlabs.io](https://elevenlabs.io/) and copy your API key from your profile.
 - **Gemini**: Generate a key at [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
 
 ### Custom Gemini model
@@ -81,12 +81,12 @@ Select **Custom Model** in Settings and type any valid Gemini model identifier (
 
 ### ElevenLabs flow
 
-1. Audio file is uploaded to ElevenLabs's servers
-2. A transcript job is created referencing the uploaded URL
-3. The app polls the status endpoint every 5 seconds (up to ~10 minutes)
-4. The finished transcript is saved to local history; the remote file is deleted
+1. The audio file is sent in a single request to the ElevenLabs Scribe v2 API.
+2. The API processes the audio and returns the full transcript in the response.
+3. The finished transcript is saved to local history.
 
 ### Gemini flow
+
 
 1. Audio bytes are sent inline with the transcription prompt
 2. The model returns a structured JSON response containing the detected language code and transcript text
@@ -102,7 +102,7 @@ When the selected provider does not natively support the file's MIME type, `Hard
 
 | Provider | Accepted MIME types |
 |---|---|
-| **ElevenLabs** | `audio/3gpp`, `audio/aac`, `audio/ac3`, `audio/aiff`, `audio/amr`, `audio/flac`, `audio/mp4`, `audio/mpeg` (MP3), `audio/ogg`, `audio/opus`, `audio/wav`, `audio/webm`, `audio/x-ms-wma`, `video/mp4`, `video/3gpp`, `video/webm`, `video/quicktime`, `video/avi`, and more |
+| **ElevenLabs** | `audio/mp3`, `audio/mpeg`, `audio/wav`, `audio/x-wav`, `audio/m4a`, `audio/x-m4a`, `audio/flac`, `audio/x-flac`, `audio/ogg`, `audio/vorbis`, `audio/opus`, `audio/webm`, `audio/aac`, `audio/aiff`, `audio/x-aiff` |
 | **Gemini** | `audio/wav`, `audio/mp3`, `audio/aiff`, `audio/aac`, `audio/ogg`, `audio/flac` |
 | **Auto-converted** | Any format not in the list above is converted to 16 kHz mono WAV automatically |
 
