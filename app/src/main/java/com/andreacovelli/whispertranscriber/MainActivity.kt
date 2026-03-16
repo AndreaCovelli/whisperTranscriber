@@ -16,6 +16,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -63,7 +64,10 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -948,6 +952,20 @@ fun HistoryScreen(
     )
     var expandedIds by rememberSaveable(stateSaver = expandedIdsSaver) { mutableStateOf(emptySet()) }
 
+    val shareTitle = stringResource(R.string.share_transcription_title)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(historyViewModel, lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            historyViewModel.shareEvent.collect { content ->
+                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, content)
+                }
+                context.startActivity(Intent.createChooser(sendIntent, shareTitle))
+            }
+        }
+    }
+
     if (showDeleteAllDialog) {
         AlertDialog(
             onDismissRequest = { setShowDeleteAllDialog(false) },
@@ -1050,6 +1068,7 @@ fun HistoryScreen(
                                 },
                                 onClearSummary = { historyViewModel.clearSummary(item) },
                                 onDelete = { historyViewModel.deleteHistoryItem(item) },
+                                onShare = { historyViewModel.prepareShareContent(item) },
                                 searchQuery = searchQuery
                             )
                         }
@@ -1093,6 +1112,7 @@ private fun rememberHighlightedText(text: String, query: String): AnnotatedStrin
     return remember(text, query, background, onBackground) { buildHighlightedText(text, query, background, onBackground) }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HistoryItemCard(
     item: TranscriptionHistory,
@@ -1101,6 +1121,7 @@ fun HistoryItemCard(
     onCopy: (String) -> Unit,
     onClearSummary: () -> Unit,
     onDelete: () -> Unit,
+    onShare: () -> Unit,
     searchQuery: String = ""
 ) {
     val formattedDate = remember(item.timestamp) {
@@ -1164,10 +1185,9 @@ fun HistoryItemCard(
                 )
             }
             Spacer(Modifier.height(8.dp))
-            Row(
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.End
             ) {
                 if (item.summary.isNotBlank()) {
                     TextButton(onClick = onClearSummary) {
@@ -1177,7 +1197,7 @@ fun HistoryItemCard(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("Clear summary")
+                        Text(stringResource(R.string.clear_summary), maxLines = 1, softWrap = false)
                     }
                 }
                 val copyActions = buildList {
@@ -1192,11 +1212,14 @@ fun HistoryItemCard(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("Copy $type")
+                        Text(stringResource(R.string.copy_type, type), maxLines = 1, softWrap = false)
                     }
                 }
+                IconButton(onClick = onShare) {
+                    Icon(Icons.Default.Share, stringResource(R.string.share_item_description))
+                }
                 IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, "Delete item", tint = MaterialTheme.colorScheme.error)
+                    Icon(Icons.Default.Delete, stringResource(R.string.delete_item_description), tint = MaterialTheme.colorScheme.error)
                 }
             }
         }
