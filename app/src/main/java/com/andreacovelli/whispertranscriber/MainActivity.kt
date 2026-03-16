@@ -63,7 +63,10 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -949,13 +952,16 @@ fun HistoryScreen(
     var expandedIds by rememberSaveable(stateSaver = expandedIdsSaver) { mutableStateOf(emptySet()) }
 
     val shareTitle = stringResource(R.string.share_transcription_title)
-    LaunchedEffect(Unit) {
-        historyViewModel.shareEvent.collect { content ->
-            val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(Intent.EXTRA_TEXT, content)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(historyViewModel, lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            historyViewModel.shareEvent.collect { content ->
+                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, content)
+                }
+                context.startActivity(Intent.createChooser(sendIntent, shareTitle))
             }
-            context.startActivity(Intent.createChooser(sendIntent, shareTitle))
         }
     }
 
@@ -1211,7 +1217,7 @@ fun HistoryItemCard(
                     Icon(Icons.Default.Share, stringResource(R.string.share_item_description))
                 }
                 IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, "Delete item", tint = MaterialTheme.colorScheme.error)
+                    Icon(Icons.Default.Delete, stringResource(R.string.delete_item_description), tint = MaterialTheme.colorScheme.error)
                 }
             }
         }
