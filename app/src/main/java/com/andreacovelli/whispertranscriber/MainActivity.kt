@@ -16,6 +16,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -1111,6 +1112,7 @@ private fun rememberHighlightedText(text: String, query: String): AnnotatedStrin
     return remember(text, query, background, onBackground) { buildHighlightedText(text, query, background, onBackground) }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HistoryItemCard(
     item: TranscriptionHistory,
