@@ -1,4 +1,4 @@
-name: Build and Test
+name: CI
 
 on:
   pull_request:
@@ -6,7 +6,12 @@ on:
 
 jobs:
   build:
+    name: Build, Test and Auto-merge
     runs-on: ubuntu-latest
+    # Added permissions to allow the auto-merge step to function
+    permissions:
+      pull-requests: write
+      contents: write
 
     steps:
     - uses: actions/checkout@v4
@@ -30,3 +35,18 @@ jobs:
     - name: Build and Test with Gradle
       # Run assemble and tests in a single command to reuse the configuration cache
       run: ./gradlew assembleDebug testDebugUnitTest --no-daemon
+
+    # The following steps only run for Dependabot Pull Requests
+    - name: Dependabot metadata
+      if: github.actor == 'dependabot[bot]'
+      id: metadata
+      uses: dependabot/fetch-metadata@v2
+      with:
+        github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+    - name: Enable auto-merge for Dependabot PRs
+      if: github.actor == 'dependabot[bot]'
+      run: gh pr merge --auto --merge "$PR_URL"
+      env:
+        PR_URL: ${{github.event.pull_request.html_url}}
+        GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
