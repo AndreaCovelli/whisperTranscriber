@@ -1,6 +1,14 @@
 name: CI
 
 on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'app/**'
+      - 'gradle/**'
+      - '*.kts'
+      - 'gradlew*'
+      - '.github/workflows/build.yml'
   pull_request:
     branches: [ "main" ]
     paths:
@@ -41,7 +49,7 @@ jobs:
       with:
         # PRs only read from the cache; only the main branch writes to it
         # This prevents Dependabot and other PRs from polluting/filling the cache storage
-        cache-read-only: true
+        cache-read-only: ${{ github.event_name == 'pull_request' }}
         add-job-summary: 'on-failure'
 
     - name: Build and Test with Gradle
