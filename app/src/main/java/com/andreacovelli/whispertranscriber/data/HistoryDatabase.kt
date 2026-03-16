@@ -113,6 +113,9 @@ interface TranscriptionJobDao {
     @Query("SELECT * FROM active_jobs WHERE id = :id")
     suspend fun getJobById(id: Int): TranscriptionJob?
 
+    @Query("DELETE FROM active_jobs WHERE id = :jobId")
+    suspend fun deleteById(jobId: Int)
+
     @Query("DELETE FROM active_jobs WHERE isRunning = 0 AND (transcript != '' OR error IS NOT NULL)")
     suspend fun clearCompleted()
 }

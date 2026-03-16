@@ -73,9 +73,6 @@ class TranscriptionRepository(context: Context) {
     }
 
     suspend fun deleteJob(jobId: Int) {
-        val job = jobDao.getJobById(jobId)
-        if (job != null) {
-            jobDao.delete(job)
-        }
+        jobDao.deleteById(jobId)
     }
 }
