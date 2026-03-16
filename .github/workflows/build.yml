@@ -28,8 +28,9 @@ jobs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
       with:
-        # Cache configuration cache and other data
-        cache-read-only: false
+        # PRs only read from the cache; only the main branch writes to it
+        # This prevents Dependabot and other PRs from polluting/filling the cache storage
+        cache-read-only: true
         add-job-summary: 'on-failure'
 
     - name: Build and Test with Gradle
