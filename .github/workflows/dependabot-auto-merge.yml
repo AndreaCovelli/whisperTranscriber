@@ -1,0 +1,28 @@
+name: Dependabot Auto-merge
+
+on:
+  pull_request:
+    # Trigger only when the PR is opened by Dependabot
+    branches: [ "main" ]
+
+jobs:
+  dependabot:
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      # Enable auto-merge for all Dependabot PRs
+      # This step requires 'Allow auto-merge' to be enabled in repo settings
+      # It also requires 'Require status checks to pass before merging' branch protection
+      - name: Enable auto-merge for Dependabot PRs
+        run: gh pr merge --auto --merge "$PR_URL"
+        env:
+          PR_URL: ${{github.event.pull_request.html_url}}
+          # Use a Personal Access Token (PAT) if you want it to trigger other workflows, 
+          # otherwise GITHUB_TOKEN is sufficient for just merging.
+          GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
