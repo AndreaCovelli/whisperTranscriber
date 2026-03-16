@@ -3,6 +3,17 @@ name: CI
 on:
   pull_request:
     branches: [ "main" ]
+    paths:
+      - 'app/**'
+      - 'gradle/**'
+      - '*.kts'
+      - 'gradlew*'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -14,10 +25,10 @@ jobs:
       contents: write
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v5
       with:
         java-version: '17'
         distribution: 'temurin'
@@ -26,7 +37,7 @@ jobs:
       run: chmod +x gradlew
 
     - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v4
+      uses: gradle/actions/setup-gradle@v5
       with:
         # PRs only read from the cache; only the main branch writes to it
         # This prevents Dependabot and other PRs from polluting/filling the cache storage
@@ -35,7 +46,7 @@ jobs:
 
     - name: Build and Test with Gradle
       # Run assemble and tests in a single command to reuse the configuration cache
-      run: ./gradlew assembleDebug testDebugUnitTest --no-daemon
+      run: ./gradlew assembleDebug testDebugUnitTest
 
     # The following steps only run for Dependabot Pull Requests
     - name: Dependabot metadata
