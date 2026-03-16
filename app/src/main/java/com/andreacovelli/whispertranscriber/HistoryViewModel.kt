@@ -11,11 +11,13 @@ import com.andreacovelli.whispertranscriber.data.AppDatabase
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistoryDao
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
 class HistoryViewModel(application: Application) : AndroidViewModel(application) {
@@ -29,6 +31,23 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _shareEvent = Channel<String>()
+    val shareEvent = _shareEvent.receiveAsFlow()
+
+    fun prepareShareContent(item: TranscriptionHistory) {
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            val content = buildString {
+                append(item.text)
+                if (item.summary.isNotBlank()) {
+                    append(app.getString(R.string.summary_header))
+                    append(item.summary)
+                }
+            }
+            _shareEvent.send(content)
+        }
+    }
 
     fun setSearchQuery(query: String) {
         _searchQuery.value = query

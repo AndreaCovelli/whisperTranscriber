@@ -948,6 +948,17 @@ fun HistoryScreen(
     )
     var expandedIds by rememberSaveable(stateSaver = expandedIdsSaver) { mutableStateOf(emptySet()) }
 
+    val shareTitle = stringResource(R.string.share_transcription_title)
+    LaunchedEffect(Unit) {
+        historyViewModel.shareEvent.collect { content ->
+            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, content)
+            }
+            context.startActivity(Intent.createChooser(sendIntent, shareTitle))
+        }
+    }
+
     if (showDeleteAllDialog) {
         AlertDialog(
             onDismissRequest = { setShowDeleteAllDialog(false) },
@@ -1050,20 +1061,7 @@ fun HistoryScreen(
                                 },
                                 onClearSummary = { historyViewModel.clearSummary(item) },
                                 onDelete = { historyViewModel.deleteHistoryItem(item) },
-                                onShare = {
-                                    val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        val content = buildString {
-                                            append(item.text)
-                                            if (item.summary.isNotBlank()) {
-                                                append(context.getString(R.string.summary_header))
-                                                append(item.summary)
-                                            }
-                                        }
-                                        putExtra(Intent.EXTRA_TEXT, content)
-                                    }
-                                    context.startActivity(Intent.createChooser(sendIntent, context.getString(R.string.share_transcription_title)))
-                                },
+                                onShare = { historyViewModel.prepareShareContent(item) },
                                 searchQuery = searchQuery
                             )
                         }
@@ -1179,7 +1177,6 @@ fun HistoryItemCard(
                 )
             }
             Spacer(Modifier.height(8.dp))
-            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
