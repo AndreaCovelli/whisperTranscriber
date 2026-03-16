@@ -25,7 +25,7 @@ jobs:
       with:
         # Cache configuration cache and other data
         cache-read-only: false
-        generate-job-summary: true
+        add-job-summary: 'on-failure'
 
     - name: Build and Test with Gradle
       # Run assemble and tests in a single command to reuse the configuration cache
