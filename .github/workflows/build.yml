@@ -28,7 +28,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v5
       with:
         java-version: '17'
         distribution: 'temurin'
@@ -43,10 +43,11 @@ jobs:
         # This prevents Dependabot and other PRs from polluting/filling the cache storage
         cache-read-only: true
         add-job-summary: 'on-failure'
+        dependency-graph: disabled
 
     - name: Build and Test with Gradle
       # Run assemble and tests in a single command to reuse the configuration cache
-      run: ./gradlew assembleDebug testDebugUnitTest --no-daemon
+      run: ./gradlew assembleDebug testDebugUnitTest
 
     # The following steps only run for Dependabot Pull Requests
     - name: Dependabot metadata
