@@ -26,6 +26,12 @@ import kotlinx.coroutines.withContext
 
 object HardwareAudioConverter {
 
+    private const val BYTES_PER_SAMPLE_16_BIT = 2L
+    private const val MICROSECONDS_IN_SECOND = 1_000_000.0
+    private const val CONVERSION_SIZE_BUFFER_BYTES = 10_000_000L // 10MB
+    private const val DEFAULT_CONVERSION_SIZE_BYTES = 50_000_000L // 50MB
+    private const val BYTES_IN_MEGABYTE = 1_000_000L
+
     data class Result(
         val sampleRate: Int,
         val channelCount: Int,
@@ -75,15 +81,15 @@ object HardwareAudioConverter {
         val decChannelsInit = if (srcFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT))
             srcFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else 2
         val outChannelsInit = if (forceMono) 1 else decChannelsInit
-        val bytesPerSec = targetSampleRate * outChannelsInit * 2L
+        val bytesPerSec = targetSampleRate * outChannelsInit * BYTES_PER_SAMPLE_16_BIT
         val estimatedBytes = if (durationUs > 0) {
-            ((durationUs / 1_000_000.0) * bytesPerSec).toLong() + 10_000_000L // + 10MB buffer
+            ((durationUs / MICROSECONDS_IN_SECOND) * bytesPerSec).toLong() + CONVERSION_SIZE_BUFFER_BYTES
         } else {
-            50_000_000L // 50MB safe default if duration unknown
+            DEFAULT_CONVERSION_SIZE_BYTES
         }
         val usableSpace = outputFile.parentFile?.usableSpace ?: 0L
         if (usableSpace < estimatedBytes) {
-            throw java.io.IOException("Insufficient disk space for conversion. Needed at least ${estimatedBytes / 1_000_000} MB, but only ${usableSpace / 1_000_000} MB is available.")
+            throw java.io.IOException("Insufficient disk space for conversion. Needed at least ${estimatedBytes / BYTES_IN_MEGABYTE} MB, but only ${usableSpace / BYTES_IN_MEGABYTE} MB is available.")
         }
         // ------------------------
 
@@ -281,10 +287,10 @@ object HardwareAudioConverter {
                 }
             }
         } finally {
-            try { decoder.stop() } catch (e: Exception) { android.util.Log.w("HardwareAudioConverter", "Decoder stop failed", e) }
-            try { decoder.release() } catch (e: Exception) { android.util.Log.w("HardwareAudioConverter", "Decoder release failed", e) }
-            try { extractor.release() } catch (e: Exception) { android.util.Log.w("HardwareAudioConverter", "Extractor release failed", e) }
-            try { writer.close() } catch (e: Exception) { android.util.Log.w("HardwareAudioConverter", "Writer close failed", e) }
+            runCatching { decoder.stop() }.onFailure { android.util.Log.w("HardwareAudioConverter", "Decoder stop failed", it) }
+            runCatching { decoder.release() }.onFailure { android.util.Log.w("HardwareAudioConverter", "Decoder release failed", it) }
+            runCatching { extractor.release() }.onFailure { android.util.Log.w("HardwareAudioConverter", "Extractor release failed", it) }
+            runCatching { writer.close() }.onFailure { android.util.Log.w("HardwareAudioConverter", "Writer close failed", it) }
             if (hasDuration) onProgress?.invoke(1f)
         }
 
