@@ -262,7 +262,7 @@ fun MainScreen(
             TranscriptionProvider.GEMINI_FLASH -> "Using: Gemini Flash"
             TranscriptionProvider.GEMINI_PRO -> "Using: Gemini Pro"
             TranscriptionProvider.GEMINI_CUSTOM -> {
-                val name = uiState.customGeminiModelName
+                val name = uiState.transcriptionCustomGeminiModelName
                 if (name.isBlank()) "Using: Custom Gemini model (not set)" else "Using: $name"
             }
         }
@@ -618,10 +618,10 @@ fun SettingsScreen(
                     ProviderSelector(
                         selected = uiState.provider,
                         onSelect = viewModel::setProvider,
-                        customModelName = uiState.customGeminiModelName,
-                        customModelValidation = uiState.customModelValidation,
-                        onValidateCustomModel = viewModel::validateCustomGeminiModel,
-                        onResetValidation = viewModel::resetCustomModelValidation
+                        customModelName = uiState.transcriptionCustomGeminiModelName,
+                        customModelValidation = uiState.transcriptionCustomModelValidation,
+                        onValidateCustomModel = { viewModel.validateCustomGeminiModel(it, isSummarizer = false) },
+                        onResetValidation = { viewModel.resetCustomModelValidation(isSummarizer = false) }
                     )
                 }
             }
@@ -635,10 +635,10 @@ fun SettingsScreen(
                     ProviderSelector(
                         selected = uiState.summarizerProvider,
                         onSelect = viewModel::setSummarizerProvider,
-                        customModelName = uiState.customGeminiModelName,
-                        customModelValidation = uiState.customModelValidation,
-                        onValidateCustomModel = viewModel::validateCustomGeminiModel,
-                        onResetValidation = viewModel::resetCustomModelValidation,
+                        customModelName = uiState.summarizerCustomGeminiModelName,
+                        customModelValidation = uiState.summarizerCustomModelValidation,
+                        onValidateCustomModel = { viewModel.validateCustomGeminiModel(it, isSummarizer = true) },
+                        onResetValidation = { viewModel.resetCustomModelValidation(isSummarizer = true) },
                         showElevenLabs = false
                     )
                 }
