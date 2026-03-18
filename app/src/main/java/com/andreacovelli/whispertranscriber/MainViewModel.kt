@@ -46,6 +46,7 @@ sealed class KeyValidationState {
 data class UiState(
     val status: String = "Waiting for audios...",
     val provider: TranscriptionProvider = TranscriptionProvider.ELEVEN_LABS,
+    val summarizerProvider: TranscriptionProvider = TranscriptionProvider.GEMINI_FLASH,
     val elevenLabsApiKeyState: ApiKeyState = ApiKeyState.Missing,
     val elevenLabsKeyValidation: KeyValidationState = KeyValidationState.Idle,
     val geminiApiKeyState: ApiKeyState = ApiKeyState.Missing,
@@ -131,6 +132,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             launch {
+                settings.summarizerProviderFlow.collect { p ->
+                    _uiState.update { it.copy(summarizerProvider = p) }
+                }
+            }
+            launch {
                 settings.elevenLabsApiKeyStateFlow.collect { state ->
                     _uiState.update { it.copy(elevenLabsApiKeyState = state) }
                 }
@@ -175,6 +181,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(provider = p) }
         viewModelScope.launch {
             settings.saveProvider(p)
+        }
+    }
+
+    fun setSummarizerProvider(p: TranscriptionProvider) {
+        _uiState.update { it.copy(summarizerProvider = p) }
+        viewModelScope.launch {
+            settings.saveSummarizerProvider(p)
         }
     }
 
@@ -434,7 +447,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val apiKey = String(keyChars)
             keyChars.fill('\u0000')
 
-            val providerForSummary = state.provider
+            val providerForSummary = state.summarizerProvider
             val modelName = when {
                 providerForSummary == TranscriptionProvider.GEMINI_CUSTOM -> {
                     val customName = state.customGeminiModelName

@@ -37,6 +37,7 @@ class ApiKeyManager(private val context: Context) {
         private val GEMINI_CUSTOM_MODEL_NAME = stringPreferencesKey("gemini_custom_model_name")
 
         private val SELECTED_PROVIDER = stringPreferencesKey("transcription_provider")
+        private val SELECTED_SUMMARIZER_PROVIDER = stringPreferencesKey("summarizer_provider")
     }
 
     // Save (encrypt before persisting)
@@ -66,6 +67,10 @@ class ApiKeyManager(private val context: Context) {
 
     suspend fun saveProvider(provider: TranscriptionProvider) {
         context.dataStore.edit { it[SELECTED_PROVIDER] = provider.name }
+    }
+
+    suspend fun saveSummarizerProvider(provider: TranscriptionProvider) {
+        context.dataStore.edit { it[SELECTED_SUMMARIZER_PROVIDER] = provider.name }
     }
 
     suspend fun saveCustomGeminiModelName(name: String) {
@@ -143,6 +148,19 @@ class ApiKeyManager(private val context: Context) {
             } else {
                 TranscriptionProvider.ELEVEN_LABS
             }
+        }
+    }
+
+    val summarizerProviderFlow: Flow<TranscriptionProvider> = context.dataStore.data.map { p ->
+        val providerName = p[SELECTED_SUMMARIZER_PROVIDER]
+        try {
+            if (providerName != null) {
+                TranscriptionProvider.valueOf(providerName)
+            } else {
+                TranscriptionProvider.GEMINI_FLASH
+            }
+        } catch (_: IllegalArgumentException) {
+            TranscriptionProvider.GEMINI_FLASH
         }
     }
 }

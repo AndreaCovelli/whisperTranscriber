@@ -626,6 +626,24 @@ fun SettingsScreen(
                 }
             }
 
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Summarizer Model", style = MaterialTheme.typography.titleMedium)
+                    ProviderSelector(
+                        selected = uiState.summarizerProvider,
+                        onSelect = viewModel::setSummarizerProvider,
+                        customModelName = uiState.customGeminiModelName,
+                        customModelValidation = uiState.customModelValidation,
+                        onValidateCustomModel = viewModel::validateCustomGeminiModel,
+                        onResetValidation = viewModel::resetCustomModelValidation,
+                        showElevenLabs = false
+                    )
+                }
+            }
+
             ApiKeyCard(
                 title = "ElevenLabs API Key",
                 label = "Enter ElevenLabs API key",
@@ -803,19 +821,22 @@ private fun ProviderSelector(
     customModelName: String,
     customModelValidation: CustomModelValidation,
     onValidateCustomModel: (String) -> Unit,
-    onResetValidation: () -> Unit
+    onResetValidation: () -> Unit,
+    showElevenLabs: Boolean = true
 ) {
     var customInput by remember(customModelName) { mutableStateOf(customModelName) }
     var fieldHadFocus by remember(customModelName) { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        ProviderRadioOption(
-            text = "ElevenLabs",
-            isSelected = selected == TranscriptionProvider.ELEVEN_LABS,
-            onClick = { onSelect(TranscriptionProvider.ELEVEN_LABS) }
-        )
+        if (showElevenLabs) {
+            ProviderRadioOption(
+                text = "ElevenLabs",
+                isSelected = selected == TranscriptionProvider.ELEVEN_LABS,
+                onClick = { onSelect(TranscriptionProvider.ELEVEN_LABS) }
+            )
 
-        Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(8.dp))
+        }
         Text(
             "Gemini Models",
             style = MaterialTheme.typography.labelMedium,
