@@ -54,6 +54,8 @@ object HardwareAudioConverter {
         var extractor: MediaExtractor? = null
         var decoder: MediaCodec? = null
         var writer: WavWriter? = null
+        val storageManager = context.getSystemService(Context.STORAGE_SERVICE) as StorageManager
+        var storageUuid: UUID? = null
 
         try {
             extractor = MediaExtractor()
@@ -97,9 +99,7 @@ object HardwareAudioConverter {
             DEFAULT_CONVERSION_SIZE_BYTES
         }
         val parentDir = outputFile.parentFile
-        val storageManager = context.getSystemService(Context.STORAGE_SERVICE) as StorageManager
         
-        var storageUuid: UUID? = null
         if (parentDir != null) {
             try {
                 // Try to use StorageManager for smarter allocation (API 26+)
@@ -107,6 +107,7 @@ object HardwareAudioConverter {
                 storageUuid = storageManager.getUuidForPath(parentDir)
             } catch (e: Exception) {
                 // If getUuidForPath fails (e.g. specialized filesystem), fallback to standard File.usableSpace later
+                android.util.Log.w("HardwareAudioConverter", "Failed to get storage UUID for path $parentDir, falling back to usableSpace", e)
             }
         }
 
@@ -329,6 +330,13 @@ object HardwareAudioConverter {
                 durationUs = durationUs
             )
         } finally {
+            if (storageUuid != null) {
+                runCatching {
+                    storageManager.allocateBytes(storageUuid, 0L)
+                }.onFailure {
+                    android.util.Log.w("HardwareAudioConverter", "Failed to release storage reservation", it)
+                }
+            }
             listOf(
                 "Decoder stop" to { decoder?.stop() },
                 "Decoder release" to { decoder?.release() },
