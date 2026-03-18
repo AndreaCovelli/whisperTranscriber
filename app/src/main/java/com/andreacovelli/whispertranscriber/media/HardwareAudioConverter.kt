@@ -83,7 +83,7 @@ object HardwareAudioConverter {
         val outChannelsInit = if (forceMono) 1 else decChannels
         val bytesPerSec = targetSampleRate * outChannelsInit * BYTES_PER_SAMPLE_16_BIT
         
-        val estimatedBytes = if (durationUs > 0 && (forceMono || srcFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT))) {
+        val estimatedBytes = if (durationUs > 0) {
             ((durationUs / MICROSECONDS_IN_SECOND) * bytesPerSec).toLong() + CONVERSION_SIZE_BUFFER_BYTES
         } else {
             DEFAULT_CONVERSION_SIZE_BYTES
