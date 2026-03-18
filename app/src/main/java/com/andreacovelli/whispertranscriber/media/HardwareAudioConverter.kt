@@ -62,11 +62,9 @@ object HardwareAudioConverter {
         // Use specific exception for clearer error handling
         val afd = context.contentResolver.openAssetFileDescriptor(inputUri, "r")
             ?: throw FileNotFoundException("Unable to open input URI: $inputUri")
-        try {
-            extractor.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
-        } finally {
-            afd.close()
-        }
+            afd.use { afd ->
+                extractor.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+            }
 
         var audioTrackIndex = -1
         var trackFormat: MediaFormat? = null
@@ -262,12 +260,12 @@ object HardwareAudioConverter {
                                         if (writer == null) {
                                             writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
                                         }
-                                        writer?.writeFloatsInterleaved(buffer, outChannelsToWrite, count)
+                                        writer.writeFloatsInterleaved(buffer, outChannelsToWrite, count)
                                     } else if (resampler == null) {
                                         if (writer == null) {
                                             writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
                                         }
-                                        writer?.writeFloatsInterleaved(interleaved, outChannelsToWrite, interleavedSamples)
+                                        writer.writeFloatsInterleaved(interleaved, outChannelsToWrite, interleavedSamples)
                                     }
                                 } else {
                                     // PCM16 -> float path
@@ -310,12 +308,12 @@ object HardwareAudioConverter {
                                         if (writer == null) {
                                             writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
                                         }
-                                        writer?.writeFloatsInterleaved(buffer, outChannelsToWrite, count)
+                                        writer.writeFloatsInterleaved(buffer, outChannelsToWrite, count)
                                     } else if (resampler == null) {
                                         if (writer == null) {
                                             writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
                                         }
-                                        writer?.writeFloatsInterleaved(interleaved, outChannelsToWrite, interleavedSamples)
+                                        writer.writeFloatsInterleaved(interleaved, outChannelsToWrite, interleavedSamples)
                                     }
                                 }
                             }
@@ -333,7 +331,7 @@ object HardwareAudioConverter {
                     if (writer == null) {
                         writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
                     }
-                    writer?.writeFloatsInterleaved(flushBuffer, outChannelsToWrite, flushCount)
+                    writer.writeFloatsInterleaved(flushBuffer, outChannelsToWrite, flushCount)
                 }
             }
             if (hasDuration) onProgress?.invoke(1f)
@@ -652,10 +650,8 @@ object HardwareAudioConverter {
 
         // Optimized close() using a reusable buffer for RandomAccessFile writes
         override fun close() {
-            try {
+            out.use { out ->
                 out.flush()
-            } finally {
-                out.close()
             }
             RandomAccessFile(file, "rw").use { raf ->
                 val intBuf = ByteArray(4) // Reusable buffer
