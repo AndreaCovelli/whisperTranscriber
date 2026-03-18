@@ -152,15 +152,8 @@ class ApiKeyManager(private val context: Context) {
     }
 
     val summarizerProviderFlow: Flow<TranscriptionProvider> = context.dataStore.data.map { p ->
-        val providerName = p[SELECTED_SUMMARIZER_PROVIDER]
-        try {
-            if (providerName != null) {
-                TranscriptionProvider.valueOf(providerName)
-            } else {
-                TranscriptionProvider.GEMINI_FLASH
-            }
-        } catch (_: IllegalArgumentException) {
-            TranscriptionProvider.GEMINI_FLASH
-        }
+        p[SELECTED_SUMMARIZER_PROVIDER]
+            ?.let { runCatching { TranscriptionProvider.valueOf(it) }.getOrNull() }
+            ?: TranscriptionProvider.GEMINI_FLASH
     }
 }
