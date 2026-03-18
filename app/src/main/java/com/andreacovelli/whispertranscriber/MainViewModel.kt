@@ -257,10 +257,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun resetCustomModelValidation(isSummarizer: Boolean = false) {
-        if (isSummarizer) {
-            _uiState.update { it.copy(summarizerCustomModelValidation = CustomModelValidation.Idle) }
-        } else {
-            _uiState.update { it.copy(transcriptionCustomModelValidation = CustomModelValidation.Idle) }
+        _uiState.update {
+            if (isSummarizer) {
+                it.copy(summarizerCustomModelValidation = CustomModelValidation.Idle)
+            } else {
+                it.copy(transcriptionCustomModelValidation = CustomModelValidation.Idle)
+            }
         }
     }
 

@@ -74,18 +74,19 @@ class ApiKeyManager(private val context: Context) {
         context.dataStore.edit { it[SELECTED_SUMMARIZER_PROVIDER] = provider.name }
     }
 
-    suspend fun saveTranscriptionCustomGeminiModelName(name: String) {
+    private suspend fun saveCustomModelName(name: String, key: Preferences.Key<String>) {
         context.dataStore.edit { prefs ->
-            if (name.isBlank()) prefs.remove(GEMINI_TRANSCRIPTION_CUSTOM_MODEL_NAME)
-            else prefs[GEMINI_TRANSCRIPTION_CUSTOM_MODEL_NAME] = name.trim()
+            if (name.isBlank()) prefs.remove(key)
+            else prefs[key] = name.trim()
         }
     }
 
+    suspend fun saveTranscriptionCustomGeminiModelName(name: String) {
+        saveCustomModelName(name, GEMINI_TRANSCRIPTION_CUSTOM_MODEL_NAME)
+    }
+
     suspend fun saveSummarizerCustomGeminiModelName(name: String) {
-        context.dataStore.edit { prefs ->
-            if (name.isBlank()) prefs.remove(GEMINI_SUMMARIZER_CUSTOM_MODEL_NAME)
-            else prefs[GEMINI_SUMMARIZER_CUSTOM_MODEL_NAME] = name.trim()
-        }
+        saveCustomModelName(name, GEMINI_SUMMARIZER_CUSTOM_MODEL_NAME)
     }
 
     // Quick wipe actions
@@ -147,20 +148,10 @@ class ApiKeyManager(private val context: Context) {
     }
 
     val providerFlow: Flow<TranscriptionProvider> = context.dataStore.data.map { p ->
-        val providerName = p[SELECTED_PROVIDER]
-        try {
-            if (providerName != null) {
-                TranscriptionProvider.valueOf(providerName)
-            } else {
-                TranscriptionProvider.ELEVEN_LABS
-            }
-        } catch (_: IllegalArgumentException) {
-            if (providerName == "GEMINI_25_FLASH") {
-                TranscriptionProvider.GEMINI_FLASH
-            } else {
-                TranscriptionProvider.ELEVEN_LABS
-            }
-        }
+        p[SELECTED_PROVIDER]?.let { name ->
+            runCatching { TranscriptionProvider.valueOf(name) }
+                .getOrElse { if (name == "GEMINI_25_FLASH") TranscriptionProvider.GEMINI_FLASH else null }
+        } ?: TranscriptionProvider.ELEVEN_LABS
     }
 
     val summarizerProviderFlow: Flow<TranscriptionProvider> = context.dataStore.data.map { p ->
