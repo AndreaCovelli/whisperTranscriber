@@ -50,7 +50,12 @@ object HardwareAudioConverter {
     ): Result = withContext(Dispatchers.IO) {
         require(targetSampleRate > 0)
 
-        val extractor = MediaExtractor()
+        var extractor: MediaExtractor? = null
+        var decoder: MediaCodec? = null
+        var writer: WavWriter? = null
+
+        try {
+            extractor = MediaExtractor()
         // Use specific exception for clearer error handling
         val afd = context.contentResolver.openAssetFileDescriptor(inputUri, "r")
             ?: throw FileNotFoundException("Unable to open input URI: $inputUri")
@@ -136,7 +141,7 @@ object HardwareAudioConverter {
 
         if (durationUs > 0) onProgress?.invoke(0f)
 
-        val decoder = MediaCodec.createDecoderByType(srcMime)
+        decoder = MediaCodec.createDecoderByType(srcMime)
         decoder.configure(srcFormat, null, null, 0)
         decoder.start()
 
@@ -146,7 +151,7 @@ object HardwareAudioConverter {
         var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
 
         var outChannelsToWrite = if (forceMono) 1 else decChannels
-        val writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
+        writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
 
         val needResample = { inRate: Int -> inRate != targetSampleRate }
         var resampler: PolyphaseResampler? = null
@@ -179,7 +184,6 @@ object HardwareAudioConverter {
         val hasDuration = durationUs > 0
         var lastProgress = -1f
 
-        try {
             while (!outputEos && currentCoroutineContext().isActive) {
                 if (!inputEos) {
                     val inIdx = decoder.dequeueInputBuffer(inputTimeoutUs)
@@ -326,25 +330,25 @@ object HardwareAudioConverter {
                     writer.writeFloatsInterleaved(flushBuffer, outChannelsToWrite, flushCount)
                 }
             }
+            if (hasDuration) onProgress?.invoke(1f)
+
+            Result(
+                sampleRate = targetSampleRate,
+                channelCount = outChannelsToWrite,
+                durationUs = durationUs
+            )
         } finally {
             listOf(
-                "Decoder stop" to { decoder.stop() },
-                "Decoder release" to { decoder.release() },
-                "Extractor release" to { extractor.release() },
-                "Writer close" to { writer.close() }
+                "Decoder stop" to { decoder?.stop() },
+                "Decoder release" to { decoder?.release() },
+                "Extractor release" to { extractor?.release() },
+                "Writer close" to { writer?.close() }
             ).forEach { (name, action) ->
                 runCatching(action).onFailure {
                     android.util.Log.w("HardwareAudioConverter", "$name failed", it)
                 }
             }
-            if (hasDuration) onProgress?.invoke(1f)
         }
-
-        Result(
-            sampleRate = targetSampleRate,
-            channelCount = outChannelsToWrite,
-            durationUs = durationUs
-        )
     }
 
     // Downmix to mono with 0.9f headroom into a provided buffer
