@@ -28,9 +28,9 @@ object HardwareAudioConverter {
 
     private const val BYTES_PER_SAMPLE_16_BIT = 2L
     private const val MICROSECONDS_IN_SECOND = 1_000_000.0
-    private const val CONVERSION_SIZE_BUFFER_BYTES = 10_000_000L // 10MB
-    private const val DEFAULT_CONVERSION_SIZE_BYTES = 50_000_000L // 50MB
-    private const val BYTES_IN_MEGABYTE = 1_000_000L
+    private const val BYTES_IN_MEGABYTE = 1024L * 1024L
+    private const val CONVERSION_SIZE_BUFFER_BYTES = 10 * BYTES_IN_MEGABYTE // 10 MiB
+    private const val DEFAULT_CONVERSION_SIZE_BYTES = 50 * BYTES_IN_MEGABYTE // 50 MiB
 
     data class Result(
         val sampleRate: Int,
@@ -78,9 +78,9 @@ object HardwareAudioConverter {
             srcFormat.getLong(MediaFormat.KEY_DURATION) else -1L
         
         // --- Disk Space Check ---
-        val decChannelsInit = if (srcFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT))
+        val decChannels = if (srcFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT))
             srcFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else 2
-        val outChannelsInit = if (forceMono) 1 else decChannelsInit
+        val outChannelsInit = if (forceMono) 1 else decChannels
         val bytesPerSec = targetSampleRate * outChannelsInit * BYTES_PER_SAMPLE_16_BIT
         val estimatedBytes = if (durationUs > 0) {
             ((durationUs / MICROSECONDS_IN_SECOND) * bytesPerSec).toLong() + CONVERSION_SIZE_BUFFER_BYTES
@@ -89,7 +89,7 @@ object HardwareAudioConverter {
         }
         val usableSpace = outputFile.parentFile?.usableSpace ?: 0L
         if (usableSpace < estimatedBytes) {
-            throw java.io.IOException("Insufficient disk space for conversion. Needed at least ${estimatedBytes / BYTES_IN_MEGABYTE} MB, but only ${usableSpace / BYTES_IN_MEGABYTE} MB is available.")
+            throw java.io.IOException("Insufficient disk space for conversion. Needed at least ${estimatedBytes / BYTES_IN_MEGABYTE} MiB, but only ${usableSpace / BYTES_IN_MEGABYTE} MiB is available.")
         }
         // ------------------------
 
@@ -101,8 +101,7 @@ object HardwareAudioConverter {
 
         var decSampleRate = if (srcFormat.containsKey(MediaFormat.KEY_SAMPLE_RATE))
             srcFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE) else 44100
-        var decChannels = if (srcFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT))
-            srcFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else 2
+        // decChannels already initialized above
         var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
 
         var outChannelsToWrite = if (forceMono) 1 else decChannels
