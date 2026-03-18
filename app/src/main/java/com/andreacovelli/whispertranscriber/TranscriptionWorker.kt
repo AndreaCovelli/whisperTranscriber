@@ -264,7 +264,11 @@ class TranscriptionWorker(
                 null
             )
         } finally {
-            tempFileToClean?.let { runCatching { it.delete() } }
+            tempFileToClean?.let { file ->
+                runCatching { file.delete() }.onFailure {
+                    android.util.Log.w("TranscriptionWorker", "Failed to delete temp file: ${file.absolutePath}", it)
+                }
+            }
         }
     }
 

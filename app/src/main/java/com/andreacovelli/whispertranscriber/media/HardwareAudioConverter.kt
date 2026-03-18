@@ -70,6 +70,23 @@ object HardwareAudioConverter {
 
         val durationUs = if (srcFormat.containsKey(MediaFormat.KEY_DURATION))
             srcFormat.getLong(MediaFormat.KEY_DURATION) else -1L
+        
+        // --- Disk Space Check ---
+        val decChannelsInit = if (srcFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT))
+            srcFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else 2
+        val outChannelsInit = if (forceMono) 1 else decChannelsInit
+        val bytesPerSec = targetSampleRate * outChannelsInit * 2L
+        val estimatedBytes = if (durationUs > 0) {
+            ((durationUs / 1_000_000.0) * bytesPerSec).toLong() + 10_000_000L // + 10MB buffer
+        } else {
+            50_000_000L // 50MB safe default if duration unknown
+        }
+        val usableSpace = outputFile.parentFile?.usableSpace ?: 0L
+        if (usableSpace < estimatedBytes) {
+            throw java.io.IOException("Insufficient disk space for conversion. Needed at least ${estimatedBytes / 1_000_000} MB, but only ${usableSpace / 1_000_000} MB is available.")
+        }
+        // ------------------------
+
         if (durationUs > 0) onProgress?.invoke(0f)
 
         val decoder = MediaCodec.createDecoderByType(srcMime)
@@ -264,10 +281,10 @@ object HardwareAudioConverter {
                 }
             }
         } finally {
-            try { decoder.stop() } catch (_: Exception) {}
-            try { decoder.release() } catch (_: Exception) {}
-            try { extractor.release() } catch (_: Exception) {}
-            try { writer.close() } catch (_: Exception) {}
+            try { decoder.stop() } catch (e: Exception) { android.util.Log.w("HardwareAudioConverter", "Decoder stop failed", e) }
+            try { decoder.release() } catch (e: Exception) { android.util.Log.w("HardwareAudioConverter", "Decoder release failed", e) }
+            try { extractor.release() } catch (e: Exception) { android.util.Log.w("HardwareAudioConverter", "Extractor release failed", e) }
+            try { writer.close() } catch (e: Exception) { android.util.Log.w("HardwareAudioConverter", "Writer close failed", e) }
             if (hasDuration) onProgress?.invoke(1f)
         }
 
