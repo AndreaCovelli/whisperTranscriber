@@ -6,6 +6,9 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
+import android.os.storage.StorageManager
+import java.io.IOException
+import java.util.UUID
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import java.io.BufferedOutputStream
@@ -26,6 +29,12 @@ import kotlinx.coroutines.withContext
 
 object HardwareAudioConverter {
 
+    private const val BYTES_PER_SAMPLE_16_BIT = 2L
+    private const val MICROSECONDS_IN_SECOND = 1_000_000.0
+    private const val BYTES_IN_MEGABYTE = 1024L * 1024L
+    private const val CONVERSION_SIZE_BUFFER_BYTES = 10 * BYTES_IN_MEGABYTE // 10 MiB
+    private const val DEFAULT_CONVERSION_SIZE_BYTES = 50 * BYTES_IN_MEGABYTE // 50 MiB
+
     data class Result(
         val sampleRate: Int,
         val channelCount: Int,
@@ -42,7 +51,14 @@ object HardwareAudioConverter {
     ): Result = withContext(Dispatchers.IO) {
         require(targetSampleRate > 0)
 
-        val extractor = MediaExtractor()
+        var extractor: MediaExtractor? = null
+        var decoder: MediaCodec? = null
+        var writer: WavWriter? = null
+        val storageManager = context.getSystemService(Context.STORAGE_SERVICE) as StorageManager
+        var storageUuid: UUID? = null
+
+        try {
+            extractor = MediaExtractor()
         // Use specific exception for clearer error handling
         val afd = context.contentResolver.openAssetFileDescriptor(inputUri, "r")
             ?: throw FileNotFoundException("Unable to open input URI: $inputUri")
@@ -70,20 +86,63 @@ object HardwareAudioConverter {
 
         val durationUs = if (srcFormat.containsKey(MediaFormat.KEY_DURATION))
             srcFormat.getLong(MediaFormat.KEY_DURATION) else -1L
+        
+        // --- Disk Space Check ---
+        var decChannels = if (srcFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT))
+            srcFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else 2
+        val outChannelsInit = if (forceMono) 1 else decChannels
+        val bytesPerSec = targetSampleRate * outChannelsInit * BYTES_PER_SAMPLE_16_BIT
+        
+        val estimatedBytes = if (durationUs > 0) {
+            ((durationUs / MICROSECONDS_IN_SECOND) * bytesPerSec).toLong() + CONVERSION_SIZE_BUFFER_BYTES
+        } else {
+            DEFAULT_CONVERSION_SIZE_BYTES
+        }
+        val parentDir = outputFile.parentFile
+        
+        if (parentDir != null) {
+            try {
+                // Try to use StorageManager for smarter allocation (API 26+)
+                // getUuidForPath throws IOException if the path is not known to the storage manager
+                storageUuid = storageManager.getUuidForPath(parentDir)
+            } catch (e: Exception) {
+                // If getUuidForPath fails (e.g. specialized filesystem), fallback to standard File.usableSpace later
+                android.util.Log.w("HardwareAudioConverter", "Failed to get storage UUID for path $parentDir, falling back to usableSpace", e)
+            }
+        }
+
+        if (storageUuid != null) {
+            // Use StorageManager for smarter allocation
+            // allocatableBytes includes clearable cache space
+            val allocatableBytes = storageManager.getAllocatableBytes(storageUuid)
+            
+            if (allocatableBytes < estimatedBytes) {
+                throw IOException("Insufficient disk space for conversion. Needed at least ${estimatedBytes / BYTES_IN_MEGABYTE} MiB, but only ${allocatableBytes / BYTES_IN_MEGABYTE} MiB is allocatable.")
+            }
+            
+            // Reserve the space (clears caches if needed). Fatal if this fails.
+            storageManager.allocateBytes(storageUuid, estimatedBytes)
+        } else {
+            // Fallback for null parent or unsupported filesystem
+            val usableSpace = parentDir?.usableSpace ?: 0L
+            if (usableSpace < estimatedBytes) {
+                throw IOException("Insufficient disk space for conversion. Needed at least ${estimatedBytes / BYTES_IN_MEGABYTE} MiB, but only ${usableSpace / BYTES_IN_MEGABYTE} MiB is available.")
+            }
+        }
+        // ------------------------
+
         if (durationUs > 0) onProgress?.invoke(0f)
 
-        val decoder = MediaCodec.createDecoderByType(srcMime)
+        decoder = MediaCodec.createDecoderByType(srcMime)
         decoder.configure(srcFormat, null, null, 0)
         decoder.start()
 
         var decSampleRate = if (srcFormat.containsKey(MediaFormat.KEY_SAMPLE_RATE))
             srcFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE) else 44100
-        var decChannels = if (srcFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT))
-            srcFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else 2
+        // decChannels already initialized above
         var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
 
         var outChannelsToWrite = if (forceMono) 1 else decChannels
-        val writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
 
         val needResample = { inRate: Int -> inRate != targetSampleRate }
         var resampler: PolyphaseResampler? = null
@@ -116,7 +175,6 @@ object HardwareAudioConverter {
         val hasDuration = durationUs > 0
         var lastProgress = -1f
 
-        try {
             while (!outputEos && currentCoroutineContext().isActive) {
                 if (!inputEos) {
                     val inIdx = decoder.dequeueInputBuffer(inputTimeoutUs)
@@ -201,9 +259,15 @@ object HardwareAudioConverter {
                                     val resPair = resampler?.process(interleaved, framesAfterMix)
                                     if (resPair != null) {
                                         val (count, buffer) = resPair
-                                        writer.writeFloatsInterleaved(buffer, outChannelsToWrite, count)
+                                        if (writer == null) {
+                                            writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
+                                        }
+                                        writer?.writeFloatsInterleaved(buffer, outChannelsToWrite, count)
                                     } else if (resampler == null) {
-                                        writer.writeFloatsInterleaved(interleaved, outChannelsToWrite, interleavedSamples)
+                                        if (writer == null) {
+                                            writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
+                                        }
+                                        writer?.writeFloatsInterleaved(interleaved, outChannelsToWrite, interleavedSamples)
                                     }
                                 } else {
                                     // PCM16 -> float path
@@ -243,9 +307,15 @@ object HardwareAudioConverter {
                                     val resPair = resampler?.process(interleaved, framesAfterMix)
                                     if (resPair != null) {
                                         val (count, buffer) = resPair
-                                        writer.writeFloatsInterleaved(buffer, outChannelsToWrite, count)
+                                        if (writer == null) {
+                                            writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
+                                        }
+                                        writer?.writeFloatsInterleaved(buffer, outChannelsToWrite, count)
                                     } else if (resampler == null) {
-                                        writer.writeFloatsInterleaved(interleaved, outChannelsToWrite, interleavedSamples)
+                                        if (writer == null) {
+                                            writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
+                                        }
+                                        writer?.writeFloatsInterleaved(interleaved, outChannelsToWrite, interleavedSamples)
                                     }
                                 }
                             }
@@ -260,22 +330,38 @@ object HardwareAudioConverter {
             // Flush remaining samples (Optimized: Handle Pair<Count, Buffer>)
             resampler?.finish()?.let { (flushCount, flushBuffer) ->
                 if (flushCount > 0) {
-                    writer.writeFloatsInterleaved(flushBuffer, outChannelsToWrite, flushCount)
+                    if (writer == null) {
+                        writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
+                    }
+                    writer?.writeFloatsInterleaved(flushBuffer, outChannelsToWrite, flushCount)
                 }
             }
-        } finally {
-            try { decoder.stop() } catch (_: Exception) {}
-            try { decoder.release() } catch (_: Exception) {}
-            try { extractor.release() } catch (_: Exception) {}
-            try { writer.close() } catch (_: Exception) {}
             if (hasDuration) onProgress?.invoke(1f)
-        }
 
-        Result(
-            sampleRate = targetSampleRate,
-            channelCount = outChannelsToWrite,
-            durationUs = durationUs
-        )
+            Result(
+                sampleRate = targetSampleRate,
+                channelCount = outChannelsToWrite,
+                durationUs = durationUs
+            )
+        } finally {
+            if (storageUuid != null) {
+                runCatching {
+                    storageManager.allocateBytes(storageUuid, 0L)
+                }.onFailure {
+                    android.util.Log.w("HardwareAudioConverter", "Failed to release storage reservation", it)
+                }
+            }
+            listOf(
+                "Decoder stop" to { decoder?.stop() },
+                "Decoder release" to { decoder?.release() },
+                "Extractor release" to { extractor?.release() },
+                "Writer close" to { writer?.close() }
+            ).forEach { (name, action) ->
+                runCatching(action).onFailure {
+                    android.util.Log.w("HardwareAudioConverter", "$name failed", it)
+                }
+            }
+        }
     }
 
     // Downmix to mono with 0.9f headroom into a provided buffer
