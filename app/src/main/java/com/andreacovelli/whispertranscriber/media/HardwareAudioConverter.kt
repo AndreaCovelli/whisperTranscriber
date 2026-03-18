@@ -78,7 +78,7 @@ object HardwareAudioConverter {
             srcFormat.getLong(MediaFormat.KEY_DURATION) else -1L
         
         // --- Disk Space Check ---
-        val decChannels = if (srcFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT))
+        var decChannels = if (srcFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT))
             srcFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else 2
         val outChannelsInit = if (forceMono) 1 else decChannels
         val bytesPerSec = targetSampleRate * outChannelsInit * BYTES_PER_SAMPLE_16_BIT
