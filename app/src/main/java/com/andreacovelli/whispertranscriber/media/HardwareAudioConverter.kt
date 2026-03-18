@@ -143,7 +143,6 @@ object HardwareAudioConverter {
         var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
 
         var outChannelsToWrite = if (forceMono) 1 else decChannels
-        writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
 
         val needResample = { inRate: Int -> inRate != targetSampleRate }
         var resampler: PolyphaseResampler? = null
@@ -260,9 +259,15 @@ object HardwareAudioConverter {
                                     val resPair = resampler?.process(interleaved, framesAfterMix)
                                     if (resPair != null) {
                                         val (count, buffer) = resPair
-                                        writer.writeFloatsInterleaved(buffer, outChannelsToWrite, count)
+                                        if (writer == null) {
+                                            writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
+                                        }
+                                        writer?.writeFloatsInterleaved(buffer, outChannelsToWrite, count)
                                     } else if (resampler == null) {
-                                        writer.writeFloatsInterleaved(interleaved, outChannelsToWrite, interleavedSamples)
+                                        if (writer == null) {
+                                            writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
+                                        }
+                                        writer?.writeFloatsInterleaved(interleaved, outChannelsToWrite, interleavedSamples)
                                     }
                                 } else {
                                     // PCM16 -> float path
@@ -302,9 +307,15 @@ object HardwareAudioConverter {
                                     val resPair = resampler?.process(interleaved, framesAfterMix)
                                     if (resPair != null) {
                                         val (count, buffer) = resPair
-                                        writer.writeFloatsInterleaved(buffer, outChannelsToWrite, count)
+                                        if (writer == null) {
+                                            writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
+                                        }
+                                        writer?.writeFloatsInterleaved(buffer, outChannelsToWrite, count)
                                     } else if (resampler == null) {
-                                        writer.writeFloatsInterleaved(interleaved, outChannelsToWrite, interleavedSamples)
+                                        if (writer == null) {
+                                            writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
+                                        }
+                                        writer?.writeFloatsInterleaved(interleaved, outChannelsToWrite, interleavedSamples)
                                     }
                                 }
                             }
@@ -319,7 +330,10 @@ object HardwareAudioConverter {
             // Flush remaining samples (Optimized: Handle Pair<Count, Buffer>)
             resampler?.finish()?.let { (flushCount, flushBuffer) ->
                 if (flushCount > 0) {
-                    writer.writeFloatsInterleaved(flushBuffer, outChannelsToWrite, flushCount)
+                    if (writer == null) {
+                        writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
+                    }
+                    writer?.writeFloatsInterleaved(flushBuffer, outChannelsToWrite, flushCount)
                 }
             }
             if (hasDuration) onProgress?.invoke(1f)
