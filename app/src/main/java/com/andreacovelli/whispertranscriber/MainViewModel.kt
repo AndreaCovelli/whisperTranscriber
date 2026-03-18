@@ -46,12 +46,15 @@ sealed class KeyValidationState {
 data class UiState(
     val status: String = "Waiting for audios...",
     val provider: TranscriptionProvider = TranscriptionProvider.ELEVEN_LABS,
+    val summarizerProvider: TranscriptionProvider = TranscriptionProvider.GEMINI_FLASH,
     val elevenLabsApiKeyState: ApiKeyState = ApiKeyState.Missing,
     val elevenLabsKeyValidation: KeyValidationState = KeyValidationState.Idle,
     val geminiApiKeyState: ApiKeyState = ApiKeyState.Missing,
     val geminiKeyValidation: KeyValidationState = KeyValidationState.Idle,
-    val customGeminiModelName: String = "",
-    val customModelValidation: CustomModelValidation = CustomModelValidation.Idle,
+    val transcriptionCustomGeminiModelName: String = "",
+    val summarizerCustomGeminiModelName: String = "",
+    val transcriptionCustomModelValidation: CustomModelValidation = CustomModelValidation.Idle,
+    val summarizerCustomModelValidation: CustomModelValidation = CustomModelValidation.Idle,
     val jobs: List<TranscriptionJobState> = emptyList()
 )
 
@@ -131,6 +134,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             launch {
+                settings.summarizerProviderFlow.collect { p ->
+                    _uiState.update { it.copy(summarizerProvider = p) }
+                }
+            }
+            launch {
                 settings.elevenLabsApiKeyStateFlow.collect { state ->
                     _uiState.update { it.copy(elevenLabsApiKeyState = state) }
                 }
@@ -141,8 +149,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             launch {
-                settings.customGeminiModelNameFlow.collect { name ->
-                    _uiState.update { it.copy(customGeminiModelName = name.orEmpty()) }
+                settings.transcriptionCustomGeminiModelNameFlow.collect { name ->
+                    _uiState.update { it.copy(transcriptionCustomGeminiModelName = name.orEmpty()) }
+                }
+            }
+            launch {
+                settings.summarizerCustomGeminiModelNameFlow.collect { name ->
+                    _uiState.update { it.copy(summarizerCustomGeminiModelName = name.orEmpty()) }
                 }
             }
             launch {
@@ -175,6 +188,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(provider = p) }
         viewModelScope.launch {
             settings.saveProvider(p)
+        }
+    }
+
+    fun setSummarizerProvider(p: TranscriptionProvider) {
+        _uiState.update { it.copy(summarizerProvider = p) }
+        viewModelScope.launch {
+            settings.saveSummarizerProvider(p)
         }
     }
 
@@ -236,8 +256,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun resetCustomModelValidation() {
-        _uiState.update { it.copy(customModelValidation = CustomModelValidation.Idle) }
+    fun resetCustomModelValidation(isSummarizer: Boolean = false) {
+        _uiState.update {
+            if (isSummarizer) {
+                it.copy(summarizerCustomModelValidation = CustomModelValidation.Idle)
+            } else {
+                it.copy(transcriptionCustomModelValidation = CustomModelValidation.Idle)
+            }
+        }
     }
 
     fun resetElevenLabsKeyValidation() {
@@ -248,13 +274,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Idle) }
     }
 
-    fun validateCustomGeminiModel(modelName: String) {
+    fun validateCustomGeminiModel(modelName: String, isSummarizer: Boolean = false) {
         val trimmed = modelName.trim()
         if (trimmed.isBlank()) {
-            _uiState.update { it.copy(customModelValidation = CustomModelValidation.Error(ERR_ENTER_MODEL_NAME)) }
+            if (isSummarizer) _uiState.update { it.copy(summarizerCustomModelValidation = CustomModelValidation.Error(ERR_ENTER_MODEL_NAME)) }
+            else _uiState.update { it.copy(transcriptionCustomModelValidation = CustomModelValidation.Error(ERR_ENTER_MODEL_NAME)) }
             return
         }
-        _uiState.update { it.copy(customModelValidation = CustomModelValidation.Validating) }
+        if (isSummarizer) _uiState.update { it.copy(summarizerCustomModelValidation = CustomModelValidation.Validating) }
+        else _uiState.update { it.copy(transcriptionCustomModelValidation = CustomModelValidation.Validating) }
+
         viewModelScope.launch {
             val keyChars = settings.getGeminiApiKey()
             if (keyChars == null || keyChars.isEmpty()) {
@@ -262,7 +291,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val errMsg = if (keyState is ApiKeyState.Error)
                     "Keystore error: ${keyState.message}. Please re-enter your key."
                 else ERR_ENTER_GEMINI_KEY
-                _uiState.update { it.copy(customModelValidation = CustomModelValidation.Error(errMsg)) }
+                
+                if (isSummarizer) _uiState.update { it.copy(summarizerCustomModelValidation = CustomModelValidation.Error(errMsg)) }
+                else _uiState.update { it.copy(transcriptionCustomModelValidation = CustomModelValidation.Error(errMsg)) }
                 return@launch
             }
 
@@ -280,25 +311,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (!isSuccess) {
                     val msg = if (code == 404) ERR_MODEL_NOT_FOUND.format(trimmed)
                               else ERR_HTTP_VERIFY.format(code)
-                    _uiState.update { it.copy(customModelValidation = CustomModelValidation.Error(msg)) }
+                    if (isSummarizer) _uiState.update { it.copy(summarizerCustomModelValidation = CustomModelValidation.Error(msg)) }
+                    else _uiState.update { it.copy(transcriptionCustomModelValidation = CustomModelValidation.Error(msg)) }
                     return@launch
                 }
                 val displayName = try {
                     JSONObject(bodyText).optString("displayName", trimmed)
                 } catch (_: Exception) { trimmed }
-                settings.saveCustomGeminiModelName(trimmed)
-                _uiState.update {
-                    it.copy(
-                        customGeminiModelName = trimmed,
-                        customModelValidation = CustomModelValidation.Valid(displayName)
-                    )
+                
+                if (isSummarizer) {
+                    settings.saveSummarizerCustomGeminiModelName(trimmed)
+                    _uiState.update {
+                        it.copy(
+                            summarizerCustomGeminiModelName = trimmed,
+                            summarizerCustomModelValidation = CustomModelValidation.Valid(displayName)
+                        )
+                    }
+                } else {
+                    settings.saveTranscriptionCustomGeminiModelName(trimmed)
+                    _uiState.update {
+                        it.copy(
+                            transcriptionCustomGeminiModelName = trimmed,
+                            transcriptionCustomModelValidation = CustomModelValidation.Valid(displayName)
+                        )
+                    }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(customModelValidation = CustomModelValidation.Error(e.message ?: "Validation failed"))
-                }
+                if (isSummarizer) _uiState.update { it.copy(summarizerCustomModelValidation = CustomModelValidation.Error(e.message ?: "Validation failed")) }
+                else _uiState.update { it.copy(transcriptionCustomModelValidation = CustomModelValidation.Error(e.message ?: "Validation failed")) }
             }
         }
     }
@@ -434,10 +476,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val apiKey = String(keyChars)
             keyChars.fill('\u0000')
 
-            val providerForSummary = state.provider
+            val providerForSummary = state.summarizerProvider
             val modelName = when {
                 providerForSummary == TranscriptionProvider.GEMINI_CUSTOM -> {
-                    val customName = state.customGeminiModelName
+                    val customName = state.summarizerCustomGeminiModelName
                     if (customName.isBlank()) {
                         _uiState.update { it.copy(status = "Error: No custom Gemini model set for summarization.") }
                         repository.setSummarizing(jobId, false)

@@ -118,7 +118,7 @@ class TranscriptionWorker(
             val persistedProvider = settings.providerFlow.firstOrNull() ?: TranscriptionProvider.ELEVEN_LABS
             val usingElevenLabs = persistedProvider == TranscriptionProvider.ELEVEN_LABS
             val geminiModelName = when (persistedProvider) {
-                TranscriptionProvider.GEMINI_CUSTOM -> settings.customGeminiModelNameFlow.firstOrNull()
+                TranscriptionProvider.GEMINI_CUSTOM -> settings.transcriptionCustomGeminiModelNameFlow.firstOrNull()
                 else -> persistedProvider.modelName
             }
 

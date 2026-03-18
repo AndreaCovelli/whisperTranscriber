@@ -262,7 +262,7 @@ fun MainScreen(
             TranscriptionProvider.GEMINI_FLASH -> "Using: Gemini Flash"
             TranscriptionProvider.GEMINI_PRO -> "Using: Gemini Pro"
             TranscriptionProvider.GEMINI_CUSTOM -> {
-                val name = uiState.customGeminiModelName
+                val name = uiState.transcriptionCustomGeminiModelName
                 if (name.isBlank()) "Using: Custom Gemini model (not set)" else "Using: $name"
             }
         }
@@ -618,10 +618,28 @@ fun SettingsScreen(
                     ProviderSelector(
                         selected = uiState.provider,
                         onSelect = viewModel::setProvider,
-                        customModelName = uiState.customGeminiModelName,
-                        customModelValidation = uiState.customModelValidation,
-                        onValidateCustomModel = viewModel::validateCustomGeminiModel,
-                        onResetValidation = viewModel::resetCustomModelValidation
+                        customModelName = uiState.transcriptionCustomGeminiModelName,
+                        customModelValidation = uiState.transcriptionCustomModelValidation,
+                        onValidateCustomModel = { viewModel.validateCustomGeminiModel(it, isSummarizer = false) },
+                        onResetValidation = { viewModel.resetCustomModelValidation(isSummarizer = false) }
+                    )
+                }
+            }
+
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Summarizer Model", style = MaterialTheme.typography.titleMedium)
+                    ProviderSelector(
+                        selected = uiState.summarizerProvider,
+                        onSelect = viewModel::setSummarizerProvider,
+                        customModelName = uiState.summarizerCustomGeminiModelName,
+                        customModelValidation = uiState.summarizerCustomModelValidation,
+                        onValidateCustomModel = { viewModel.validateCustomGeminiModel(it, isSummarizer = true) },
+                        onResetValidation = { viewModel.resetCustomModelValidation(isSummarizer = true) },
+                        showElevenLabs = false
                     )
                 }
             }
@@ -803,19 +821,22 @@ private fun ProviderSelector(
     customModelName: String,
     customModelValidation: CustomModelValidation,
     onValidateCustomModel: (String) -> Unit,
-    onResetValidation: () -> Unit
+    onResetValidation: () -> Unit,
+    showElevenLabs: Boolean = true
 ) {
     var customInput by remember(customModelName) { mutableStateOf(customModelName) }
     var fieldHadFocus by remember(customModelName) { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        ProviderRadioOption(
-            text = "ElevenLabs",
-            isSelected = selected == TranscriptionProvider.ELEVEN_LABS,
-            onClick = { onSelect(TranscriptionProvider.ELEVEN_LABS) }
-        )
+        if (showElevenLabs) {
+            ProviderRadioOption(
+                text = "ElevenLabs",
+                isSelected = selected == TranscriptionProvider.ELEVEN_LABS,
+                onClick = { onSelect(TranscriptionProvider.ELEVEN_LABS) }
+            )
 
-        Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(8.dp))
+        }
         Text(
             "Gemini Models",
             style = MaterialTheme.typography.labelMedium,

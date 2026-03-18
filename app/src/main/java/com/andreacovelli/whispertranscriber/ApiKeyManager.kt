@@ -34,9 +34,11 @@ class ApiKeyManager(private val context: Context) {
     companion object {
         private val ELEVEN_LABS_API_KEY_ENC = stringPreferencesKey("eleven_labs_api_key_enc")
         private val GEMINI_API_KEY_ENC = stringPreferencesKey("gemini_api_key_enc")
-        private val GEMINI_CUSTOM_MODEL_NAME = stringPreferencesKey("gemini_custom_model_name")
+        private val GEMINI_TRANSCRIPTION_CUSTOM_MODEL_NAME = stringPreferencesKey("gemini_custom_model_name")
+        private val GEMINI_SUMMARIZER_CUSTOM_MODEL_NAME = stringPreferencesKey("gemini_summarizer_custom_model_name")
 
         private val SELECTED_PROVIDER = stringPreferencesKey("transcription_provider")
+        private val SELECTED_SUMMARIZER_PROVIDER = stringPreferencesKey("summarizer_provider")
     }
 
     // Save (encrypt before persisting)
@@ -68,11 +70,23 @@ class ApiKeyManager(private val context: Context) {
         context.dataStore.edit { it[SELECTED_PROVIDER] = provider.name }
     }
 
-    suspend fun saveCustomGeminiModelName(name: String) {
+    suspend fun saveSummarizerProvider(provider: TranscriptionProvider) {
+        context.dataStore.edit { it[SELECTED_SUMMARIZER_PROVIDER] = provider.name }
+    }
+
+    private suspend fun saveCustomModelName(name: String, key: Preferences.Key<String>) {
         context.dataStore.edit { prefs ->
-            if (name.isBlank()) prefs.remove(GEMINI_CUSTOM_MODEL_NAME)
-            else prefs[GEMINI_CUSTOM_MODEL_NAME] = name.trim()
+            if (name.isBlank()) prefs.remove(key)
+            else prefs[key] = name.trim()
         }
+    }
+
+    suspend fun saveTranscriptionCustomGeminiModelName(name: String) {
+        saveCustomModelName(name, GEMINI_TRANSCRIPTION_CUSTOM_MODEL_NAME)
+    }
+
+    suspend fun saveSummarizerCustomGeminiModelName(name: String) {
+        saveCustomModelName(name, GEMINI_SUMMARIZER_CUSTOM_MODEL_NAME)
     }
 
     // Quick wipe actions
@@ -125,24 +139,24 @@ class ApiKeyManager(private val context: Context) {
     suspend fun getElevenLabsApiKey(): CharArray? = getApiKey(ELEVEN_LABS_API_KEY_ENC)
     suspend fun getGeminiApiKey(): CharArray? = getApiKey(GEMINI_API_KEY_ENC)
 
-    val customGeminiModelNameFlow: Flow<String?> = context.dataStore.data.map { p ->
-        p[GEMINI_CUSTOM_MODEL_NAME]?.takeIf { it.isNotBlank() }
+    val transcriptionCustomGeminiModelNameFlow: Flow<String?> = context.dataStore.data.map { p ->
+        p[GEMINI_TRANSCRIPTION_CUSTOM_MODEL_NAME]?.takeIf { it.isNotBlank() }
+    }
+
+    val summarizerCustomGeminiModelNameFlow: Flow<String?> = context.dataStore.data.map { p ->
+        p[GEMINI_SUMMARIZER_CUSTOM_MODEL_NAME]?.takeIf { it.isNotBlank() }
     }
 
     val providerFlow: Flow<TranscriptionProvider> = context.dataStore.data.map { p ->
-        val providerName = p[SELECTED_PROVIDER]
-        try {
-            if (providerName != null) {
-                TranscriptionProvider.valueOf(providerName)
-            } else {
-                TranscriptionProvider.ELEVEN_LABS
-            }
-        } catch (_: IllegalArgumentException) {
-            if (providerName == "GEMINI_25_FLASH") {
-                TranscriptionProvider.GEMINI_FLASH
-            } else {
-                TranscriptionProvider.ELEVEN_LABS
-            }
-        }
+        p[SELECTED_PROVIDER]?.let { name ->
+            runCatching { TranscriptionProvider.valueOf(name) }
+                .getOrElse { if (name == "GEMINI_25_FLASH") TranscriptionProvider.GEMINI_FLASH else null }
+        } ?: TranscriptionProvider.ELEVEN_LABS
+    }
+
+    val summarizerProviderFlow: Flow<TranscriptionProvider> = context.dataStore.data.map { p ->
+        p[SELECTED_SUMMARIZER_PROVIDER]
+            ?.let { runCatching { TranscriptionProvider.valueOf(it) }.getOrNull() }
+            ?: TranscriptionProvider.GEMINI_FLASH
     }
 }
