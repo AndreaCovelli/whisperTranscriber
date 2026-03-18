@@ -8,6 +8,7 @@ import android.media.MediaFormat
 import android.net.Uri
 import android.os.storage.StorageManager
 import java.io.IOException
+import java.util.UUID
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import java.io.BufferedOutputStream
@@ -98,43 +99,33 @@ object HardwareAudioConverter {
         val parentDir = outputFile.parentFile
         val storageManager = context.getSystemService(Context.STORAGE_SERVICE) as StorageManager
         
-        try {
-            if (parentDir != null) {
+        var storageUuid: UUID? = null
+        if (parentDir != null) {
+            try {
                 // Try to use StorageManager for smarter allocation (API 26+)
                 // getUuidForPath throws IOException if the path is not known to the storage manager
-                val storageUuid = storageManager.getUuidForPath(parentDir)
-                
-                // allocatableBytes includes clearable cache space
-                val allocatableBytes = storageManager.getAllocatableBytes(storageUuid)
-                
-                if (allocatableBytes < estimatedBytes) {
-                    throw IOException("Insufficient disk space for conversion. Needed at least ${estimatedBytes / BYTES_IN_MEGABYTE} MiB, but only ${allocatableBytes / BYTES_IN_MEGABYTE} MiB is allocatable.")
-                }
-                
-                // Reserve the space (clears caches if needed)
-                storageManager.allocateBytes(storageUuid, estimatedBytes)
-            } else {
-                // Fallback for null parent
-                val usableSpace = outputFile.parentFile?.usableSpace ?: 0L
-                if (usableSpace < estimatedBytes) {
-                    throw IOException("Insufficient disk space for conversion. Needed at least ${estimatedBytes / BYTES_IN_MEGABYTE} MiB, but only ${usableSpace / BYTES_IN_MEGABYTE} MiB is available.")
-                }
+                storageUuid = storageManager.getUuidForPath(parentDir)
+            } catch (e: Exception) {
+                // If getUuidForPath fails (e.g. specialized filesystem), fallback to standard File.usableSpace later
             }
-        } catch (e: IOException) {
-            // If getUuidForPath fails (e.g. specialized filesystem), fallback to standard File.usableSpace
-            // Note: If allocateBytes failed with IOException, it means insufficient space, so we rethrow if the message is already correct,
-            // or we can just fall back to the simple check to be safe and consistent.
-            
-            // However, if the exception was "Insufficient disk space..." from our check above, we should rethrow it.
-            if (e.message?.startsWith("Insufficient disk space") == true) {
-                throw e
-            }
+        }
 
-            // Otherwise, it might be "No such file or directory" from getUuidForPath or similar.
-            // Fallback to basic check
-            val usableSpace = outputFile.parentFile?.usableSpace ?: 0L
+        if (storageUuid != null) {
+            // Use StorageManager for smarter allocation
+            // allocatableBytes includes clearable cache space
+            val allocatableBytes = storageManager.getAllocatableBytes(storageUuid)
+            
+            if (allocatableBytes < estimatedBytes) {
+                throw IOException("Insufficient disk space for conversion. Needed at least ${estimatedBytes / BYTES_IN_MEGABYTE} MiB, but only ${allocatableBytes / BYTES_IN_MEGABYTE} MiB is allocatable.")
+            }
+            
+            // Reserve the space (clears caches if needed). Fatal if this fails.
+            storageManager.allocateBytes(storageUuid, estimatedBytes)
+        } else {
+            // Fallback for null parent or unsupported filesystem
+            val usableSpace = parentDir?.usableSpace ?: 0L
             if (usableSpace < estimatedBytes) {
-                throw IOException("Insufficient disk space for conversion. Needed at least ${estimatedBytes / BYTES_IN_MEGABYTE} MiB, but only ${usableSpace / BYTES_IN_MEGABYTE} MiB is available.", e)
+                throw IOException("Insufficient disk space for conversion. Needed at least ${estimatedBytes / BYTES_IN_MEGABYTE} MiB, but only ${usableSpace / BYTES_IN_MEGABYTE} MiB is available.")
             }
         }
         // ------------------------
