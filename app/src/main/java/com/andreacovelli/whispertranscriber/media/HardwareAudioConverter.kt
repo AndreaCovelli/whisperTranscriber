@@ -287,10 +287,16 @@ object HardwareAudioConverter {
                 }
             }
         } finally {
-            runCatching { decoder.stop() }.onFailure { android.util.Log.w("HardwareAudioConverter", "Decoder stop failed", it) }
-            runCatching { decoder.release() }.onFailure { android.util.Log.w("HardwareAudioConverter", "Decoder release failed", it) }
-            runCatching { extractor.release() }.onFailure { android.util.Log.w("HardwareAudioConverter", "Extractor release failed", it) }
-            runCatching { writer.close() }.onFailure { android.util.Log.w("HardwareAudioConverter", "Writer close failed", it) }
+            listOf(
+                "Decoder stop" to { decoder.stop() },
+                "Decoder release" to { decoder.release() },
+                "Extractor release" to { extractor.release() },
+                "Writer close" to { writer.close() }
+            ).forEach { (name, action) ->
+                runCatching(action).onFailure {
+                    android.util.Log.w("HardwareAudioConverter", "$name failed", it)
+                }
+            }
             if (hasDuration) onProgress?.invoke(1f)
         }
 
