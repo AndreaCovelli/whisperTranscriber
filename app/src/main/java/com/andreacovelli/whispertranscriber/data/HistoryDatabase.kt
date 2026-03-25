@@ -42,6 +42,7 @@ data class TranscriptionJob(
     val model: String = "",
     val summary: String = "",
     val error: String? = null,
+    val summaryError: String? = null,
     val isRunning: Boolean = false,
     val isSummarizing: Boolean = false,
     val historyId: Int? = null,
@@ -73,6 +74,9 @@ interface TranscriptionHistoryDao {
 
     @Query("UPDATE transcription_history SET summary = :summary WHERE id = :id")
     suspend fun updateSummary(id: Int, summary: String)
+
+    @Query("UPDATE transcription_history SET text = :text WHERE id = :id")
+    suspend fun updateText(id: Int, text: String)
 }
 
 @Dao
@@ -101,11 +105,17 @@ interface TranscriptionJobDao {
     @Query("UPDATE active_jobs SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: Int, status: String)
 
+    @Query("UPDATE active_jobs SET transcript = '', language = '', model = '' WHERE id = :id")
+    suspend fun clearTranscriptionResult(id: Int)
+
     @Query("UPDATE active_jobs SET summary = :summary WHERE id = :id")
     suspend fun updateSummary(id: Int, summary: String)
 
     @Query("UPDATE active_jobs SET isSummarizing = :isSummarizing WHERE id = :id")
     suspend fun setSummarizing(id: Int, isSummarizing: Boolean)
+
+    @Query("UPDATE active_jobs SET summaryError = :error WHERE id = :id")
+    suspend fun updateSummaryError(id: Int, error: String?)
 
     @Query("SELECT * FROM active_jobs ORDER BY timestamp ASC")
     fun getAllJobs(): Flow<List<TranscriptionJob>>
@@ -120,7 +130,7 @@ interface TranscriptionJobDao {
     suspend fun clearCompleted()
 }
 
-@Database(entities = [TranscriptionHistory::class, TranscriptionJob::class], version = 5, exportSchema = false)
+@Database(entities = [TranscriptionHistory::class, TranscriptionJob::class], version = 6, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun transcriptionHistoryDao(): TranscriptionHistoryDao
     abstract fun transcriptionJobDao(): TranscriptionJobDao
@@ -170,6 +180,12 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE active_jobs ADD COLUMN summaryError TEXT")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -177,7 +193,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "transcription_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build()
                 INSTANCE = instance
                 instance

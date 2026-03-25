@@ -46,6 +46,10 @@ class TranscriptionRepository(context: Context) {
         jobDao.setSummarizing(id, isSummarizing)
     }
 
+    suspend fun updateSummaryError(id: Int, error: String?) {
+        jobDao.updateSummaryError(id, error)
+    }
+
     suspend fun clearJobSummary(jobId: Int) {
         db.withTransaction {
             val job = jobDao.getJobById(jobId) ?: return@withTransaction
@@ -53,6 +57,17 @@ class TranscriptionRepository(context: Context) {
             val hid = job.historyId
             if (hid != null) {
                 historyDao.updateSummary(hid, "")
+            }
+        }
+    }
+
+    suspend fun clearJobTranscription(jobId: Int) {
+        db.withTransaction {
+            val job = jobDao.getJobById(jobId) ?: return@withTransaction
+            jobDao.clearTranscriptionResult(jobId)
+            val hid = job.historyId
+            if (hid != null) {
+                historyDao.updateText(hid, "")
             }
         }
     }

@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.andreacovelli.whispertranscriber.security.KeystoreCrypto
 import kotlinx.coroutines.flow.Flow
@@ -39,6 +40,15 @@ class ApiKeyManager(private val context: Context) {
 
         private val SELECTED_PROVIDER = stringPreferencesKey("transcription_provider")
         private val SELECTED_SUMMARIZER_PROVIDER = stringPreferencesKey("summarizer_provider")
+        private val AUTOMATIC_SUMMARIZATION_ENABLED = booleanPreferencesKey("automatic_summarization_enabled")
+    }
+
+    val automaticSummarizationFlow: Flow<Boolean> = context.dataStore.data.map { p ->
+        p[AUTOMATIC_SUMMARIZATION_ENABLED] ?: false
+    }
+
+    suspend fun saveAutomaticSummarization(enabled: Boolean) {
+        context.dataStore.edit { it[AUTOMATIC_SUMMARIZATION_ENABLED] = enabled }
     }
 
     // Save (encrypt before persisting)

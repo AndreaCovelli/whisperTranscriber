@@ -369,10 +369,10 @@ fun MainScreen(
                             Toast.makeText(context, "Copied summary", Toast.LENGTH_SHORT).show()
                         },
                         onShareTranscript = {
-                            shareText(context, job.transcript)
+                            shareText(context, job.transcript, context.getString(R.string.share_transcription_title))
                         },
                         onShareSummary = {
-                            shareText(context, job.summary)
+                            shareText(context, job.summary, context.getString(R.string.share_summary_title))
                         },
                         onRetry = { viewModel.retryJob(job.id) },
                         onCancel = { viewModel.cancelJob(job.id) },
@@ -551,6 +551,16 @@ private fun TranscriptionJobCard(
                     }
                 }
 
+                if (job.summaryError != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Summarization error: ${job.summaryError}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
                 if (job.summary.isNotBlank()) {
                     Spacer(Modifier.height(12.dp))
                     Row(
@@ -651,6 +661,30 @@ fun SettingsScreen(
                         onResetValidation = { viewModel.resetCustomModelValidation(isSummarizer = true) },
                         showElevenLabs = false
                     )
+                }
+            }
+
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Automatic Summarization", style = MaterialTheme.typography.titleMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Summarize completed transcriptions automatically",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Switch(
+                            checked = uiState.automaticSummarizationEnabled,
+                            onCheckedChange = { viewModel.setAutomaticSummarization(it) }
+                        )
+                    }
                 }
             }
 
