@@ -519,7 +519,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 val keyChars = settings.getGeminiApiKey()
                 if (keyChars == null || keyChars.isEmpty()) {
-                    _uiState.update { it.copy(status = "Error: Gemini API Key is not set (Settings) or Keystore error.") }
+                    val errorMsg = "Gemini API Key is not set (Settings) or Keystore error."
+                    repository.updateJobById(jobId) { it.copy(isSummarizing = false, summaryError = errorMsg) }
+                    _uiState.update { it.copy(status = "Error: $errorMsg") }
                     return@launch
                 }
                 val apiKey = String(keyChars)
@@ -530,8 +532,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     providerForSummary == TranscriptionProvider.GEMINI_CUSTOM -> {
                         val customName = state.summarizerCustomGeminiModelName
                         if (customName.isBlank()) {
-                            _uiState.update { it.copy(status = "Error: No custom Gemini model set for summarization.") }
-                            repository.setSummarizing(jobId, false)
+                            val errorMsg = "No custom Gemini model set for summarization."
+                            repository.updateJobById(jobId) { it.copy(isSummarizing = false, summaryError = errorMsg) }
+                            _uiState.update { it.copy(status = "Error: $errorMsg") }
                             return@launch
                         }
                         customName

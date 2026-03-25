@@ -105,6 +105,9 @@ interface TranscriptionJobDao {
     @Query("UPDATE active_jobs SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: Int, status: String)
 
+    @Query("UPDATE active_jobs SET transcript = '', language = '', model = '' WHERE id = :id")
+    suspend fun clearTranscriptionResult(id: Int)
+
     @Query("UPDATE active_jobs SET summary = :summary WHERE id = :id")
     suspend fun updateSummary(id: Int, summary: String)
 
