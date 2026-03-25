@@ -483,7 +483,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearTranscription(jobId: Int) {
         viewModelScope.launch {
-            repository.updateJobById(jobId) { it.copy(transcript = "", summary = "") }
+            repository.updateJobById(jobId) { it.copy(transcript = "") }
         }
     }
 
