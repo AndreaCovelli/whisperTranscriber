@@ -1321,3 +1321,11 @@ fun ExpandableText(
         }
     }
 }
+
+private fun shareText(context: android.content.Context, text: String, title: String? = null) {
+    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, text)
+    }
+    context.startActivity(Intent.createChooser(sendIntent, title))
+}
