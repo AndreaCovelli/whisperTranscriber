@@ -654,6 +654,30 @@ fun SettingsScreen(
                 }
             }
 
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Automatic Summarization", style = MaterialTheme.typography.titleMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Summarize completed transcriptions automatically",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Switch(
+                            checked = uiState.automaticSummarizationEnabled,
+                            onCheckedChange = { viewModel.setAutomaticSummarization(it) }
+                        )
+                    }
+                }
+            }
+
             ApiKeyCard(
                 title = "ElevenLabs API Key",
                 label = "Enter ElevenLabs API key",

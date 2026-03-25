@@ -55,6 +55,7 @@ data class UiState(
     val summarizerCustomGeminiModelName: String = "",
     val transcriptionCustomModelValidation: CustomModelValidation = CustomModelValidation.Idle,
     val summarizerCustomModelValidation: CustomModelValidation = CustomModelValidation.Idle,
+    val automaticSummarizationEnabled: Boolean = false,
     val jobs: List<TranscriptionJobState> = emptyList()
 )
 
@@ -159,8 +160,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             launch {
+                settings.automaticSummarizationFlow.collect { enabled ->
+                    _uiState.update { it.copy(automaticSummarizationEnabled = enabled) }
+                }
+            }
+            launch {
                 repository.jobsState.collect { jobsList ->
                     _uiState.update { it.copy(jobs = jobsList.map { it.toUiState() }) }
+                    
+                    // Auto-summarization logic
+                    if (_uiState.value.automaticSummarizationEnabled && _uiState.value.geminiApiKeyState is ApiKeyState.Present) {
+                        jobsList.forEach { job ->
+                            if (!job.isRunning && !job.isSummarizing && job.transcript.isNotBlank() && job.summary.isBlank() && job.error == null) {
+                                summarizeJob(job.id)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -195,6 +210,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(summarizerProvider = p) }
         viewModelScope.launch {
             settings.saveSummarizerProvider(p)
+        }
+    }
+
+    fun setAutomaticSummarization(enabled: Boolean) {
+        _uiState.update { it.copy(automaticSummarizationEnabled = enabled) }
+        viewModelScope.launch {
+            settings.saveAutomaticSummarization(enabled)
         }
     }
 
