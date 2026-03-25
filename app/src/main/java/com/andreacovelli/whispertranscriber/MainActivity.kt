@@ -92,6 +92,14 @@ class MainActivity : ComponentActivity() {
 
     private val mainViewModel: MainViewModel by viewModels()
 
+    private fun shareText(context: android.content.Context, text: String, title: String? = null) {
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        context.startActivity(Intent.createChooser(sendIntent, title))
+    }
+
     private fun extractSharedUris(intent: Intent?): List<Uri> {
         intent ?: return emptyList()
         return when (intent.action) {
@@ -369,18 +377,10 @@ fun MainScreen(
                             Toast.makeText(context, "Copied summary", Toast.LENGTH_SHORT).show()
                         },
                         onShareTranscript = {
-                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, job.transcript)
-                            }
-                            context.startActivity(Intent.createChooser(sendIntent, null))
+                            shareText(context, job.transcript)
                         },
                         onShareSummary = {
-                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, job.summary)
-                            }
-                            context.startActivity(Intent.createChooser(sendIntent, null))
+                            shareText(context, job.summary)
                         },
                         onRetry = { viewModel.retryJob(job.id) },
                         onCancel = { viewModel.cancelJob(job.id) },
@@ -522,7 +522,7 @@ private fun TranscriptionJobCard(
                         IconButton(onClick = onClearTranscript) {
                             Icon(
                                 Icons.Default.DeleteSweep,
-                                contentDescription = "Clear Transcription",
+                                contentDescription = stringResource(R.string.clear_transcription),
                                 modifier = Modifier.size(24.dp)
                             )
                         }
@@ -577,7 +577,7 @@ private fun TranscriptionJobCard(
                             IconButton(onClick = onClearSummary) {
                                 Icon(
                                     Icons.Default.DeleteSweep,
-                                    contentDescription = "Clear Summary",
+                                    contentDescription = stringResource(R.string.clear_summary),
                                     modifier = Modifier.size(24.dp)
                                 )
                             }
@@ -1236,8 +1236,7 @@ fun HistoryItemCard(
             Spacer(Modifier.height(8.dp))
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.End
             ) {
                 val copyActions = buildList {
                     add("text" to item.text)
