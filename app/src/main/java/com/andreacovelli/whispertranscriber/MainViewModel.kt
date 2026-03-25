@@ -459,6 +459,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun clearTranscription(jobId: Int) {
+        viewModelScope.launch {
+            repository.updateJobById(jobId) { it.copy(transcript = "") }
+        }
+    }
+
     fun summarizeJob(jobId: Int) {
         viewModelScope.launch {
             val state = _uiState.value
