@@ -4,6 +4,7 @@
     <string name="summary_header">\n\nSummary:\n</string>
     <string name="share_transcription_title">Share Transcription</string>
     <string name="clear_summary">Clear summary</string>
+    <string name="clear_transcription">Clear transcription</string>
     <string name="copy_type">Copy %1$s</string>
     <string name="share_item_description">Share item</string>
     <string name="delete_item_description">Delete item</string>

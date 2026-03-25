@@ -359,6 +359,7 @@ fun MainScreen(
                         canSummarize = uiState.geminiApiKeyState is ApiKeyState.Present,
                         onSummarize = { viewModel.summarizeJob(job.id) },
                         onClearSummary = { viewModel.clearSummary(job.id) },
+                        onClearTranscript = { viewModel.clearTranscription(job.id) },
                         onCopyTranscript = {
                             scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", job.transcript))) }
                             Toast.makeText(context, "Copied transcript", Toast.LENGTH_SHORT).show()
@@ -371,6 +372,13 @@ fun MainScreen(
                             val sendIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
                                 putExtra(Intent.EXTRA_TEXT, job.transcript)
+                            }
+                            context.startActivity(Intent.createChooser(sendIntent, null))
+                        },
+                        onShareSummary = {
+                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, job.summary)
                             }
                             context.startActivity(Intent.createChooser(sendIntent, null))
                         },
@@ -390,9 +398,11 @@ private fun TranscriptionJobCard(
     canSummarize: Boolean,
     onSummarize: () -> Unit,
     onClearSummary: () -> Unit,
+    onClearTranscript: () -> Unit,
     onCopyTranscript: () -> Unit,
     onCopySummary: () -> Unit,
     onShareTranscript: () -> Unit,
+    onShareSummary: () -> Unit,
     onRetry: () -> Unit,
     onCancel: () -> Unit,
     onDelete: () -> Unit
@@ -502,12 +512,19 @@ private fun TranscriptionJobCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Transcription", style = MaterialTheme.typography.titleSmall)
-                    Row {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onCopyTranscript) {
+                            Icon(Icons.Filled.ContentCopy, "Copy Transcription")
+                        }
                         IconButton(onClick = onShareTranscript) {
                             Icon(Icons.Default.Share, "Share Transcription")
                         }
-                        IconButton(onClick = onCopyTranscript) {
-                            Icon(Icons.Filled.ContentCopy, "Copy Transcription")
+                        IconButton(onClick = onClearTranscript) {
+                            Icon(
+                                Icons.Default.DeleteSweep,
+                                contentDescription = "Clear Transcription",
+                                modifier = Modifier.size(24.dp)
+                            )
                         }
                     }
                 }
@@ -550,18 +567,19 @@ private fun TranscriptionJobCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("Summary", style = MaterialTheme.typography.titleSmall)
-                        Row {
-                            TextButton(onClick = onClearSummary) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = onCopySummary) {
+                                Icon(Icons.Filled.ContentCopy, "Copy Summary")
+                            }
+                            IconButton(onClick = onShareSummary) {
+                                Icon(Icons.Default.Share, "Share Summary")
+                            }
+                            IconButton(onClick = onClearSummary) {
                                 Icon(
                                     Icons.Default.DeleteSweep,
                                     contentDescription = "Clear Summary",
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(24.dp)
                                 )
-                                Spacer(Modifier.width(4.dp))
-                                Text("Clear")
-                            }
-                            IconButton(onClick = onCopySummary) {
-                                Icon(Icons.Filled.ContentCopy, "Copy Summary")
                             }
                         }
                     }
@@ -1218,19 +1236,9 @@ fun HistoryItemCard(
             Spacer(Modifier.height(8.dp))
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                if (item.summary.isNotBlank()) {
-                    TextButton(onClick = onClearSummary) {
-                        Icon(
-                            Icons.Default.DeleteSweep,
-                            contentDescription = "Clear summary",
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.clear_summary), maxLines = 1, softWrap = false)
-                    }
-                }
                 val copyActions = buildList {
                     add("text" to item.text)
                     if (item.summary.isNotBlank()) add("summary" to item.summary)
@@ -1248,6 +1256,17 @@ fun HistoryItemCard(
                 }
                 IconButton(onClick = onShare) {
                     Icon(Icons.Default.Share, stringResource(R.string.share_item_description))
+                }
+                if (item.summary.isNotBlank()) {
+                    TextButton(onClick = onClearSummary) {
+                        Icon(
+                            Icons.Default.DeleteSweep,
+                            contentDescription = "Clear summary",
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(stringResource(R.string.clear_summary), maxLines = 1, softWrap = false)
+                    }
                 }
                 IconButton(onClick = onDelete) {
                     Icon(Icons.Default.Delete, stringResource(R.string.delete_item_description), tint = MaterialTheme.colorScheme.error)
