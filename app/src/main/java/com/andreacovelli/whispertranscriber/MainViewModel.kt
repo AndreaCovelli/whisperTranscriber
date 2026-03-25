@@ -71,6 +71,7 @@ data class TranscriptionJobState(
     val summary: String = "",
     val historyId: Int? = null,
     val error: String? = null,
+    val summaryError: String? = null,
     val isRunning: Boolean = false,
     val isSummarizing: Boolean = false
 )
@@ -87,6 +88,7 @@ fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     summary = summary,
     historyId = historyId,
     error = error,
+    summaryError = summaryError,
     isRunning = isRunning,
     isSummarizing = isSummarizing
 )
@@ -126,6 +128,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = TranscriptionRepository(application)
 
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+
+    private val summarizingJobIds = MutableStateFlow<Set<Int>>(emptySet())
 
     init {
         viewModelScope.launch {
@@ -170,8 +174,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     
                     // Auto-summarization logic
                     if (_uiState.value.automaticSummarizationEnabled && _uiState.value.geminiApiKeyState is ApiKeyState.Present) {
+                        val activeIds = summarizingJobIds.value
                         jobsList.forEach { job ->
-                            if (!job.isRunning && !job.isSummarizing && job.transcript.isNotBlank() && job.summary.isBlank() && job.error == null) {
+                            if (!job.isRunning && 
+                                !job.isSummarizing && 
+                                job.transcript.isNotBlank() && 
+                                job.summary.isBlank() && 
+                                job.error == null &&
+                                job.summaryError == null &&
+                                !activeIds.contains(job.id)) {
                                 summarizeJob(job.id)
                             }
                         }
@@ -488,40 +499,50 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun summarizeJob(jobId: Int) {
+        if (summarizingJobIds.value.contains(jobId)) return
+        summarizingJobIds.update { it + jobId }
+
         viewModelScope.launch {
-            val state = _uiState.value
-            val job = repository.getJob(jobId) ?: return@launch
-            val text = job.transcript
-            if (text.isBlank()) {
-                _uiState.update { it.copy(status = "Nothing to summarize for ${job.displayName}.") }
-                return@launch
-            }
-            val keyChars = settings.getGeminiApiKey()
-            if (keyChars == null || keyChars.isEmpty()) {
-                _uiState.update { it.copy(status = "Error: Gemini API Key is not set (Settings) or Keystore error.") }
-                return@launch
-            }
-            val apiKey = String(keyChars)
-            keyChars.fill('\u0000')
-
-            val providerForSummary = state.summarizerProvider
-            val modelName = when {
-                providerForSummary == TranscriptionProvider.GEMINI_CUSTOM -> {
-                    val customName = state.summarizerCustomGeminiModelName
-                    if (customName.isBlank()) {
-                        _uiState.update { it.copy(status = "Error: No custom Gemini model set for summarization.") }
-                        repository.setSummarizing(jobId, false)
-                        return@launch
-                    }
-                    customName
-                }
-                providerForSummary.isGemini() -> providerForSummary.modelName!!
-                else -> TranscriptionProvider.GEMINI_FLASH.modelName!!
-            }
-
-            repository.setSummarizing(jobId, true)
-            _uiState.update { it.copy(status = "Summarizing with $modelName...") }
             try {
+                val state = _uiState.value
+                val job = repository.getJob(jobId) ?: return@launch
+                
+                // If it already has a summary, we don't need to summarize again unless requested manually.
+                // However, auto-summarization check already handles this.
+                // If it has an error, we clear it when starting.
+                repository.updateSummaryError(jobId, null)
+
+                val text = job.transcript
+                if (text.isBlank()) {
+                    _uiState.update { it.copy(status = "Nothing to summarize for ${job.displayName}.") }
+                    return@launch
+                }
+                val keyChars = settings.getGeminiApiKey()
+                if (keyChars == null || keyChars.isEmpty()) {
+                    _uiState.update { it.copy(status = "Error: Gemini API Key is not set (Settings) or Keystore error.") }
+                    return@launch
+                }
+                val apiKey = String(keyChars)
+                keyChars.fill('\u0000')
+
+                val providerForSummary = state.summarizerProvider
+                val modelName = when {
+                    providerForSummary == TranscriptionProvider.GEMINI_CUSTOM -> {
+                        val customName = state.summarizerCustomGeminiModelName
+                        if (customName.isBlank()) {
+                            _uiState.update { it.copy(status = "Error: No custom Gemini model set for summarization.") }
+                            repository.setSummarizing(jobId, false)
+                            return@launch
+                        }
+                        customName
+                    }
+                    providerForSummary.isGemini() -> providerForSummary.modelName!!
+                    else -> TranscriptionProvider.GEMINI_FLASH.modelName!!
+                }
+
+                repository.setSummarizing(jobId, true)
+                _uiState.update { it.copy(status = "Summarizing with $modelName...") }
+                
                 val client = Client.builder().apiKey(apiKey).build()
                 val prompt = """
                     You are an expert summarizer.
@@ -544,7 +565,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 val summary = response.text()?.trim().orEmpty().ifBlank { "No summary generated." }
 
-                repository.updateJobById(jobId) { it.copy(isSummarizing = false, summary = summary) }
+                repository.updateJobById(jobId) { it.copy(isSummarizing = false, summary = summary, summaryError = null) }
                 _uiState.update { it.copy(status = "Summary generated.") }
 
                 withContext(ioDispatcher) {
@@ -555,10 +576,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                repository.setSummarizing(jobId, false)
+                val errorMsg = e.message ?: e::class.java.simpleName
+                repository.updateJobById(jobId) { it.copy(isSummarizing = false, summaryError = errorMsg) }
                 _uiState.update {
-                    it.copy(status = "Summarization error: ${e.message ?: e::class.java.simpleName}")
+                    it.copy(status = "Summarization error: $errorMsg")
                 }
+            } finally {
+                summarizingJobIds.update { it - jobId }
             }
         }
     }

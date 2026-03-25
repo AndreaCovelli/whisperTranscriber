@@ -551,6 +551,16 @@ private fun TranscriptionJobCard(
                     }
                 }
 
+                if (job.summaryError != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Summarization error: ${job.summaryError}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
                 if (job.summary.isNotBlank()) {
                     Spacer(Modifier.height(12.dp))
                     Row(
