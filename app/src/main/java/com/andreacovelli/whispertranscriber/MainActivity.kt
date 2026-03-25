@@ -1249,14 +1249,12 @@ fun HistoryItemCard(
                     Icon(Icons.Default.Share, stringResource(R.string.share_item_description))
                 }
                 if (item.summary.isNotBlank()) {
-                    TextButton(onClick = onClearSummary) {
+                    IconButton(onClick = onClearSummary) {
                         Icon(
                             Icons.Default.DeleteSweep,
-                            contentDescription = "Clear summary",
-                            modifier = Modifier.size(18.dp)
+                            contentDescription = stringResource(R.string.clear_summary),
+                            modifier = Modifier.size(24.dp)
                         )
-                        Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.clear_summary), maxLines = 1, softWrap = false)
                     }
                 }
                 IconButton(onClick = onDelete) {
