@@ -61,6 +61,17 @@ class TranscriptionRepository(context: Context) {
         }
     }
 
+    suspend fun clearJobTranscription(jobId: Int) {
+        db.withTransaction {
+            val job = jobDao.getJobById(jobId) ?: return@withTransaction
+            jobDao.updateResult(jobId, "", "", "", job.historyId, job.progress, job.isRunning, job.error)
+            val hid = job.historyId
+            if (hid != null) {
+                historyDao.updateText(hid, "")
+            }
+        }
+    }
+
     suspend fun updateJobById(jobId: Int, transform: (TranscriptionJob) -> TranscriptionJob) {
         val currentJob = jobDao.getJobById(jobId)
         if (currentJob != null) {

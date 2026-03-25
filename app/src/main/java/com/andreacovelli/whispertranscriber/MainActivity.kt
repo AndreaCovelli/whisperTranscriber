@@ -369,10 +369,10 @@ fun MainScreen(
                             Toast.makeText(context, "Copied summary", Toast.LENGTH_SHORT).show()
                         },
                         onShareTranscript = {
-                            shareText(context, job.transcript)
+                            shareText(context, job.transcript, context.getString(R.string.share_transcription_title))
                         },
                         onShareSummary = {
-                            shareText(context, job.summary)
+                            shareText(context, job.summary, context.getString(R.string.share_summary_title))
                         },
                         onRetry = { viewModel.retryJob(job.id) },
                         onCancel = { viewModel.cancelJob(job.id) },

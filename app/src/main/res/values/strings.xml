@@ -3,6 +3,7 @@
     <string name="app_version_info">Version: %1$s (%2$d)</string>
     <string name="summary_header">\n\nSummary:\n</string>
     <string name="share_transcription_title">Share Transcription</string>
+    <string name="share_summary_title">Share Summary</string>
     <string name="clear_summary">Clear summary</string>
     <string name="clear_transcription">Clear transcription</string>
     <string name="copy_type">Copy %1$s</string>
