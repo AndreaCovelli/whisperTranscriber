@@ -1,5 +1,6 @@
 package com.andreacovelli.whispertranscriber
 
+import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.andreacovelli.whispertranscriber.data.AppDatabase
@@ -18,15 +19,14 @@ class AutoSummaryClaimInstrumentedTest {
     private lateinit var db: AppDatabase
 
     @Before
-    fun setUp() = runBlocking {
+    fun setUp() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        db = AppDatabase.getDatabase(context)
-        clearTables()
+        db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
     }
 
     @After
-    fun tearDown() = runBlocking {
-        clearTables()
+    fun tearDown() {
+        db.close()
     }
 
     @Test
@@ -69,10 +69,6 @@ class AutoSummaryClaimInstrumentedTest {
         assertEquals(2, cleared)
         assertFalse(jobDao.getJobById(firstJobId)?.isSummarizing ?: true)
         assertFalse(jobDao.getJobById(secondJobId)?.isSummarizing ?: true)
-    }
-
-    private suspend fun clearTables() {
-        db.clearAllTables()
     }
 
     private fun testJob(
