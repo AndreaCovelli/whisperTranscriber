@@ -391,6 +391,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    suspend fun loadElevenLabsKeyForDisplay(): String? = withContext(ioDispatcher) {
+        val keyChars = settings.getElevenLabsApiKey() ?: return@withContext null
+        try {
+            String(keyChars)
+        } finally {
+            keyChars.fill('\u0000')
+        }
+    }
+
+    suspend fun loadGeminiKeyForDisplay(): String? = withContext(ioDispatcher) {
+        val keyChars = settings.getGeminiApiKey() ?: return@withContext null
+        try {
+            String(keyChars)
+        } finally {
+            keyChars.fill('\u0000')
+        }
+    }
+
     fun cancelJob(jobId: Int) {
         viewModelScope.launch {
             repository.updateError(jobId, "Cancelled", false, "Cancelled")
