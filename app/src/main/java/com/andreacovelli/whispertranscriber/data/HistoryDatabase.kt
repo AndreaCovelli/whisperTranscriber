@@ -108,6 +108,12 @@ interface TranscriptionJobDao {
     @Query("UPDATE active_jobs SET summaryError = :error WHERE id = :id")
     suspend fun updateSummaryError(id: Int, error: String?)
 
+    @Query("UPDATE active_jobs SET isSummarizing = 0, summary = :summary, summaryError = NULL WHERE id = :id")
+    suspend fun succeedSummarization(id: Int, summary: String)
+
+    @Query("UPDATE active_jobs SET isSummarizing = 0, summaryError = :error WHERE id = :id")
+    suspend fun failSummarization(id: Int, error: String?)
+
     @Query(
         """
         UPDATE active_jobs

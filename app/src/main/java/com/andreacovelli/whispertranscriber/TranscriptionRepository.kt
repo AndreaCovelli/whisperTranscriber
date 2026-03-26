@@ -50,6 +50,14 @@ class TranscriptionRepository(context: Context) {
         jobDao.updateSummaryError(id, error)
     }
 
+    suspend fun succeedSummarization(id: Int, summary: String) {
+        jobDao.succeedSummarization(id, summary)
+    }
+
+    suspend fun failSummarization(id: Int, error: String?) {
+        jobDao.failSummarization(id, error)
+    }
+
     suspend fun claimAutoSummary(id: Int): Boolean {
         return jobDao.claimAutoSummary(id) > 0
     }

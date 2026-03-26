@@ -553,7 +553,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val keyChars = settings.getGeminiApiKey()
                 if (keyChars == null || keyChars.isEmpty()) {
                     val errorMsg = "Gemini API Key is not set (Settings) or Keystore error."
-                    repository.updateJobById(jobId) { it.copy(isSummarizing = false, summaryError = errorMsg) }
+                    repository.failSummarization(jobId, errorMsg)
                     summarizingCleared = true
                     _uiState.update { it.copy(status = "Error: $errorMsg") }
                     return@launch
@@ -567,7 +567,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val customName = state.summarizerCustomGeminiModelName
                         if (customName.isBlank()) {
                             val errorMsg = "No custom Gemini model set for summarization."
-                            repository.updateJobById(jobId) { it.copy(isSummarizing = false, summaryError = errorMsg) }
+                            repository.failSummarization(jobId, errorMsg)
                             summarizingCleared = true
                             _uiState.update { it.copy(status = "Error: $errorMsg") }
                             return@launch
@@ -602,7 +602,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 val summary = response.text()?.trim().orEmpty().ifBlank { "No summary generated." }
 
-                repository.updateJobById(jobId) { it.copy(isSummarizing = false, summary = summary, summaryError = null) }
+                repository.succeedSummarization(jobId, summary)
                 summarizingCleared = true
                 _uiState.update { it.copy(status = "Summary generated.") }
 
@@ -615,7 +615,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 val errorMsg = e.message ?: e::class.java.simpleName
-                repository.updateJobById(jobId) { it.copy(isSummarizing = false, summaryError = errorMsg) }
+                repository.failSummarization(jobId, errorMsg)
                 summarizingCleared = true
                 _uiState.update {
                     it.copy(status = "Summarization error: $errorMsg")
