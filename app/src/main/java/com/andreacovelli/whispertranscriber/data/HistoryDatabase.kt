@@ -108,6 +108,37 @@ interface TranscriptionJobDao {
     @Query("UPDATE active_jobs SET summaryError = :error WHERE id = :id")
     suspend fun updateSummaryError(id: Int, error: String?)
 
+    @Query(
+        """
+        UPDATE active_jobs
+        SET isSummarizing = 1, summaryError = NULL
+        WHERE id = :id
+          AND isRunning = 0
+          AND isSummarizing = 0
+          AND transcript != ''
+          AND summary = ''
+          AND error IS NULL
+          AND summaryError IS NULL
+        """
+    )
+    suspend fun claimAutoSummary(id: Int): Int
+
+    @Query(
+        """
+        UPDATE active_jobs
+        SET isSummarizing = 1, summaryError = NULL
+        WHERE id = :id
+          AND isRunning = 0
+          AND isSummarizing = 0
+          AND transcript != ''
+          AND error IS NULL
+        """
+    )
+    suspend fun claimManualSummary(id: Int): Int
+
+    @Query("UPDATE active_jobs SET isSummarizing = 0 WHERE isSummarizing = 1")
+    suspend fun resetStaleSummaries(): Int
+
     @Query("SELECT * FROM active_jobs ORDER BY timestamp ASC")
     fun getAllJobs(): Flow<List<TranscriptionJob>>
 
