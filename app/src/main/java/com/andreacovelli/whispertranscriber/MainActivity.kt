@@ -776,7 +776,6 @@ private fun ApiKeyCard(
     var inputKey by remember { mutableStateOf("") }
     var showKey by remember { mutableStateOf(false) }
     var revealedSavedKey by remember { mutableStateOf<String?>(null) }
-    var revealedWithoutEdit by remember { mutableStateOf(false) }
     val fieldValue = inputKey.ifBlank { revealedSavedKey.orEmpty() }
 
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
@@ -789,9 +788,8 @@ private fun ApiKeyCard(
                 value = fieldValue,
                 onValueChange = {
                     inputKey = it
-                    if (revealedWithoutEdit) {
+                    if (revealedSavedKey != null) {
                         revealedSavedKey = null
-                        revealedWithoutEdit = false
                     }
                     onResetValidation()
                 },
@@ -805,14 +803,12 @@ private fun ApiKeyCard(
                         scope.launch {
                             if (showKey) {
                                 showKey = false
-                                if (revealedWithoutEdit) {
+                                if (inputKey.isBlank()) {
                                     revealedSavedKey = null
-                                    revealedWithoutEdit = false
                                 }
                             } else {
                                 if (inputKey.isBlank() && apiKeyState is ApiKeyState.Present) {
                                     revealedSavedKey = onLoadSavedKey()
-                                    revealedWithoutEdit = revealedSavedKey != null
                                 }
                                 showKey = true
                             }
@@ -902,7 +898,6 @@ private fun ApiKeyCard(
                     onForget()
                     inputKey = ""
                     revealedSavedKey = null
-                    revealedWithoutEdit = false
                     showKey = false
                     scope.launch { snackbarHostState.showSnackbar(forgetMessage) }
                 }) {
