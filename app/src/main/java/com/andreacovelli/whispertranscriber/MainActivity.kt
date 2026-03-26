@@ -256,16 +256,14 @@ fun MainScreen(
             )
         }
     ) { paddingValues ->
-        val providerLabel = when (uiState.provider) {
-            TranscriptionProvider.ELEVEN_LABS -> "Using: ElevenLabs"
-            TranscriptionProvider.GEMINI_FLASH_LITE -> "Using: Gemini Flash Lite"
-            TranscriptionProvider.GEMINI_FLASH -> "Using: Gemini Flash"
-            TranscriptionProvider.GEMINI_PRO -> "Using: Gemini Pro"
-            TranscriptionProvider.GEMINI_CUSTOM -> {
-                val name = uiState.transcriptionCustomGeminiModelName
-                if (name.isBlank()) "Using: Custom Gemini model (not set)" else "Using: $name"
-            }
-        }
+        val transcriptionProviderLabel = providerDisplayLabel(
+            provider = uiState.provider,
+            customModelName = uiState.transcriptionCustomGeminiModelName
+        )
+        val summarizerProviderLabel = providerDisplayLabel(
+            provider = uiState.summarizerProvider,
+            customModelName = uiState.summarizerCustomGeminiModelName
+        )
         LazyColumn(
             modifier = Modifier
                 .padding(paddingValues)
@@ -287,11 +285,22 @@ fun MainScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            providerLabel,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = "Transcription: $transcriptionProviderLabel",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                            Text(
+                                text = "Summarizer: $summarizerProviderLabel",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowForward,
                             contentDescription = "Go to Settings",
@@ -384,6 +393,18 @@ fun MainScreen(
             }
         }
     }
+}
+
+private fun providerDisplayLabel(
+    provider: TranscriptionProvider,
+    customModelName: String
+): String = when (provider) {
+    TranscriptionProvider.ELEVEN_LABS -> "ElevenLabs"
+    TranscriptionProvider.GEMINI_FLASH_LITE -> "Gemini Flash Lite"
+    TranscriptionProvider.GEMINI_FLASH -> "Gemini Flash"
+    TranscriptionProvider.GEMINI_PRO -> "Gemini Pro"
+    TranscriptionProvider.GEMINI_CUSTOM ->
+        if (customModelName.isBlank()) "Custom Gemini model (not set)" else customModelName
 }
 
 @Composable
@@ -699,6 +720,7 @@ fun SettingsScreen(
                 label = "Enter ElevenLabs API key",
                 apiKeyState = uiState.elevenLabsApiKeyState,
                 keyValidationState = uiState.elevenLabsKeyValidation,
+                onLoadSavedKey = viewModel::loadElevenLabsKeyForDisplay,
                 onSave = viewModel::setElevenLabsKey,
                 onForget = viewModel::forgetElevenLabsKey,
                 onResetValidation = viewModel::resetElevenLabsKeyValidation,
@@ -711,6 +733,7 @@ fun SettingsScreen(
                 label = "Enter Gemini API key",
                 apiKeyState = uiState.geminiApiKeyState,
                 keyValidationState = uiState.geminiKeyValidation,
+                onLoadSavedKey = viewModel::loadGeminiKeyForDisplay,
                 onSave = viewModel::setGeminiKey,
                 onForget = viewModel::forgetGeminiKey,
                 onResetValidation = viewModel::resetGeminiKeyValidation,
@@ -742,6 +765,7 @@ private fun ApiKeyCard(
     label: String,
     apiKeyState: ApiKeyState,
     keyValidationState: KeyValidationState,
+    onLoadSavedKey: suspend () -> String?,
     onSave: (String) -> Unit,
     onForget: () -> Unit,
     onResetValidation: () -> Unit,
@@ -751,6 +775,8 @@ private fun ApiKeyCard(
     val scope = rememberCoroutineScope()
     var inputKey by remember { mutableStateOf("") }
     var showKey by remember { mutableStateOf(false) }
+    var revealedSavedKey by remember { mutableStateOf<String?>(null) }
+    val fieldValue = inputKey.ifBlank { revealedSavedKey.orEmpty() }
 
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -759,9 +785,12 @@ private fun ApiKeyCard(
         ) {
             Text(title, style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(
-                value = inputKey,
+                value = fieldValue,
                 onValueChange = {
                     inputKey = it
+                    if (revealedSavedKey != null) {
+                        revealedSavedKey = null
+                    }
                     onResetValidation()
                 },
                 label = { Text(if (apiKeyState is ApiKeyState.Present) "Replace saved key (optional)" else label) },
@@ -770,7 +799,21 @@ private fun ApiKeyCard(
                 },
                 visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = {
-                    IconButton(onClick = { showKey = !showKey }) {
+                    IconButton(onClick = {
+                        scope.launch {
+                            if (showKey) {
+                                showKey = false
+                                if (inputKey.isBlank()) {
+                                    revealedSavedKey = null
+                                }
+                            } else {
+                                if (inputKey.isBlank() && apiKeyState is ApiKeyState.Present) {
+                                    revealedSavedKey = onLoadSavedKey()
+                                }
+                                showKey = true
+                            }
+                        }
+                    }) {
                         Icon(
                             imageVector = if (showKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                             contentDescription = if (showKey) "Hide API key" else "Show API key"
@@ -854,6 +897,8 @@ private fun ApiKeyCard(
                 TextButton(onClick = {
                     onForget()
                     inputKey = ""
+                    revealedSavedKey = null
+                    showKey = false
                     scope.launch { snackbarHostState.showSnackbar(forgetMessage) }
                 }) {
                     Text("Forget key")

@@ -391,6 +391,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private suspend fun loadKeyForDisplay(keyProvider: suspend () -> CharArray?): String? = withContext(ioDispatcher) {
+        val keyChars = keyProvider() ?: return@withContext null
+        try {
+            String(keyChars)
+        } finally {
+            keyChars.fill('\u0000')
+        }
+    }
+
+    suspend fun loadElevenLabsKeyForDisplay(): String? = loadKeyForDisplay(settings::getElevenLabsApiKey)
+
+    suspend fun loadGeminiKeyForDisplay(): String? = loadKeyForDisplay(settings::getGeminiApiKey)
+
     fun cancelJob(jobId: Int) {
         viewModelScope.launch {
             repository.updateError(jobId, "Cancelled", false, "Cancelled")
