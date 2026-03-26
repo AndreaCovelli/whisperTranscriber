@@ -261,6 +261,7 @@ class TranscriptionWorker(
                 historyId,
                 1f,
                 false,
+                "Completed",
                 null
             )
         } finally {

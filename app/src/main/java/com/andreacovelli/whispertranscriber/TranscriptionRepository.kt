@@ -30,8 +30,8 @@ class TranscriptionRepository(context: Context) {
         jobDao.updateStatusAndProgress(id, status, progress)
     }
 
-    suspend fun updateResult(id: Int, transcript: String, language: String, model: String, historyId: Int?, progress: Float, isRunning: Boolean, error: String?) {
-        jobDao.updateResult(id, transcript, language, model, historyId, progress, isRunning, error)
+    suspend fun updateResult(id: Int, transcript: String, language: String, model: String, historyId: Int?, progress: Float, isRunning: Boolean, status: String, error: String?) {
+        jobDao.updateResult(id, transcript, language, model, historyId, progress, isRunning, status, error)
     }
 
     suspend fun updateError(id: Int, error: String, isRunning: Boolean, status: String) {
@@ -54,6 +54,7 @@ class TranscriptionRepository(context: Context) {
         db.withTransaction {
             val job = jobDao.getJobById(jobId) ?: return@withTransaction
             jobDao.updateSummary(jobId, "")
+            jobDao.updateSummaryError(jobId, "")
             val hid = job.historyId
             if (hid != null) {
                 historyDao.updateSummary(hid, "")

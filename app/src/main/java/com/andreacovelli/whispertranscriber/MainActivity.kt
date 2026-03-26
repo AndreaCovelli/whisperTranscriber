@@ -343,7 +343,7 @@ fun MainScreen(
                     }
                 }
             } else {
-                val hasCompleted = uiState.jobs.any { !it.isRunning && (it.transcript.isNotBlank() || it.error != null) }
+                val hasCompleted = uiState.jobs.any { !it.isRunning && it.status != "Queued" }
                 if (hasCompleted) {
                     item {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -354,6 +354,8 @@ fun MainScreen(
                     }
                 }
                 items(uiState.jobs, key = { it.id }) { job ->
+                    val shareTranscriptTitle = stringResource(R.string.share_transcription_title)
+                    val shareSummaryTitle = stringResource(R.string.share_summary_title)
                     TranscriptionJobCard(
                         job = job,
                         canSummarize = uiState.geminiApiKeyState is ApiKeyState.Present,
@@ -369,10 +371,10 @@ fun MainScreen(
                             Toast.makeText(context, "Copied summary", Toast.LENGTH_SHORT).show()
                         },
                         onShareTranscript = {
-                            shareText(context, job.transcript, context.getString(R.string.share_transcription_title))
+                            shareText(context, job.transcript, shareTranscriptTitle)
                         },
                         onShareSummary = {
-                            shareText(context, job.summary, context.getString(R.string.share_summary_title))
+                            shareText(context, job.summary, shareSummaryTitle)
                         },
                         onRetry = { viewModel.retryJob(job.id) },
                         onCancel = { viewModel.cancelJob(job.id) },
@@ -422,11 +424,11 @@ private fun TranscriptionJobCard(
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f)
                 )
-                if (job.transcript.isBlank() && job.error == null && (job.isRunning || job.status == "Queued")) {
+                if (job.isRunning || job.status == "Queued") {
                     TextButton(onClick = onCancel) {
                         Text("Cancel", color = MaterialTheme.colorScheme.error)
                     }
-                } else if (!job.isRunning && (job.transcript.isNotBlank() || job.error != null)) {
+                } else {
                     IconButton(onClick = onDelete) {
                         Icon(
                             imageVector = Icons.Default.Delete,
@@ -525,7 +527,9 @@ private fun TranscriptionJobCard(
                     modifier = Modifier.fillMaxWidth(),
                     minimizedMaxLines = 6
                 )
+            }
 
+            if (!job.isRunning && job.error == null) {
                 Spacer(Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -533,61 +537,63 @@ private fun TranscriptionJobCard(
                 ) {
                     OutlinedButton(
                         onClick = onRetry,
-                        modifier = Modifier.padding(end = 8.dp)
+                        modifier = if (job.transcript.isNotBlank()) Modifier.padding(end = 8.dp) else Modifier
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = "Redo", modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
                         Text("Redo")
                     }
-                    Button(
-                        onClick = onSummarize,
-                        enabled = canSummarize && !job.isSummarizing,
-                    ) {
-                        Text(when {
-                            job.isSummarizing -> "Summarizing..."
-                            job.summary.isNotBlank() -> "Re-summarize"
-                            else -> "Summarize with Gemini"
-                        })
-                    }
-                }
-
-                if (job.summaryError != null) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "Summarization error: ${job.summaryError}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                if (job.summary.isNotBlank()) {
-                    Spacer(Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Summary", style = MaterialTheme.typography.titleSmall)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = onCopySummary) {
-                                Icon(Icons.Filled.ContentCopy, "Copy Summary")
-                            }
-                            IconButton(onClick = onShareSummary) {
-                                Icon(Icons.Default.Share, "Share Summary")
-                            }
-                            IconButton(onClick = onClearSummary) {
-                                Icon(
-                                    Icons.Default.DeleteSweep,
-                                    contentDescription = stringResource(R.string.clear_summary),
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
+                    if (job.transcript.isNotBlank()) {
+                        Button(
+                            onClick = onSummarize,
+                            enabled = canSummarize && !job.isSummarizing,
+                        ) {
+                            Text(when {
+                                job.isSummarizing -> "Summarizing..."
+                                job.summary.isNotBlank() -> "Re-summarize"
+                                else -> "Summarize with Gemini"
+                            })
                         }
                     }
-                    SelectionContainer {
-                        Text(job.summary)
+                }
+            }
+
+            if (!job.summaryError.isNullOrBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Summarization error: ${job.summaryError}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            if (job.summary.isNotBlank()) {
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Summary", style = MaterialTheme.typography.titleSmall)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onCopySummary) {
+                            Icon(Icons.Filled.ContentCopy, "Copy Summary")
+                        }
+                        IconButton(onClick = onShareSummary) {
+                            Icon(Icons.Default.Share, "Share Summary")
+                        }
+                        IconButton(onClick = onClearSummary) {
+                            Icon(
+                                Icons.Default.DeleteSweep,
+                                contentDescription = stringResource(R.string.clear_summary),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
+                }
+                SelectionContainer {
+                    Text(job.summary)
                 }
             }
         }

@@ -61,16 +61,10 @@ interface TranscriptionHistoryDao {
     suspend fun deleteAll()
 
     @Query("SELECT * FROM transcription_history ORDER BY timestamp DESC")
-    fun getAllHistory(): Flow<List<TranscriptionHistory>>
-
-    @Query("SELECT * FROM transcription_history ORDER BY timestamp DESC")
     fun getAllHistoryPaged(): PagingSource<Int, TranscriptionHistory>
 
     @Query("SELECT * FROM transcription_history WHERE displayName LIKE '%' || :query || '%' OR text LIKE '%' || :query || '%' OR summary LIKE '%' || :query || '%' ORDER BY timestamp DESC")
     fun searchHistoryPaged(query: String): PagingSource<Int, TranscriptionHistory>
-
-    @Query("SELECT * FROM transcription_history WHERE id = :id")
-    fun getHistoryItemById(id: Int): Flow<TranscriptionHistory?>
 
     @Query("UPDATE transcription_history SET summary = :summary WHERE id = :id")
     suspend fun updateSummary(id: Int, summary: String)
@@ -87,17 +81,14 @@ interface TranscriptionJobDao {
     @Update
     suspend fun update(job: TranscriptionJob)
 
-    @Delete
-    suspend fun delete(job: TranscriptionJob)
-
     @Query("UPDATE active_jobs SET isRunning = :isRunning, status = :status WHERE id = :id")
     suspend fun updateRunning(id: Int, isRunning: Boolean, status: String)
 
     @Query("UPDATE active_jobs SET status = :status, progress = :progress WHERE id = :id")
     suspend fun updateStatusAndProgress(id: Int, status: String, progress: Float)
 
-    @Query("UPDATE active_jobs SET transcript = :transcript, language = :language, model = :model, historyId = :historyId, progress = :progress, isRunning = :isRunning, error = :error WHERE id = :id")
-    suspend fun updateResult(id: Int, transcript: String, language: String, model: String, historyId: Int?, progress: Float, isRunning: Boolean, error: String?)
+    @Query("UPDATE active_jobs SET transcript = :transcript, language = :language, model = :model, historyId = :historyId, progress = :progress, isRunning = :isRunning, status = :status, error = :error WHERE id = :id")
+    suspend fun updateResult(id: Int, transcript: String, language: String, model: String, historyId: Int?, progress: Float, isRunning: Boolean, status: String, error: String?)
 
     @Query("UPDATE active_jobs SET error = :error, isRunning = :isRunning, status = :status WHERE id = :id")
     suspend fun updateError(id: Int, error: String, isRunning: Boolean, status: String)
@@ -105,7 +96,7 @@ interface TranscriptionJobDao {
     @Query("UPDATE active_jobs SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: Int, status: String)
 
-    @Query("UPDATE active_jobs SET transcript = '', language = '', model = '' WHERE id = :id")
+    @Query("UPDATE active_jobs SET transcript = '', language = '', model = '', summary = '', status = 'Cleared' WHERE id = :id")
     suspend fun clearTranscriptionResult(id: Int)
 
     @Query("UPDATE active_jobs SET summary = :summary WHERE id = :id")
@@ -126,7 +117,7 @@ interface TranscriptionJobDao {
     @Query("DELETE FROM active_jobs WHERE id = :jobId")
     suspend fun deleteById(jobId: Int)
 
-    @Query("DELETE FROM active_jobs WHERE isRunning = 0 AND (transcript != '' OR error IS NOT NULL)")
+    @Query("DELETE FROM active_jobs WHERE isRunning = 0 AND status != 'Queued'")
     suspend fun clearCompleted()
 }
 
