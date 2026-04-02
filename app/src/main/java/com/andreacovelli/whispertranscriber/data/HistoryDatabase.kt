@@ -35,6 +35,10 @@ data class TranscriptionJob(
     val id: Int = 0,
     val uri: String,
     val displayName: String,
+    val sourceMimeType: String? = null,
+    val stagedFilePath: String? = null,
+    val providerName: String = "ELEVEN_LABS",
+    val requestedModel: String? = null,
     val status: String = "Queued",
     val progress: Float = 0f,
     val transcript: String = "",
@@ -71,6 +75,9 @@ interface TranscriptionHistoryDao {
 
     @Query("UPDATE transcription_history SET text = :text WHERE id = :id")
     suspend fun updateText(id: Int, text: String)
+
+    @Query("SELECT * FROM transcription_history WHERE id = :id")
+    suspend fun getById(id: Int): TranscriptionHistory?
 }
 
 @Dao
@@ -151,6 +158,9 @@ interface TranscriptionJobDao {
     @Query("SELECT * FROM active_jobs WHERE id = :id")
     suspend fun getJobById(id: Int): TranscriptionJob?
 
+    @Query("SELECT * FROM active_jobs WHERE isRunning = 0 AND status != 'Queued'")
+    suspend fun getCompletedJobs(): List<TranscriptionJob>
+
     @Query("DELETE FROM active_jobs WHERE id = :jobId")
     suspend fun deleteById(jobId: Int)
 
@@ -158,7 +168,7 @@ interface TranscriptionJobDao {
     suspend fun clearCompleted()
 }
 
-@Database(entities = [TranscriptionHistory::class, TranscriptionJob::class], version = 6, exportSchema = false)
+@Database(entities = [TranscriptionHistory::class, TranscriptionJob::class], version = 7, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun transcriptionHistoryDao(): TranscriptionHistoryDao
     abstract fun transcriptionJobDao(): TranscriptionJobDao
@@ -214,6 +224,15 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE active_jobs ADD COLUMN sourceMimeType TEXT")
+                db.execSQL("ALTER TABLE active_jobs ADD COLUMN stagedFilePath TEXT")
+                db.execSQL("ALTER TABLE active_jobs ADD COLUMN providerName TEXT NOT NULL DEFAULT 'ELEVEN_LABS'")
+                db.execSQL("ALTER TABLE active_jobs ADD COLUMN requestedModel TEXT")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -221,7 +240,14 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "transcription_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(
+                        MIGRATION_1_2,
+                        MIGRATION_2_3,
+                        MIGRATION_3_4,
+                        MIGRATION_4_5,
+                        MIGRATION_5_6,
+                        MIGRATION_6_7
+                    )
                     .build()
                 INSTANCE = instance
                 instance

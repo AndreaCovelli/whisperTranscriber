@@ -8,7 +8,7 @@ An Android app that transcribes audio files using AI — powered by [ElevenLabs]
 ## Features
 
 - **Multi-provider transcription** — choose between ElevenLabs or Gemini (Flash Lite, Flash, Pro, or a custom model)
-- **Batch processing** — share multiple audio files at once; jobs are queued and processed sequentially
+- **Batch processing** — share multiple audio files at once; jobs are staged locally, queued, and processed sequentially
 - **AI summarization** — generate a concise summary of any transcript (requires a Gemini API key)
 - **Transcription history** — all transcripts are saved locally in a searchable Room database
 - **Secure key storage** — API keys are encrypted with AES-256-GCM via Android Keystore and never stored in plaintext
@@ -89,13 +89,13 @@ Select **Custom Model** in Settings and type any valid Gemini model identifier (
 ### Gemini flow
 
 
-1. Audio bytes are sent inline with the transcription prompt
+1. Audio is uploaded through the Gemini File API
 2. The model returns a structured JSON response containing the detected language code and transcript text
 3. The result is saved to local history immediately
 
 ### Audio conversion
 
-When the selected provider does not natively support the file's MIME type, `HardwareAudioConverter` uses Android's `MediaExtractor` and `MediaCodec` to decode the audio and resample it to **16 kHz mono WAV** before sending. Temporary files older than 3 days are cleaned up automatically on app start.
+When audio is shared into the app, it is first copied into app-managed storage so queued jobs and retries do not depend on the original share URI staying alive. If the selected provider does not natively support the file's MIME type, `HardwareAudioConverter` uses Android's `MediaExtractor` and `MediaCodec` to decode the audio and resample it to **16 kHz mono WAV** before sending. Temporary conversion files older than 3 days are cleaned up automatically on app start.
 
 ---
 
@@ -129,11 +129,11 @@ Configure the transcription provider, manage API keys, and enter a custom Gemini
 
 ```
 MainActivity.kt              — Single Activity, NavHost, share-intent handling
-MainViewModel.kt             — Job queue (Channel), transcription orchestration
+MainViewModel.kt             — Sequential queue orchestration, staging, settings state
 HistoryViewModel.kt          — Room history as StateFlow
 ApiKeyManager.kt             — Encrypted credential storage (DataStore + Keystore)
 ElevenLabsApiService.kt      — Retrofit interface for ElevenLabs v2 REST API
-data/HistoryDatabase.kt      — Room entity, DAO, and migrations (schema v4)
+data/HistoryDatabase.kt      — Room entity, DAO, and migrations (schema v7)
 security/KeystoreCrypto.kt   — AES-256-GCM encryption helpers
 media/HardwareAudioConverter.kt — MediaCodec audio → 16 kHz mono WAV
 ui/theme/                    — Material Design 3 theme, colors, typography
@@ -155,17 +155,17 @@ ui/theme/                    — Material Design 3 theme, colors, typography
 
 | Library | Version | Purpose |
 |---|---|---|
-| Jetpack Compose BOM | 2026.02.01 | Declarative UI |
+| Jetpack Compose BOM | 2026.03.01 | Declarative UI |
 | Material3 | (via BOM) | Material Design 3 components |
 | Navigation Compose | 2.9.7 | In-app navigation |
 | Lifecycle / ViewModel | 2.10.0 | MVVM lifecycle management |
 | Room | 2.8.4 | Local SQLite database |
-| DataStore Preferences | 1.2.0 | Persistent key-value storage |
+| DataStore Preferences | 1.2.1 | Persistent key-value storage |
 | Retrofit + Gson | 3.0.0 | ElevenLabs REST client |
 | OkHttp Logging Interceptor | 5.3.2 | HTTP debug logging |
-| Google Generative AI SDK | 1.42.0 | Gemini API client |
+| Google Generative AI SDK | 1.45.0 | Gemini API client |
 | KSP | 2.3.6 | Room annotation processing |
-| Kotlin | 2.3.10 | Language |
+| Kotlin | 2.3.20 | Language |
 
 ---
 

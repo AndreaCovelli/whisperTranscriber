@@ -1,13 +1,17 @@
 package com.andreacovelli.whispertranscriber
 
+import android.Manifest
 import android.net.Uri
 import android.os.Build
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.animateContentSize
@@ -91,6 +95,8 @@ object AppRoutes {
 class MainActivity : ComponentActivity() {
 
     private val mainViewModel: MainViewModel by viewModels()
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     private fun extractSharedUris(intent: Intent?): List<Uri> {
         intent ?: return emptyList()
@@ -123,6 +129,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        maybeRequestNotificationPermission()
         val shared = extractSharedUris(intent)
         if (shared.isNotEmpty()) {
             mainViewModel.handleAudioShareMultiple(shared)
@@ -220,6 +227,15 @@ class MainActivity : ComponentActivity() {
         if (shared.isNotEmpty()) {
             mainViewModel.handleAudioShareMultiple(shared)
         }
+    }
+
+    private fun maybeRequestNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 }
 
@@ -422,6 +438,7 @@ private fun TranscriptionJobCard(
     onCancel: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val queuedProviderLabel = providerDisplayLabel(job.provider, job.requestedModel)
     Card(
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -463,10 +480,17 @@ private fun TranscriptionJobCard(
             Spacer(Modifier.height(4.dp))
 
             val secondary = buildString {
-                if (job.language.isNotBlank()) append("Language: ${job.language}")
+                append("Provider: $queuedProviderLabel")
+                if (job.language.isNotBlank()) {
+                    if (isNotEmpty()) append(" • ")
+                    append("Language: ${job.language}")
+                }
                 if (job.model.isNotBlank()) {
                     if (isNotEmpty()) append(" • ")
                     append("Model: ${job.model}")
+                } else if (job.requestedModel.isNotBlank() && job.provider != TranscriptionProvider.ELEVEN_LABS) {
+                    if (isNotEmpty()) append(" • ")
+                    append("Queued model: ${job.requestedModel}")
                 }
             }
             if (secondary.isNotBlank()) {

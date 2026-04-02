@@ -9,6 +9,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -69,6 +70,23 @@ class AutoSummaryClaimInstrumentedTest {
         assertEquals(2, cleared)
         assertFalse(jobDao.getJobById(firstJobId)?.isSummarizing ?: true)
         assertFalse(jobDao.getJobById(secondJobId)?.isSummarizing ?: true)
+    }
+
+    @Test
+    fun clearingSummaryState_setsSummaryErrorBackToNull() = runBlocking {
+        val jobDao = db.transcriptionJobDao()
+        val jobId = jobDao.insert(
+            testJob(summary = "Old summary").copy(
+                summaryError = "Old error"
+            )
+        ).toInt()
+
+        jobDao.updateSummary(jobId, "")
+        jobDao.updateSummaryError(jobId, null)
+
+        val storedJob = jobDao.getJobById(jobId)
+        assertEquals("", storedJob?.summary)
+        assertNull(storedJob?.summaryError)
     }
 
     private fun testJob(

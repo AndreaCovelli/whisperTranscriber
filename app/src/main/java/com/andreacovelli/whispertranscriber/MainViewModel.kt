@@ -4,9 +4,13 @@ package com.andreacovelli.whispertranscriber
 import android.app.Application
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.webkit.MimeTypeMap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.BackoffPolicy
+import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
@@ -30,6 +34,8 @@ import com.google.genai.types.Part
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.TimeUnit
+import java.io.File
+import java.io.IOException
 import androidx.core.net.toUri
 
 sealed class CustomModelValidation {
@@ -65,6 +71,8 @@ data class TranscriptionJobState(
     val id: Int = 0,
     val uri: Uri? = null,
     val displayName: String = "",
+    val provider: TranscriptionProvider = TranscriptionProvider.ELEVEN_LABS,
+    val requestedModel: String = "",
     val status: String = "Queued",
     val progress: Float = 0f, // 0..1 conversion progress
     val transcript: String = "",
@@ -82,6 +90,9 @@ fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     id = id,
     uri = uri.toUri(),
     displayName = displayName,
+    provider = runCatching { TranscriptionProvider.valueOf(providerName) }
+        .getOrDefault(TranscriptionProvider.ELEVEN_LABS),
+    requestedModel = requestedModel.orEmpty(),
     status = status,
     progress = progress,
     transcript = transcript,
@@ -110,6 +121,7 @@ sealed interface TranscriptionResult {
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
+        private const val TRANSCRIPTION_QUEUE = "TranscriptionQueue"
         private const val GEMINI_MODELS_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
         private const val GEMINI_API_KEY_HEADER = "x-goog-api-key"
 
@@ -120,6 +132,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         
         private const val CONVERTED_FILE_PREFIX = "converted_"
         private const val DIRECT_FILE_PREFIX = "direct_"
+        private const val STAGED_FILE_PREFIX = "staged_"
+        private const val STAGED_AUDIO_DIR = "queued_audio"
 
         private val staleSummariesRecovered = AtomicBoolean(false)
     }
@@ -206,14 +220,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun enqueueWorker(jobId: Int) {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
         val workRequest = OneTimeWorkRequestBuilder<TranscriptionWorker>()
             .setInputData(workDataOf("jobId" to jobId))
+            .setConstraints(constraints)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .addTag(jobTag(jobId))
             .build()
-        WorkManager.getInstance(getApplication()).enqueueUniqueWork(
-            "TranscriptionJob_$jobId",
-            ExistingWorkPolicy.REPLACE,
-            workRequest
-        )
+        WorkManager.getInstance(getApplication())
+            .beginUniqueWork(
+                TRANSCRIPTION_QUEUE,
+                ExistingWorkPolicy.APPEND_OR_REPLACE,
+                workRequest
+            )
+            .enqueue()
+    }
+
+    private fun jobTag(jobId: Int): String = "TranscriptionJob_$jobId"
+
+    private fun stagedAudioDir(): File =
+        File(getApplication<Application>().filesDir, STAGED_AUDIO_DIR).apply { mkdirs() }
+
+    private fun deleteStagedFile(path: String?) {
+        if (path.isNullOrBlank()) return
+        runCatching { File(path).delete() }
+    }
+
+    private suspend fun stageSharedAudio(uri: Uri, index: Int): Pair<File, String?> = withContext(ioDispatcher) {
+        val app = getApplication<Application>()
+        val contentResolver = app.contentResolver
+        val mimeType = contentResolver.getType(uri)?.lowercase()
+        val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)
+            ?: MimeTypeMap.getFileExtensionFromUrl(uri.toString()).takeIf { it.isNotBlank() }
+            ?: "bin"
+        val stagedFile = File.createTempFile("${STAGED_FILE_PREFIX}${index}_", ".$extension", stagedAudioDir())
+        contentResolver.openInputStream(uri)?.use { input ->
+            stagedFile.outputStream().use { output -> input.copyTo(output) }
+        } ?: throw IOException("Failed to read shared audio: $uri")
+        stagedFile to mimeType
     }
 
     fun setProvider(p: TranscriptionProvider) {
@@ -413,19 +459,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun cancelJob(jobId: Int) {
         viewModelScope.launch {
             repository.updateError(jobId, "Cancelled", false, "Cancelled")
-            WorkManager.getInstance(getApplication()).cancelUniqueWork("TranscriptionJob_$jobId")
+            WorkManager.getInstance(getApplication()).cancelAllWorkByTag(jobTag(jobId))
         }
     }
 
     fun clearCompletedJobs() {
         viewModelScope.launch {
-            repository.clearCompletedJobs()
+            repository.clearCompletedJobs().forEach(::deleteStagedFile)
         }
     }
 
     fun deleteJob(jobId: Int) {
         viewModelScope.launch {
-            repository.deleteJob(jobId)
+            deleteStagedFile(repository.deleteJob(jobId))
         }
     }
 
@@ -436,7 +482,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 status = "Queued",
                 progress = 0f,
                 error = null,
+                summaryError = null,
                 isRunning = false,
+                isSummarizing = false,
                 transcript = "",
                 summary = "",
                 historyId = null,
@@ -466,6 +514,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 runCatching { f.delete() }
             }
         }
+
+        val stagedCutoff = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(7)
+        stagedAudioDir().listFiles().orEmpty().forEach { file ->
+            if (file.isFile && file.lastModified() < stagedCutoff) {
+                runCatching { file.delete() }
+            }
+        }
     }
 
     fun handleAudioShareMultiple(uris: List<Uri>) {
@@ -474,11 +529,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.update { it.copy(status = "Queuing ${uris.size} file(s)...") }
 
+            val provider = _uiState.value.provider
+            val requestedModel = when (provider) {
+                TranscriptionProvider.ELEVEN_LABS -> null
+                TranscriptionProvider.GEMINI_CUSTOM -> _uiState.value.transcriptionCustomGeminiModelName.ifBlank { null }
+                else -> provider.modelName
+            }
+
             for ((index, uri) in uris.withIndex()) {
                 val displayName = resolveDisplayName(uri).ifBlank { uri.lastPathSegment ?: "Audio ${index + 1}" }
+                val (stagedFile, mimeType) = stageSharedAudio(uri, index)
                 val job = TranscriptionJob(
                     uri = uri.toString(),
                     displayName = displayName,
+                    sourceMimeType = mimeType,
+                    stagedFilePath = stagedFile.absolutePath,
+                    providerName = provider.name,
+                    requestedModel = requestedModel,
                     status = "Queued",
                     progress = 0f,
                     isRunning = false
@@ -527,11 +594,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun launchSummarization(jobId: Int, allowResummarize: Boolean) {
         viewModelScope.launch {
-            val claimed = if (allowResummarize) {
-                repository.claimManualSummary(jobId)
-            } else {
-                repository.claimAutoSummary(jobId)
-            }
+                val claimed = if (allowResummarize) {
+                    repository.claimManualSummary(jobId)
+                } else {
+                    repository.claimAutoSummary(jobId)
+                }
             if (!claimed) return@launch
 
             var summarizingCleared = false

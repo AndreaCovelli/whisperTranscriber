@@ -11,7 +11,10 @@ import com.andreacovelli.whispertranscriber.data.AppDatabase
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistoryDao
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -53,8 +56,10 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
         _searchQuery.value = query
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
+    @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
     val pagedHistoryItems: Flow<PagingData<TranscriptionHistory>> = _searchQuery
+        .debounce(250)
+        .distinctUntilChanged()
         .flatMapLatest { query ->
             Pager(
                 config = PagingConfig(pageSize = 20, enablePlaceholders = true),
