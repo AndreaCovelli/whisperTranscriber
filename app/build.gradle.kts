@@ -153,6 +153,8 @@ dependencies {
 
     // Google ML Kit
     implementation(libs.google.genai)
+    implementation(libs.kotlinx.serialization.core)
+    implementation(libs.kotlinx.serialization.json)
 
     // Room
     implementation(libs.androidx.room.runtime)
