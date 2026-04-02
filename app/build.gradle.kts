@@ -31,7 +31,7 @@ android {
     }
 
     sourceSets {
-        getByName("androidTest").assets.srcDirs(roomSchemaDir)
+        getByName("androidTest").assets.directories.add(roomSchemaDir)
     }
 
     signingConfigs {
