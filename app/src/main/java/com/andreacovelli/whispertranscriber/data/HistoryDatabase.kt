@@ -13,7 +13,6 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import androidx.room.Transaction
 import androidx.room.Update
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
@@ -99,16 +98,6 @@ interface TranscriptionHistoryDao {
 
     @Query("SELECT * FROM transcription_history WHERE id = :id")
     suspend fun getById(id: Int): TranscriptionHistory?
-
-    @Transaction
-    suspend fun delete(historyItem: TranscriptionHistory) {
-        deleteById(historyItem.id)
-    }
-
-    @Transaction
-    suspend fun deleteAll() {
-        deleteAllHistory()
-    }
 }
 
 @Dao

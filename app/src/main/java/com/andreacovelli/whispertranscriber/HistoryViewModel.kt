@@ -95,13 +95,13 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
 
     fun deleteHistoryItem(item: TranscriptionHistory) {
         viewModelScope.launch {
-            historyDao.delete(item)
+            historyDao.deleteById(item.id)
         }
     }
 
     fun deleteAllHistory() {
         viewModelScope.launch {
-            historyDao.deleteAll()
+            historyDao.deleteAllHistory()
         }
     }
 }

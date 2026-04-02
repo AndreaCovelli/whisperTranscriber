@@ -237,23 +237,21 @@ class TranscriptionWorker(appContext: Context, workerParams: WorkerParameters) :
             }
 
             val flow = if (usingElevenLabs) {
-                if (sourceForElevenLabs ==
-                    null
-                ) {
-                    throw IllegalStateException("Internal error: ElevenLabs source is missing.")
-                }
+                val source =
+                    sourceForElevenLabs
+                        ?: throw IllegalStateException("Internal error: ElevenLabs source is missing.")
                 val keyChars =
                     settings.getElevenLabsApiKey() ?: throw IllegalStateException("API key missing or corrupted")
-                transcribeWithElevenLabsReturn(sourceForElevenLabs, keyChars)
+                transcribeWithElevenLabsReturn(source, keyChars)
             } else {
                 if (geminiModel == null) throw IllegalStateException("Gemini model not specified.")
-                if (fileForGemini == null ||
-                    mimeTypeForGemini == null
-                ) {
-                    throw IllegalStateException("Internal error: Gemini audio data missing.")
-                }
+                val geminiFile =
+                    fileForGemini ?: throw IllegalStateException("Internal error: Gemini audio data missing.")
+                val geminiMimeType =
+                    mimeTypeForGemini
+                        ?: throw IllegalStateException("Internal error: Gemini audio data missing.")
                 val keyChars = settings.getGeminiApiKey() ?: throw IllegalStateException("API key missing or corrupted")
-                transcribeWithGeminiReturn(fileForGemini, mimeTypeForGemini, keyChars, geminiModel)
+                transcribeWithGeminiReturn(geminiFile, geminiMimeType, keyChars, geminiModel)
             }
 
             var resultData: TranscriptionData? = null
