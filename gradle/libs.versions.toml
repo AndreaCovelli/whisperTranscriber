@@ -19,7 +19,7 @@ lifecycleViewmodelCompose = "2.10.0"
 paging = "3.4.2"
 work = "2.11.2"
 detekt = "1.23.8"
-spotless = "7.2.1"
+spotless = "8.4.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
