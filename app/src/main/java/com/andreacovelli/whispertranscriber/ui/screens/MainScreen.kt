@@ -198,12 +198,14 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit, onNavi
                         onCopyTranscript = {
                             scope.launch {
                                 clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", job.transcript)))
+                                Toast.makeText(context, "Copied transcript", Toast.LENGTH_SHORT).show()
                             }
-                            Toast.makeText(context, "Copied transcript", Toast.LENGTH_SHORT).show()
                         },
                         onCopySummary = {
-                            scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", job.summary))) }
-                            Toast.makeText(context, "Copied summary", Toast.LENGTH_SHORT).show()
+                            scope.launch {
+                                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", job.summary)))
+                                Toast.makeText(context, "Copied summary", Toast.LENGTH_SHORT).show()
+                            }
                         },
                         onShareTranscript = {
                             shareText(context, job.transcript, shareTranscriptTitle)

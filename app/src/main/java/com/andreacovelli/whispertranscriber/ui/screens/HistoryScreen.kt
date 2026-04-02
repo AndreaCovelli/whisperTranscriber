@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,6 +49,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.paging.LoadState
+import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import com.andreacovelli.whispertranscriber.HistoryViewModel
@@ -152,7 +155,16 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = viewModel(), onNavigateBa
                     },
                 )
             }
-            if (pagedItems.itemCount == 0) {
+            if (pagedItems.isInitialLoad()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else if (pagedItems.itemCount == 0) {
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -193,8 +205,8 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = viewModel(), onNavigateBa
                                 onCopy = { text ->
                                     scope.launch {
                                         clipboardManager.setClipEntry(ClipEntry(ClipData.newPlainText("", text)))
+                                        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                                     }
-                                    Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                                 },
                                 onClearSummary = { historyViewModel.clearSummary(item) },
                                 onDelete = { historyViewModel.deleteHistoryItem(item) },
@@ -208,3 +220,6 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = viewModel(), onNavigateBa
         }
     }
 }
+
+private fun <T : Any> LazyPagingItems<T>.isInitialLoad(): Boolean =
+    loadState.refresh is LoadState.Loading && itemCount == 0

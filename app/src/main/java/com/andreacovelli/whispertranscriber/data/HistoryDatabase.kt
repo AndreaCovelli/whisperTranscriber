@@ -31,7 +31,7 @@ data class TranscriptionHistory(
     val timestamp: Long = System.currentTimeMillis(),
 )
 
-@Fts4
+@Fts4(tokenizer = "unicode61")
 @Entity(tableName = "transcription_history_fts")
 data class TranscriptionHistoryFts(
     @PrimaryKey
@@ -332,7 +332,7 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL(
                     """
                     CREATE VIRTUAL TABLE IF NOT EXISTS `transcription_history_fts`
-                    USING fts4(`text`, `summary`, `displayName`)
+                    USING fts4(`text`, `summary`, `displayName`, tokenize=unicode61)
                     """.trimIndent(),
                 )
                 db.execSQL(

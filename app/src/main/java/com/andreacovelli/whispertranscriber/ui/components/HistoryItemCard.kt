@@ -62,12 +62,22 @@ private fun buildHighlightedText(text: String, query: String, background: Color,
 
     if (matches.isEmpty()) return AnnotatedString(text)
 
+    val mergedMatches = buildList {
+        var current = matches.first()
+        matches.drop(1).forEach { next ->
+            current = if (next.first <= current.last + 1) {
+                current.first..maxOf(current.last, next.last)
+            } else {
+                add(current)
+                next
+            }
+        }
+        add(current)
+    }
+
     return buildAnnotatedString {
         var cursor = 0
-        matches.forEach { range ->
-            if (range.first < cursor) {
-                return@forEach
-            }
+        mergedMatches.forEach { range ->
             if (range.first > cursor) {
                 append(text, cursor, range.first)
             }
