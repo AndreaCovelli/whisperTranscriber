@@ -44,8 +44,12 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private fun buildHighlightedText(text: String, query: String, background: Color, onBackground: Color): AnnotatedString {
-    val tokens = extractHistorySearchTokens(query)
+private fun buildHighlightedText(
+    text: String,
+    tokens: List<String>,
+    background: Color,
+    onBackground: Color,
+): AnnotatedString {
     if (tokens.isEmpty()) return AnnotatedString(text)
 
     val matches = tokens
@@ -93,11 +97,11 @@ private fun buildHighlightedText(text: String, query: String, background: Color,
 }
 
 @Composable
-private fun rememberHighlightedText(text: String, query: String): AnnotatedString {
+private fun rememberHighlightedText(text: String, tokens: List<String>): AnnotatedString {
     val background = MaterialTheme.colorScheme.primaryContainer
     val onBackground = MaterialTheme.colorScheme.onPrimaryContainer
-    return remember(text, query, background, onBackground) {
-        buildHighlightedText(text, query, background, onBackground)
+    return remember(text, tokens, background, onBackground) {
+        buildHighlightedText(text, tokens, background, onBackground)
     }
 }
 
@@ -118,6 +122,7 @@ fun HistoryItemCard(
             .format(Instant.ofEpochMilli(item.timestamp).atZone(ZoneId.systemDefault()))
     }
     val displayModel = remember(item.model) { item.model.ifBlank { "Unknown" } }
+    val searchTokens = remember(searchQuery) { extractHistorySearchTokens(searchQuery) }
 
     Card(
         modifier = Modifier
@@ -137,7 +142,7 @@ fun HistoryItemCard(
         ) {
             if (item.displayName.isNotBlank()) {
                 Text(
-                    rememberHighlightedText(item.displayName, searchQuery),
+                    rememberHighlightedText(item.displayName, searchTokens),
                     style = MaterialTheme.typography.titleSmall,
                 )
                 Spacer(Modifier.height(2.dp))
@@ -161,19 +166,19 @@ fun HistoryItemCard(
             )
             Spacer(Modifier.height(8.dp))
             if (expanded) {
-                Text(rememberHighlightedText(item.text, searchQuery), style = MaterialTheme.typography.bodyMedium)
+                Text(rememberHighlightedText(item.text, searchTokens), style = MaterialTheme.typography.bodyMedium)
                 if (item.summary.isNotBlank()) {
                     Spacer(Modifier.height(12.dp))
                     Text("Summary", style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        rememberHighlightedText(item.summary, searchQuery),
+                        rememberHighlightedText(item.summary, searchTokens),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
             } else {
                 Text(
-                    rememberHighlightedText(item.text, searchQuery),
+                    rememberHighlightedText(item.text, searchTokens),
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 4,
                     overflow = TextOverflow.Ellipsis,
@@ -181,7 +186,7 @@ fun HistoryItemCard(
                 if (item.summary.isNotBlank()) {
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        rememberHighlightedText(item.summary, searchQuery),
+                        rememberHighlightedText(item.summary, searchTokens),
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis,

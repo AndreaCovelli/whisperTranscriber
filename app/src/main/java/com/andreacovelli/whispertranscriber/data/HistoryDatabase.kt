@@ -31,7 +31,7 @@ data class TranscriptionHistory(
     val timestamp: Long = System.currentTimeMillis(),
 )
 
-@Fts4(tokenizer = "unicode61")
+@Fts4(tokenizer = "unicode61", contentEntity = TranscriptionHistory::class)
 @Entity(tableName = "transcription_history_fts")
 data class TranscriptionHistoryFts(
     @PrimaryKey
@@ -69,22 +69,13 @@ data class TranscriptionJob(
 @Dao
 interface TranscriptionHistoryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertHistory(historyItem: TranscriptionHistory): Long
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertFts(historyItem: TranscriptionHistoryFts)
+    suspend fun insert(historyItem: TranscriptionHistory): Long
 
     @Query("DELETE FROM transcription_history WHERE id = :id")
     suspend fun deleteById(id: Int)
 
-    @Query("DELETE FROM transcription_history_fts WHERE rowid = :id")
-    suspend fun deleteFtsById(id: Int)
-
     @Query("DELETE FROM transcription_history")
     suspend fun deleteAllHistory()
-
-    @Query("DELETE FROM transcription_history_fts")
-    suspend fun deleteAllFts()
 
     @Query("SELECT * FROM transcription_history ORDER BY timestamp DESC")
     fun getAllHistoryPaged(): PagingSource<Int, TranscriptionHistory>
@@ -101,56 +92,22 @@ interface TranscriptionHistoryDao {
     fun searchHistoryPaged(query: String): PagingSource<Int, TranscriptionHistory>
 
     @Query("UPDATE transcription_history SET summary = :summary WHERE id = :id")
-    suspend fun updateSummaryValue(id: Int, summary: String)
-
-    @Query("UPDATE transcription_history_fts SET summary = :summary WHERE rowid = :id")
-    suspend fun updateFtsSummary(id: Int, summary: String)
+    suspend fun updateSummary(id: Int, summary: String)
 
     @Query("UPDATE transcription_history SET text = :text WHERE id = :id")
-    suspend fun updateTextValue(id: Int, text: String)
-
-    @Query("UPDATE transcription_history_fts SET text = :text WHERE rowid = :id")
-    suspend fun updateFtsText(id: Int, text: String)
+    suspend fun updateText(id: Int, text: String)
 
     @Query("SELECT * FROM transcription_history WHERE id = :id")
     suspend fun getById(id: Int): TranscriptionHistory?
 
     @Transaction
-    suspend fun insert(historyItem: TranscriptionHistory): Long {
-        val id = insertHistory(historyItem).toInt()
-        insertFts(
-            TranscriptionHistoryFts(
-                rowId = id,
-                text = historyItem.text,
-                summary = historyItem.summary,
-                displayName = historyItem.displayName,
-            ),
-        )
-        return id.toLong()
-    }
-
-    @Transaction
     suspend fun delete(historyItem: TranscriptionHistory) {
         deleteById(historyItem.id)
-        deleteFtsById(historyItem.id)
     }
 
     @Transaction
     suspend fun deleteAll() {
         deleteAllHistory()
-        deleteAllFts()
-    }
-
-    @Transaction
-    suspend fun updateSummary(id: Int, summary: String) {
-        updateSummaryValue(id, summary)
-        updateFtsSummary(id, summary)
-    }
-
-    @Transaction
-    suspend fun updateText(id: Int, text: String) {
-        updateTextValue(id, text)
-        updateFtsText(id, text)
     }
 }
 
@@ -332,14 +289,19 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL(
                     """
                     CREATE VIRTUAL TABLE IF NOT EXISTS `transcription_history_fts`
-                    USING fts4(`text`, `summary`, `displayName`, tokenize=unicode61)
+                    USING fts4(
+                        `text`,
+                        `summary`,
+                        `displayName`,
+                        content=`transcription_history`,
+                        tokenize=unicode61
+                    )
                     """.trimIndent(),
                 )
                 db.execSQL(
                     """
-                    INSERT INTO transcription_history_fts(rowid, text, summary, displayName)
-                    SELECT id, text, summary, displayName
-                    FROM transcription_history
+                    INSERT INTO `transcription_history_fts`(`transcription_history_fts`)
+                    VALUES('rebuild')
                     """.trimIndent(),
                 )
             }
