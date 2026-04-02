@@ -25,10 +25,14 @@ import kotlinx.coroutines.launch
 
 private val HISTORY_SEARCH_TOKEN_REGEX = Regex("[\\p{L}\\p{N}]+")
 
-internal fun buildHistorySearchQuery(rawQuery: String): String = HISTORY_SEARCH_TOKEN_REGEX
+internal fun extractHistorySearchTokens(rawQuery: String): List<String> = HISTORY_SEARCH_TOKEN_REGEX
     .findAll(rawQuery)
-    .map { "${it.value}*" }
+    .map { it.value }
     .distinct()
+    .toList()
+
+internal fun buildHistorySearchQuery(rawQuery: String): String = extractHistorySearchTokens(rawQuery)
+    .map { "$it*" }
     .joinToString(" ")
 
 class HistoryViewModel(application: Application) : AndroidViewModel(application) {

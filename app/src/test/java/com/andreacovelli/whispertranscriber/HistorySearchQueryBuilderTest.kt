@@ -6,6 +6,14 @@ import org.junit.Test
 class HistorySearchQueryBuilderTest {
 
     @Test
+    fun extractHistorySearchTokens_returnsDistinctTokensInOrder() {
+        assertEquals(
+            listOf("meeting", "notes", "wav"),
+            extractHistorySearchTokens("meeting notes.wav meeting"),
+        )
+    }
+
+    @Test
     fun buildHistorySearchQuery_normalizesSearchTermsIntoFtsPrefixes() {
         assertEquals(
             "meeting* notes* wav*",

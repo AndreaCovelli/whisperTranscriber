@@ -332,7 +332,7 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL(
                     """
                     CREATE VIRTUAL TABLE IF NOT EXISTS `transcription_history_fts`
-                    USING fts4(`text` NOT NULL, `summary` NOT NULL, `displayName` NOT NULL)
+                    USING fts4(`text`, `summary`, `displayName`)
                     """.trimIndent(),
                 )
                 db.execSQL(

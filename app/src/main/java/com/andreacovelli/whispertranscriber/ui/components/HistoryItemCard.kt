@@ -38,28 +38,46 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
+import com.andreacovelli.whispertranscriber.extractHistorySearchTokens
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 private fun buildHighlightedText(text: String, query: String, background: Color, onBackground: Color): AnnotatedString {
-    if (query.isBlank()) return AnnotatedString(text)
+    val tokens = extractHistorySearchTokens(query)
+    if (tokens.isEmpty()) return AnnotatedString(text)
+
+    val matches = tokens
+        .flatMap { token ->
+            buildList {
+                var startIndex = text.indexOf(token, ignoreCase = true)
+                while (startIndex >= 0) {
+                    add(startIndex until (startIndex + token.length))
+                    startIndex = text.indexOf(token, startIndex + token.length, ignoreCase = true)
+                }
+            }
+        }
+        .sortedBy { it.first }
+
+    if (matches.isEmpty()) return AnnotatedString(text)
+
     return buildAnnotatedString {
         var cursor = 0
-        while (cursor < text.length) {
-            val idx = text.indexOf(query, startIndex = cursor, ignoreCase = true)
-            if (idx == -1) {
-                append(text, cursor, text.length)
-                break
+        matches.forEach { range ->
+            if (range.first < cursor) {
+                return@forEach
             }
-            if (idx > cursor) {
-                append(text, cursor, idx)
+            if (range.first > cursor) {
+                append(text, cursor, range.first)
             }
             withStyle(SpanStyle(background = background, color = onBackground)) {
-                append(text, idx, idx + query.length)
+                append(text, range.first, range.last + 1)
             }
-            cursor = idx + query.length
+            cursor = range.last + 1
+        }
+        if (cursor < text.length) {
+            append(text, cursor, text.length)
         }
     }
 }
