@@ -13,15 +13,27 @@ import com.andreacovelli.whispertranscriber.data.TranscriptionHistoryDao
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+
+private val HISTORY_SEARCH_TOKEN_REGEX = Regex("[\\p{L}\\p{N}]+")
+
+internal fun extractHistorySearchTokens(rawQuery: String): List<String> = HISTORY_SEARCH_TOKEN_REGEX
+    .findAll(rawQuery)
+    .map { it.value }
+    .distinct()
+    .toList()
+
+internal fun buildHistorySearchQuery(rawQuery: String): String = extractHistorySearchTokens(rawQuery)
+    .map { "$it*" }
+    .joinToString(" ")
 
 class HistoryViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -64,12 +76,13 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
             Pager(
                 config = PagingConfig(pageSize = 20, enablePlaceholders = true),
                 pagingSourceFactory = {
-                    if (query.isBlank()) {
+                    val ftsQuery = buildHistorySearchQuery(query)
+                    if (ftsQuery.isBlank()) {
                         historyDao.getAllHistoryPaged()
                     } else {
-                        historyDao.searchHistoryPaged(query)
+                        historyDao.searchHistoryPaged(ftsQuery)
                     }
-                }
+                },
             ).flow
         }
         .cachedIn(viewModelScope)
@@ -82,13 +95,13 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
 
     fun deleteHistoryItem(item: TranscriptionHistory) {
         viewModelScope.launch {
-            historyDao.delete(item)
+            historyDao.deleteById(item.id)
         }
     }
 
     fun deleteAllHistory() {
         viewModelScope.launch {
-            historyDao.deleteAll()
+            historyDao.deleteAllHistory()
         }
     }
 }

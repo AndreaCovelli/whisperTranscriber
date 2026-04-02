@@ -9,6 +9,7 @@ import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.net.toUri
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
@@ -22,6 +23,8 @@ import com.google.genai.types.GenerateContentConfig
 import com.google.genai.types.Part
 import com.google.genai.types.Schema
 import com.google.genai.types.UploadFileConfig
+import java.io.File
+import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -34,16 +37,11 @@ import okio.BufferedSink
 import okio.source
 import org.json.JSONObject
 import retrofit2.HttpException
-import java.io.File
-import java.io.IOException
-import androidx.core.net.toUri
 
 private class TransientWorkException(message: String, cause: Throwable? = null) : IOException(message, cause)
 
-class TranscriptionWorker(
-    appContext: Context,
-    workerParams: WorkerParameters
-) : CoroutineWorker(appContext, workerParams) {
+class TranscriptionWorker(appContext: Context, workerParams: WorkerParameters) :
+    CoroutineWorker(appContext, workerParams) {
 
     private val notificationManager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     private val settings = ApiKeyManager(appContext)
@@ -52,7 +50,7 @@ class TranscriptionWorker(
     companion object {
         const val NOTIFICATION_ID = 1001
         const val CHANNEL_ID = "transcription_channel"
-        
+
         private const val TYPE_OBJECT = "OBJECT"
         private const val TYPE_STRING = "STRING"
 
@@ -63,7 +61,7 @@ class TranscriptionWorker(
 
         private val SUPPORTED_GEMINI_MIME_TYPES = setOf(
             "audio/wav", "audio/x-wav", "audio/mp3", "audio/mpeg", "audio/aiff", "audio/x-aiff",
-            "audio/aac", "audio/ogg", "audio/vorbis", "audio/flac", "audio/x-flac"
+            "audio/aac", "audio/ogg", "audio/vorbis", "audio/flac", "audio/x-flac",
         )
 
         private const val ELEVEN_LABS_MODEL_ID = "scribe_v2"
@@ -71,19 +69,17 @@ class TranscriptionWorker(
         private val SUPPORTED_ELEVENLABS_MIME_TYPES = setOf(
             "audio/mp3", "audio/mpeg", "audio/wav", "audio/x-wav", "audio/x-m4a", "audio/m4a",
             "audio/flac", "audio/x-flac", "audio/ogg", "audio/vorbis", "audio/opus", "audio/webm",
-            "audio/aac", "audio/aiff", "audio/x-aiff"
+            "audio/aac", "audio/aiff", "audio/x-aiff",
         )
     }
 
-    override suspend fun getForegroundInfo(): ForegroundInfo {
-        return createForegroundInfo("Starting transcription...")
-    }
+    override suspend fun getForegroundInfo(): ForegroundInfo = createForegroundInfo("Starting transcription...")
 
     private fun createForegroundInfo(progressText: String): ForegroundInfo {
         val channel = NotificationChannel(
             CHANNEL_ID,
             "Transcription Service",
-            NotificationManager.IMPORTANCE_LOW
+            NotificationManager.IMPORTANCE_LOW,
         )
         notificationManager.createNotificationChannel(channel)
 
@@ -136,7 +132,7 @@ class TranscriptionWorker(
                 displayName = job.displayName,
                 inputMimeType = job.sourceMimeType?.lowercase(),
                 usingElevenLabs = usingElevenLabs,
-                geminiModel = geminiModelName
+                geminiModel = geminiModelName,
             )
             return Result.success()
         } catch (e: CancellationException) {
@@ -154,7 +150,7 @@ class TranscriptionWorker(
         displayName: String,
         inputMimeType: String?,
         usingElevenLabs: Boolean,
-        geminiModel: String?
+        geminiModel: String?,
     ) {
         val app = applicationContext as Application
         val contentResolver = app.contentResolver
@@ -182,7 +178,7 @@ class TranscriptionWorker(
                 updateNotification("Converting audio...")
 
                 val outputFile = withContext(Dispatchers.IO) {
-                    File.createTempFile("${CONVERTED_FILE_PREFIX}${jobId}", ".wav", app.cacheDir)
+                    File.createTempFile("${CONVERTED_FILE_PREFIX}$jobId", ".wav", app.cacheDir)
                 }
                 tempFileToClean = outputFile
 
@@ -196,9 +192,9 @@ class TranscriptionWorker(
                         repository.updateStatusAndProgress(
                             jobId,
                             "Converting to 16 kHz WAV: ${"%.1f".format(p * 100)}%",
-                            p
+                            p,
                         )
-                    }
+                    },
                 )
 
                 if (usingElevenLabs) {
@@ -210,20 +206,28 @@ class TranscriptionWorker(
                 }
             } else {
                 if (usingElevenLabs) {
-                    repository.updateStatusAndProgress(jobId, "Format supported ($inputMimeType). Preparing for direct upload...", 1f)
+                    repository.updateStatusAndProgress(
+                        jobId,
+                        "Format supported ($inputMimeType). Preparing for direct upload...",
+                        1f,
+                    )
                     sourceForElevenLabs = uri
                 } else {
-                    repository.updateStatusAndProgress(jobId, "Format supported ($inputMimeType). Copying audio for Gemini...", 0.5f)
+                    repository.updateStatusAndProgress(
+                        jobId,
+                        "Format supported ($inputMimeType). Copying audio for Gemini...",
+                        0.5f,
+                    )
                     updateNotification("Copying audio...")
 
                     val tempFile = contentResolver.openInputStream(uri)?.use { input ->
-                        File.createTempFile("${DIRECT_FILE_PREFIX}${jobId}", ".tmp", app.cacheDir).apply {
+                        File.createTempFile("${DIRECT_FILE_PREFIX}$jobId", ".tmp", app.cacheDir).apply {
                             outputStream().use { output ->
                                 input.copyTo(output)
                             }
                         }
                     } ?: throw IllegalStateException("Failed to read input audio file.")
-                    
+
                     tempFileToClean = tempFile
                     fileForGemini = tempFile
                     mimeTypeForGemini = inputMimeType
@@ -233,14 +237,21 @@ class TranscriptionWorker(
             }
 
             val flow = if (usingElevenLabs) {
-                if (sourceForElevenLabs == null) throw IllegalStateException("Internal error: ElevenLabs source is missing.")
-                val keyChars = settings.getElevenLabsApiKey() ?: throw IllegalStateException("API key missing or corrupted")
-                transcribeWithElevenLabsReturn(sourceForElevenLabs, keyChars)
+                val source =
+                    sourceForElevenLabs
+                        ?: throw IllegalStateException("Internal error: ElevenLabs source is missing.")
+                val keyChars =
+                    settings.getElevenLabsApiKey() ?: throw IllegalStateException("API key missing or corrupted")
+                transcribeWithElevenLabsReturn(source, keyChars)
             } else {
                 if (geminiModel == null) throw IllegalStateException("Gemini model not specified.")
-                if (fileForGemini == null || mimeTypeForGemini == null) throw IllegalStateException("Internal error: Gemini audio data missing.")
+                val geminiFile =
+                    fileForGemini ?: throw IllegalStateException("Internal error: Gemini audio data missing.")
+                val geminiMimeType =
+                    mimeTypeForGemini
+                        ?: throw IllegalStateException("Internal error: Gemini audio data missing.")
                 val keyChars = settings.getGeminiApiKey() ?: throw IllegalStateException("API key missing or corrupted")
-                transcribeWithGeminiReturn(fileForGemini, mimeTypeForGemini, keyChars, geminiModel)
+                transcribeWithGeminiReturn(geminiFile, geminiMimeType, keyChars, geminiModel)
             }
 
             var resultData: TranscriptionData? = null
@@ -263,8 +274,8 @@ class TranscriptionWorker(
                     text = data.text,
                     language = data.language.ifBlank { "Unknown" },
                     model = data.model,
-                    displayName = displayName
-                )
+                    displayName = displayName,
+                ),
             ).toInt()
 
             repository.updateResult(
@@ -276,7 +287,7 @@ class TranscriptionWorker(
                 1f,
                 false,
                 "Completed",
-                null
+                null,
             )
         } finally {
             tempFileToClean?.let { file ->
@@ -302,7 +313,9 @@ class TranscriptionWorker(
             override fun contentType(): MediaType = contentType
             override fun contentLength(): Long = try {
                 contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
-            } catch (_: Exception) { -1L }
+            } catch (_: Exception) {
+                -1L
+            }
             override fun writeTo(sink: BufferedSink) {
                 contentResolver.openInputStream(uri)?.use { sink.writeAll(it.source()) }
                     ?: throw IllegalStateException("Could not open input stream for Uri: $uri")
@@ -312,7 +325,7 @@ class TranscriptionWorker(
 
     private fun transcribeWithElevenLabsReturn(
         source: Any,
-        apiKey: CharArray
+        apiKey: CharArray,
     ): kotlinx.coroutines.flow.Flow<TranscriptionResult> = kotlinx.coroutines.flow.flow {
         try {
             emit(TranscriptionResult.Loading("Uploading and transcribing..."))
@@ -328,10 +341,10 @@ class TranscriptionWorker(
             val modelIdPart = MultipartBody.Part.createFormData("model_id", ELEVEN_LABS_MODEL_ID)
 
             val response = api.transcribe(String(apiKey), filePart, modelIdPart)
-            
+
             val detectedLanguage = response.languageCode ?: "Unknown"
             val text = response.text
-            
+
             emit(TranscriptionResult.Loading("Success"))
             emit(TranscriptionResult.Success(TranscriptionData(text, detectedLanguage, "ElevenLabs Scribe v2")))
         } catch (e: Exception) {
@@ -361,7 +374,7 @@ class TranscriptionWorker(
         audioFile: File,
         mimeType: String,
         apiKey: CharArray,
-        modelName: String
+        modelName: String,
     ): kotlinx.coroutines.flow.Flow<TranscriptionResult> = kotlinx.coroutines.flow.flow {
         val client = Client.builder().apiKey(String(apiKey)).build()
         var uploadedFile: GenAiFile? = null
@@ -373,15 +386,32 @@ class TranscriptionWorker(
                 client.files.upload(audioFile.absolutePath, uploadConfig)
             }
             val currentUploadedFile = uploadedFile ?: throw IllegalStateException("File upload failed.")
-            val audioPart = Part.fromUri(currentUploadedFile.uri().orElseThrow { IllegalStateException("Missing URI") }, currentUploadedFile.mimeType().orElse(mimeType))
+            val audioPart = Part.fromUri(
+                currentUploadedFile.uri().orElseThrow {
+                    IllegalStateException("Missing URI")
+                },
+                currentUploadedFile.mimeType().orElse(mimeType),
+            )
 
             emit(TranscriptionResult.Loading("Transcribing audio..."))
             val responseSchema = Schema.builder().type(TYPE_OBJECT)
-                .properties(mapOf("language_code" to Schema.builder().type(TYPE_STRING).build(), "text" to Schema.builder().type(TYPE_STRING).build()))
+                .properties(
+                    mapOf(
+                        "language_code" to Schema.builder().type(TYPE_STRING).build(),
+                        "text" to Schema.builder().type(TYPE_STRING).build(),
+                    ),
+                )
                 .required(listOf("language_code", "text")).build()
 
-            val config = GenerateContentConfig.builder().responseMimeType("application/json").responseSchema(responseSchema).build()
-            val content = Content.fromParts(Part.fromText("Transcribe the provided audio. Return only a compact JSON object with fields: language_code (BCP-47 like en-US) and text (full transcript). Do not include any extra commentary."), audioPart)
+            val config = GenerateContentConfig.builder().responseMimeType(
+                "application/json",
+            ).responseSchema(responseSchema).build()
+            val content = Content.fromParts(
+                Part.fromText(
+                    "Transcribe the provided audio. Return only a compact JSON object with fields: language_code (BCP-47 like en-US) and text (full transcript). Do not include any extra commentary.",
+                ),
+                audioPart,
+            )
 
             val response = withContext(Dispatchers.IO) { client.models.generateContent(modelName, content, config) }
 
@@ -396,7 +426,13 @@ class TranscriptionWorker(
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             val httpCode = if (e is HttpException) e.code() else extractHttpStatusFromMessage(e)
-            val msg = if (httpCode != null) friendlyHttpError(httpCode, "Gemini") else "Gemini error: ${e.message ?: e::class.java.simpleName}"
+            val msg = if (httpCode !=
+                null
+            ) {
+                friendlyHttpError(httpCode, "Gemini")
+            } else {
+                "Gemini error: ${e.message ?: e::class.java.simpleName}"
+            }
             val error = when {
                 httpCode != null && shouldRetryHttp(httpCode) -> TransientWorkException(msg, e)
                 e is IOException -> TransientWorkException(msg, e)
@@ -408,15 +444,23 @@ class TranscriptionWorker(
             uploadedFile?.let { remoteFile ->
                 runCatching {
                     withContext(Dispatchers.IO) {
-                        remoteFile.name().ifPresentOrElse({ fileName ->
-                            client.files.delete(fileName, null)
-                        }, {
-                            android.util.Log.w("TranscriptionWorker", "Could not delete remote Gemini file as its name was not available.")
-                        })
+                        val remoteFileName = remoteFile.name().orElse(null)
+                        if (remoteFileName != null) {
+                            client.files.delete(remoteFileName, null)
+                        } else {
+                            android.util.Log.w(
+                                "TranscriptionWorker",
+                                "Could not delete remote Gemini file as its name was not available.",
+                            )
+                        }
                     }
                 }.onFailure {
                     if (it is CancellationException) throw it
-                    android.util.Log.w("TranscriptionWorker", "Failed to delete remote Gemini file: ${remoteFile.name().orElse("[name not available]")}", it)
+                    android.util.Log.w(
+                        "TranscriptionWorker",
+                        "Failed to delete remote Gemini file: ${remoteFile.name().orElse("[name not available]")}",
+                        it,
+                    )
                 }
             }
         }

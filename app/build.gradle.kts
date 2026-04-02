@@ -2,9 +2,14 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.detekt)
+    alias(libs.plugins.spotless)
 }
 
+val ktlintVersion = "1.7.1"
+
 android {
+    val roomSchemaDir = "$projectDir/schemas"
     val keystorePath = findProperty("keystorePath") as? String
     val propKeystorePassword = findProperty("keystorePassword") as? String
     val propKeyAlias = findProperty("keyAlias") as? String
@@ -25,6 +30,10 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    sourceSets {
+        getByName("androidTest").assets.directories.add(roomSchemaDir)
+    }
+
     signingConfigs {
         create("release") {
             if (keystorePath != null) {
@@ -42,12 +51,13 @@ android {
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
-            signingConfig = if (keystorePath != null)
+            signingConfig = if (keystorePath != null) {
                 signingConfigs.getByName("release")
-            else
+            } else {
                 signingConfigs.getByName("debug")
+            }
         }
     }
 
@@ -58,19 +68,72 @@ android {
     packaging {
         resources {
             pickFirsts += setOf(
-                    "META-INF/INDEX.LIST",
-                    "META-INF/DEPENDENCIES",
-                    "META-INF/NOTICE",
-                    "META-INF/NOTICE.txt",
-                    "META-INF/LICENSE",
-                    "META-INF/LICENSE.txt"
-                )
+                "META-INF/INDEX.LIST",
+                "META-INF/DEPENDENCIES",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.txt",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.txt",
+            )
         }
     }
 }
 
 kotlin {
     jvmToolchain(21)
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+configure<io.gitlab.arturbosch.detekt.extensions.DetektExtension> {
+    buildUponDefaultConfig = true
+    allRules = false
+    config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
+    baseline = file("$rootDir/config/detekt/baseline.xml")
+}
+
+configure<com.diffplug.gradle.spotless.SpotlessExtension> {
+    kotlin {
+        target("src/**/*.kt")
+        ktlint(ktlintVersion)
+            .editorConfigOverride(
+                mapOf(
+                    "ktlint_code_style" to "android_studio",
+                    "ktlint_standard_function-naming" to "disabled",
+                    "ktlint_standard_property-naming" to "disabled",
+                ),
+            )
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
+    kotlinGradle {
+        target("*.gradle.kts", "app/*.gradle.kts")
+        ktlint(ktlintVersion)
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
+}
+
+tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
+    jvmTarget = "21"
+    baseline.set(file("$rootDir/config/detekt/baseline.xml"))
+    setSource(
+        files(
+            "src/main/java",
+            "src/test/java",
+            "src/androidTest/java",
+        ),
+    )
+    include("**/*.kt")
+    exclude("**/build/**", "**/generated/**")
+    reports {
+        html.required.set(true)
+        sarif.required.set(true)
+        txt.required.set(false)
+        md.required.set(false)
+    }
 }
 
 dependencies {
@@ -92,7 +155,7 @@ dependencies {
     implementation(libs.okhttp.logging.interceptor)
 
     // FFmpeg - align with com.arthenica package used in imports
-    //implementation(libs.ffmpeg.kit.full)
+    // implementation(libs.ffmpeg.kit.full)
 
     implementation(libs.androidx.material.icons.core)
     implementation(libs.androidx.material.icons.extended)
@@ -114,12 +177,18 @@ dependencies {
 
     // WorkManager
     implementation(libs.androidx.work.runtime.ktx)
-
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.room.testing)
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+
+    constraints {
+        // Keep Room migration testing and AndroidX saved state/navigation on one serialization runtime.
+        implementation(libs.kotlinx.serialization.core)
+        implementation(libs.kotlinx.serialization.json)
+    }
 }

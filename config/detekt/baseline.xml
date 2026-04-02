@@ -1,0 +1,39 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexCondition:MainViewModel.kt$MainViewModel$!job.isRunning &amp;&amp; !job.isSummarizing &amp;&amp; job.transcript.isNotBlank() &amp;&amp; job.summary.isBlank() &amp;&amp; job.error == null &amp;&amp; job.summaryError == null</ID>
+    <ID>CyclomaticComplexMethod:HardwareAudioConverter.kt$HardwareAudioConverter$suspend fun convertToWav( context: Context, inputUri: Uri, outputFile: File, forceMono: Boolean = true, targetSampleRate: Int = 16_000, onProgress: (suspend (Float) -&gt; Unit)? = null, ): Result</ID>
+    <ID>CyclomaticComplexMethod:TranscriptionJobCard.kt$@Composable fun TranscriptionJobCard( job: TranscriptionJobState, canSummarize: Boolean, onSummarize: () -&gt; Unit, onClearSummary: () -&gt; Unit, onClearTranscript: () -&gt; Unit, onCopyTranscript: () -&gt; Unit, onCopySummary: () -&gt; Unit, onShareTranscript: () -&gt; Unit, onShareSummary: () -&gt; Unit, onRetry: () -&gt; Unit, onCancel: () -&gt; Unit, onDelete: () -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:TranscriptionWorker.kt$TranscriptionWorker$private suspend fun processSingleJob( jobId: Int, uri: Uri, displayName: String, inputMimeType: String?, usingElevenLabs: Boolean, geminiModel: String?, )</ID>
+    <ID>InstanceOfCheckForException:MainViewModel.kt$MainViewModel$e is CancellationException</ID>
+    <ID>InstanceOfCheckForException:TranscriptionWorker.kt$TranscriptionWorker$e is CancellationException</ID>
+    <ID>InstanceOfCheckForException:TranscriptionWorker.kt$TranscriptionWorker$e is HttpException</ID>
+    <ID>InstanceOfCheckForException:TranscriptionWorker.kt$TranscriptionWorker$e is IOException</ID>
+    <ID>InstanceOfCheckForException:TranscriptionWorker.kt$TranscriptionWorker$e is TransientWorkException</ID>
+    <ID>LongMethod:HardwareAudioConverter.kt$HardwareAudioConverter$suspend fun convertToWav( context: Context, inputUri: Uri, outputFile: File, forceMono: Boolean = true, targetSampleRate: Int = 16_000, onProgress: (suspend (Float) -&gt; Unit)? = null, ): Result</ID>
+    <ID>LongMethod:HistoryScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun HistoryScreen(historyViewModel: HistoryViewModel = viewModel(), onNavigateBack: () -&gt; Unit)</ID>
+    <ID>LongMethod:MainScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -&gt; Unit, onNavigateToSettings: () -&gt; Unit)</ID>
+    <ID>LongMethod:TranscriptionJobCard.kt$@Composable fun TranscriptionJobCard( job: TranscriptionJobState, canSummarize: Boolean, onSummarize: () -&gt; Unit, onClearSummary: () -&gt; Unit, onClearTranscript: () -&gt; Unit, onCopyTranscript: () -&gt; Unit, onCopySummary: () -&gt; Unit, onShareTranscript: () -&gt; Unit, onShareSummary: () -&gt; Unit, onRetry: () -&gt; Unit, onCancel: () -&gt; Unit, onDelete: () -&gt; Unit, )</ID>
+    <ID>LongParameterList:TranscriptionJobCard.kt$( job: TranscriptionJobState, canSummarize: Boolean, onSummarize: () -&gt; Unit, onClearSummary: () -&gt; Unit, onClearTranscript: () -&gt; Unit, onCopyTranscript: () -&gt; Unit, onCopySummary: () -&gt; Unit, onShareTranscript: () -&gt; Unit, onShareSummary: () -&gt; Unit, onRetry: () -&gt; Unit, onCancel: () -&gt; Unit, onDelete: () -&gt; Unit, )</ID>
+    <ID>LoopWithTooManyJumpStatements:HardwareAudioConverter.kt$HardwareAudioConverter$for</ID>
+    <ID>LoopWithTooManyJumpStatements:HardwareAudioConverter.kt$HardwareAudioConverter.PolyphaseResampler$while</ID>
+    <ID>LoopWithTooManyJumpStatements:MainViewModel.kt$MainViewModel$for</ID>
+    <ID>NestedBlockDepth:TranscriptionWorker.kt$TranscriptionWorker$private suspend fun processSingleJob( jobId: Int, uri: Uri, displayName: String, inputMimeType: String?, usingElevenLabs: Boolean, geminiModel: String?, )</ID>
+    <ID>SwallowedException:ApiKeyManager.kt$ApiKeyManager$e: Exception</ID>
+    <ID>ThrowingExceptionFromFinally:TranscriptionWorker.kt$TranscriptionWorker$throw it</ID>
+    <ID>TooGenericExceptionCaught:ApiKeyManager.kt$ApiKeyManager$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:HardwareAudioConverter.kt$HardwareAudioConverter$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:MainViewModel.kt$MainViewModel$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:TranscriptionWorker.kt$TranscriptionWorker$e: Exception</ID>
+    <ID>TooManyFunctions:MainViewModel.kt$MainViewModel : AndroidViewModel</ID>
+    <ID>UseCheckOrError:TranscriptionWorker.kt$TranscriptionWorker$throw IllegalStateException("API key missing or corrupted")</ID>
+    <ID>UseCheckOrError:TranscriptionWorker.kt$TranscriptionWorker$throw IllegalStateException("Failed to read input audio file.")</ID>
+    <ID>UseCheckOrError:TranscriptionWorker.kt$TranscriptionWorker$throw IllegalStateException("File upload failed.")</ID>
+    <ID>UseCheckOrError:TranscriptionWorker.kt$TranscriptionWorker$throw IllegalStateException("Gemini model not specified.")</ID>
+    <ID>UseCheckOrError:TranscriptionWorker.kt$TranscriptionWorker$throw IllegalStateException("Internal error: ElevenLabs source is missing.")</ID>
+    <ID>UseCheckOrError:TranscriptionWorker.kt$TranscriptionWorker$throw IllegalStateException("Internal error: Gemini audio data missing.")</ID>
+    <ID>UseCheckOrError:TranscriptionWorker.kt$TranscriptionWorker$throw IllegalStateException("Transcription failed without error.")</ID>
+    <ID>UseCheckOrError:TranscriptionWorker.kt$TranscriptionWorker.&lt;no name provided&gt;$throw IllegalStateException("Could not open input stream for Uri: $uri")</ID>
+  </CurrentIssues>
+</SmellBaseline>

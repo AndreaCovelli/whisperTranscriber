@@ -5,6 +5,7 @@ import android.app.Application
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
+import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.BackoffPolicy
@@ -17,6 +18,14 @@ import androidx.work.workDataOf
 import com.andreacovelli.whispertranscriber.data.AppDatabase
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistoryDao
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
+import com.google.genai.Client
+import com.google.genai.types.Content
+import com.google.genai.types.GenerateContentConfig
+import com.google.genai.types.Part
+import java.io.File
+import java.io.IOException
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -27,16 +36,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Request
-import com.google.genai.Client
-import com.google.genai.types.Content
-import com.google.genai.types.GenerateContentConfig
-import com.google.genai.types.Part
 import org.json.JSONObject
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.TimeUnit
-import java.io.File
-import java.io.IOException
-import androidx.core.net.toUri
 
 sealed class CustomModelValidation {
     object Idle : CustomModelValidation()
@@ -64,7 +64,7 @@ data class UiState(
     val transcriptionCustomModelValidation: CustomModelValidation = CustomModelValidation.Idle,
     val summarizerCustomModelValidation: CustomModelValidation = CustomModelValidation.Idle,
     val automaticSummarizationEnabled: Boolean = false,
-    val jobs: List<TranscriptionJobState> = emptyList()
+    val jobs: List<TranscriptionJobState> = emptyList(),
 )
 
 data class TranscriptionJobState(
@@ -83,7 +83,7 @@ data class TranscriptionJobState(
     val error: String? = null,
     val summaryError: String? = null,
     val isRunning: Boolean = false,
-    val isSummarizing: Boolean = false
+    val isSummarizing: Boolean = false,
 )
 
 fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
@@ -103,14 +103,18 @@ fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     error = error,
     summaryError = summaryError,
     isRunning = isRunning,
-    isSummarizing = isSummarizing
+    isSummarizing = isSummarizing,
 )
 
-data class TranscriptionData(
-    val text: String,
-    val language: String,
-    val model: String
-)
+private val TranscriptionJob.isReadyForAutoSummary: Boolean
+    get() = !isRunning &&
+        !isSummarizing &&
+        transcript.isNotBlank() &&
+        summary.isBlank() &&
+        error == null &&
+        summaryError == null
+
+data class TranscriptionData(val text: String, val language: String, val model: String)
 
 sealed interface TranscriptionResult {
     data class Loading(val message: String) : TranscriptionResult
@@ -129,7 +133,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val ERR_ENTER_GEMINI_KEY = "Enter your Gemini API key first"
         private const val ERR_MODEL_NOT_FOUND = "Model \"%s\" not found"
         private const val ERR_HTTP_VERIFY = "HTTP %d: could not verify model"
-        
+
         private const val CONVERTED_FILE_PREFIX = "converted_"
         private const val DIRECT_FILE_PREFIX = "direct_"
         private const val STAGED_FILE_PREFIX = "staged_"
@@ -193,16 +197,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             launch {
                 repository.jobsState.collect { jobsList ->
                     _uiState.update { it.copy(jobs = jobsList.map { it.toUiState() }) }
-                    
+
                     // Auto-summarization logic
-                    if (_uiState.value.automaticSummarizationEnabled && _uiState.value.geminiApiKeyState is ApiKeyState.Present) {
+                    if (_uiState.value.automaticSummarizationEnabled &&
+                        _uiState.value.geminiApiKeyState is ApiKeyState.Present
+                    ) {
                         jobsList.forEach { job ->
-                            if (!job.isRunning && 
-                                !job.isSummarizing && 
-                                job.transcript.isNotBlank() && 
-                                job.summary.isBlank() && 
-                                job.error == null &&
-                                job.summaryError == null) {
+                            if (job.isReadyForAutoSummary) {
                                 requestAutoSummary(job.id)
                             }
                         }
@@ -233,7 +234,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .beginUniqueWork(
                 TRANSCRIPTION_QUEUE,
                 ExistingWorkPolicy.APPEND_OR_REPLACE,
-                workRequest
+                workRequest,
             )
             .enqueue()
     }
@@ -304,7 +305,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Error(errorMessage)) }
                 }
             } catch (e: Exception) {
-                _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Error(e.message ?: "Validation failed")) }
+                _uiState.update {
+                    it.copy(elevenLabsKeyValidation = KeyValidationState.Error(e.message ?: "Validation failed"))
+                }
             }
         }
     }
@@ -336,7 +339,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Error(errorMessage)) }
                 }
             } catch (e: Exception) {
-                _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Error(e.message ?: "Validation failed")) }
+                _uiState.update {
+                    it.copy(geminiKeyValidation = KeyValidationState.Error(e.message ?: "Validation failed"))
+                }
             }
         }
     }
@@ -362,23 +367,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun validateCustomGeminiModel(modelName: String, isSummarizer: Boolean = false) {
         val trimmed = modelName.trim()
         if (trimmed.isBlank()) {
-            if (isSummarizer) _uiState.update { it.copy(summarizerCustomModelValidation = CustomModelValidation.Error(ERR_ENTER_MODEL_NAME)) }
-            else _uiState.update { it.copy(transcriptionCustomModelValidation = CustomModelValidation.Error(ERR_ENTER_MODEL_NAME)) }
+            if (isSummarizer) {
+                _uiState.update {
+                    it.copy(summarizerCustomModelValidation = CustomModelValidation.Error(ERR_ENTER_MODEL_NAME))
+                }
+            } else {
+                _uiState.update {
+                    it.copy(transcriptionCustomModelValidation = CustomModelValidation.Error(ERR_ENTER_MODEL_NAME))
+                }
+            }
             return
         }
-        if (isSummarizer) _uiState.update { it.copy(summarizerCustomModelValidation = CustomModelValidation.Validating) }
-        else _uiState.update { it.copy(transcriptionCustomModelValidation = CustomModelValidation.Validating) }
+        if (isSummarizer) {
+            _uiState.update { it.copy(summarizerCustomModelValidation = CustomModelValidation.Validating) }
+        } else {
+            _uiState.update { it.copy(transcriptionCustomModelValidation = CustomModelValidation.Validating) }
+        }
 
         viewModelScope.launch {
             val keyChars = settings.getGeminiApiKey()
             if (keyChars == null || keyChars.isEmpty()) {
                 val keyState = _uiState.value.geminiApiKeyState
-                val errMsg = if (keyState is ApiKeyState.Error)
+                val errMsg = if (keyState is ApiKeyState.Error) {
                     "Keystore error: ${keyState.message}. Please re-enter your key."
-                else ERR_ENTER_GEMINI_KEY
-                
-                if (isSummarizer) _uiState.update { it.copy(summarizerCustomModelValidation = CustomModelValidation.Error(errMsg)) }
-                else _uiState.update { it.copy(transcriptionCustomModelValidation = CustomModelValidation.Error(errMsg)) }
+                } else {
+                    ERR_ENTER_GEMINI_KEY
+                }
+
+                if (isSummarizer) {
+                    _uiState.update { it.copy(summarizerCustomModelValidation = CustomModelValidation.Error(errMsg)) }
+                } else {
+                    _uiState.update {
+                        it.copy(transcriptionCustomModelValidation = CustomModelValidation.Error(errMsg))
+                    }
+                }
                 return@launch
             }
 
@@ -394,22 +416,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
                 if (!isSuccess) {
-                    val msg = if (code == 404) ERR_MODEL_NOT_FOUND.format(trimmed)
-                              else ERR_HTTP_VERIFY.format(code)
-                    if (isSummarizer) _uiState.update { it.copy(summarizerCustomModelValidation = CustomModelValidation.Error(msg)) }
-                    else _uiState.update { it.copy(transcriptionCustomModelValidation = CustomModelValidation.Error(msg)) }
+                    val msg = if (code == 404) {
+                        ERR_MODEL_NOT_FOUND.format(trimmed)
+                    } else {
+                        ERR_HTTP_VERIFY.format(code)
+                    }
+                    if (isSummarizer) {
+                        _uiState.update { it.copy(summarizerCustomModelValidation = CustomModelValidation.Error(msg)) }
+                    } else {
+                        _uiState.update {
+                            it.copy(transcriptionCustomModelValidation = CustomModelValidation.Error(msg))
+                        }
+                    }
                     return@launch
                 }
                 val displayName = try {
                     JSONObject(bodyText).optString("displayName", trimmed)
-                } catch (_: Exception) { trimmed }
-                
+                } catch (_: Exception) {
+                    trimmed
+                }
+
                 if (isSummarizer) {
                     settings.saveSummarizerCustomGeminiModelName(trimmed)
                     _uiState.update {
                         it.copy(
                             summarizerCustomGeminiModelName = trimmed,
-                            summarizerCustomModelValidation = CustomModelValidation.Valid(displayName)
+                            summarizerCustomModelValidation = CustomModelValidation.Valid(displayName),
                         )
                     }
                 } else {
@@ -417,15 +449,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _uiState.update {
                         it.copy(
                             transcriptionCustomGeminiModelName = trimmed,
-                            transcriptionCustomModelValidation = CustomModelValidation.Valid(displayName)
+                            transcriptionCustomModelValidation = CustomModelValidation.Valid(displayName),
                         )
                     }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                if (isSummarizer) _uiState.update { it.copy(summarizerCustomModelValidation = CustomModelValidation.Error(e.message ?: "Validation failed")) }
-                else _uiState.update { it.copy(transcriptionCustomModelValidation = CustomModelValidation.Error(e.message ?: "Validation failed")) }
+                if (isSummarizer) {
+                    _uiState.update {
+                        it.copy(
+                            summarizerCustomModelValidation = CustomModelValidation.Error(
+                                e.message ?: "Validation failed",
+                            ),
+                        )
+                    }
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            transcriptionCustomModelValidation = CustomModelValidation.Error(
+                                e.message ?: "Validation failed",
+                            ),
+                        )
+                    }
+                }
             }
         }
     }
@@ -489,7 +536,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 summary = "",
                 historyId = null,
                 language = "",
-                model = ""
+                model = "",
             )
             repository.updateJob(resetJob)
             enqueueWorker(jobId)
@@ -532,7 +579,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val provider = _uiState.value.provider
             val requestedModel = when (provider) {
                 TranscriptionProvider.ELEVEN_LABS -> null
-                TranscriptionProvider.GEMINI_CUSTOM -> _uiState.value.transcriptionCustomGeminiModelName.ifBlank { null }
+                TranscriptionProvider.GEMINI_CUSTOM -> _uiState.value.transcriptionCustomGeminiModelName.ifBlank {
+                    null
+                }
                 else -> provider.modelName
             }
 
@@ -548,7 +597,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     requestedModel = requestedModel,
                     status = "Queued",
                     progress = 0f,
-                    isRunning = false
+                    isRunning = false,
                 )
                 val jobId = repository.addJob(job).toInt()
                 enqueueWorker(jobId)
@@ -594,11 +643,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun launchSummarization(jobId: Int, allowResummarize: Boolean) {
         viewModelScope.launch {
-                val claimed = if (allowResummarize) {
-                    repository.claimManualSummary(jobId)
-                } else {
-                    repository.claimAutoSummary(jobId)
-                }
+            val claimed = if (allowResummarize) {
+                repository.claimManualSummary(jobId)
+            } else {
+                repository.claimAutoSummary(jobId)
+            }
             if (!claimed) return@launch
 
             var summarizingCleared = false
@@ -646,7 +695,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 _uiState.update { it.copy(status = "Summarizing with $modelName...") }
-                
+
                 val client = Client.builder().apiKey(apiKey).build()
                 val prompt = """
                     You are an expert summarizer.
@@ -657,7 +706,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 val content = Content.fromParts(
                     Part.fromText(prompt),
-                    Part.fromText(text)
+                    Part.fromText(text),
                 )
 
                 val response = withContext(ioDispatcher) {

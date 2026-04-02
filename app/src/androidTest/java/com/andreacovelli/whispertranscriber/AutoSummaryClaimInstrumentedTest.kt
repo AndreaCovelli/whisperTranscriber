@@ -77,8 +77,8 @@ class AutoSummaryClaimInstrumentedTest {
         val jobDao = db.transcriptionJobDao()
         val jobId = jobDao.insert(
             testJob(summary = "Old summary").copy(
-                summaryError = "Old error"
-            )
+                summaryError = "Old error",
+            ),
         ).toInt()
 
         jobDao.updateSummary(jobId, "")
@@ -92,15 +92,13 @@ class AutoSummaryClaimInstrumentedTest {
     private fun testJob(
         displayName: String = "sample.wav",
         summary: String = "",
-        isSummarizing: Boolean = false
-    ): TranscriptionJob {
-        return TranscriptionJob(
-            uri = "content://test/$displayName",
-            displayName = displayName,
-            transcript = "Transcript text",
-            summary = summary,
-            isRunning = false,
-            isSummarizing = isSummarizing
-        )
-    }
+        isSummarizing: Boolean = false,
+    ): TranscriptionJob = TranscriptionJob(
+        uri = "content://test/$displayName",
+        displayName = displayName,
+        transcript = "Transcript text",
+        summary = summary,
+        isRunning = false,
+        isSummarizing = isSummarizing,
+    )
 }
