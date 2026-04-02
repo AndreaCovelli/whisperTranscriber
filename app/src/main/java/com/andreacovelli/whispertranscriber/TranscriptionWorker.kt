@@ -444,17 +444,17 @@ class TranscriptionWorker(appContext: Context, workerParams: WorkerParameters) :
             uploadedFile?.let { remoteFile ->
                 runCatching {
                     withContext(Dispatchers.IO) {
-                        remoteFile.name().ifPresentOrElse({ fileName ->
-                            client.files.delete(fileName, null)
-                        }, {
+                        val remoteFileName = remoteFile.name().orElse(null)
+                        if (remoteFileName != null) {
+                            client.files.delete(remoteFileName, null)
+                        } else {
                             android.util.Log.w(
                                 "TranscriptionWorker",
                                 "Could not delete remote Gemini file as its name was not available.",
                             )
-                        })
+                        }
                     }
                 }.onFailure {
-                    if (it is CancellationException) throw it
                     android.util.Log.w(
                         "TranscriptionWorker",
                         "Failed to delete remote Gemini file: ${remoteFile.name().orElse("[name not available]")}",
