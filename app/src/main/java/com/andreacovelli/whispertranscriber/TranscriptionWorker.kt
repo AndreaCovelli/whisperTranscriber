@@ -13,16 +13,8 @@ import androidx.core.net.toUri
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
-import com.andreacovelli.whispertranscriber.data.AppDatabase
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.media.HardwareAudioConverter
-import com.google.genai.Client
-import com.google.genai.types.Content
-import com.google.genai.types.File as GenAiFile
-import com.google.genai.types.GenerateContentConfig
-import com.google.genai.types.Part
-import com.google.genai.types.Schema
-import com.google.genai.types.UploadFileConfig
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
@@ -30,15 +22,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.MultipartBody
 import okhttp3.RequestBody
-import okhttp3.RequestBody.Companion.asRequestBody
 import okio.BufferedSink
 import okio.source
-import org.json.JSONObject
-import retrofit2.HttpException
 
-private class TransientWorkException(message: String, cause: Throwable? = null) : IOException(message, cause)
+internal class TransientWorkException(message: String, cause: Throwable? = null) : IOException(message, cause)
+
+private sealed interface PreparedAudioInput {
+    val tempFileToClean: File?
+
+    data class ElevenLabs(val source: Any, override val tempFileToClean: File?) : PreparedAudioInput
+
+    data class Gemini(val file: File, val mimeType: String, override val tempFileToClean: File?) : PreparedAudioInput
+}
 
 class TranscriptionWorker(appContext: Context, workerParams: WorkerParameters) :
     CoroutineWorker(appContext, workerParams) {
@@ -51,20 +47,13 @@ class TranscriptionWorker(appContext: Context, workerParams: WorkerParameters) :
         const val NOTIFICATION_ID = 1001
         const val CHANNEL_ID = "transcription_channel"
 
-        private const val TYPE_OBJECT = "OBJECT"
-        private const val TYPE_STRING = "STRING"
-
         private const val CONVERTED_FILE_PREFIX = "converted_"
         private const val DIRECT_FILE_PREFIX = "direct_"
-
-        private val HTTP_STATUS_REGEX = Regex("""\b([45]\d{2})\b""")
 
         private val SUPPORTED_GEMINI_MIME_TYPES = setOf(
             "audio/wav", "audio/x-wav", "audio/mp3", "audio/mpeg", "audio/aiff", "audio/x-aiff",
             "audio/aac", "audio/ogg", "audio/vorbis", "audio/flac", "audio/x-flac",
         )
-
-        private const val ELEVEN_LABS_MODEL_ID = "scribe_v2"
 
         private val SUPPORTED_ELEVENLABS_MIME_TYPES = setOf(
             "audio/mp3", "audio/mpeg", "audio/wav", "audio/x-wav", "audio/x-m4a", "audio/m4a",
@@ -137,10 +126,18 @@ class TranscriptionWorker(appContext: Context, workerParams: WorkerParameters) :
             return Result.success()
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
-            val msg = e.message ?: e::class.java.simpleName
-            repository.updateError(jobId, msg, false, "Error")
-            return if (e is TransientWorkException) Result.retry() else Result.failure()
+        } catch (e: TransientWorkException) {
+            repository.updateError(jobId, e.message ?: e::class.java.simpleName, false, "Error")
+            return Result.retry()
+        } catch (e: IOException) {
+            repository.updateError(jobId, e.message ?: e::class.java.simpleName, false, "Error")
+            return Result.failure()
+        } catch (e: IllegalStateException) {
+            repository.updateError(jobId, e.message ?: e::class.java.simpleName, false, "Error")
+            return Result.failure()
+        } catch (e: IllegalArgumentException) {
+            repository.updateError(jobId, e.message ?: e::class.java.simpleName, false, "Error")
+            return Result.failure()
         }
     }
 
@@ -152,150 +149,177 @@ class TranscriptionWorker(appContext: Context, workerParams: WorkerParameters) :
         usingElevenLabs: Boolean,
         geminiModel: String?,
     ) {
-        val app = applicationContext as Application
-        val contentResolver = app.contentResolver
-        val historyDao = AppDatabase.getDatabase(app).transcriptionHistoryDao()
-
-        val conversionNeeded = when {
-            inputMimeType == null -> true
-            usingElevenLabs -> inputMimeType !in SUPPORTED_ELEVENLABS_MIME_TYPES
-            else -> inputMimeType !in SUPPORTED_GEMINI_MIME_TYPES
-        }
-
-        var tempFileToClean: File? = null
-
+        val preparedInput = prepareAudioInput(jobId, uri, inputMimeType, usingElevenLabs)
         try {
-            var fileForGemini: File? = null
-            var mimeTypeForGemini: String? = null
-            var sourceForElevenLabs: Any? = null
-
-            if (conversionNeeded) {
-                val reasonSuffix = if (inputMimeType == null) "(Unknown format)" else "($inputMimeType)"
-                val providerName = if (usingElevenLabs) "ElevenLabs" else "Gemini"
-                val conversionReason = "Format not natively supported by $providerName $reasonSuffix"
-
-                repository.updateStatusAndProgress(jobId, "$conversionReason. Converting to 16 kHz WAV...", 0f)
-                updateNotification("Converting audio...")
-
-                val outputFile = withContext(Dispatchers.IO) {
-                    File.createTempFile("${CONVERTED_FILE_PREFIX}$jobId", ".wav", app.cacheDir)
-                }
-                tempFileToClean = outputFile
-
-                HardwareAudioConverter.convertToWav(
-                    context = app,
-                    inputUri = uri,
-                    outputFile = outputFile,
-                    forceMono = true,
-                    targetSampleRate = 16_000,
-                    onProgress = { p ->
-                        repository.updateStatusAndProgress(
-                            jobId,
-                            "Converting to 16 kHz WAV: ${"%.1f".format(p * 100)}%",
-                            p,
-                        )
-                    },
-                )
-
-                if (usingElevenLabs) {
-                    sourceForElevenLabs = outputFile
-                } else {
-                    repository.updateStatus(jobId, "Converted audio ready for Gemini...")
-                    fileForGemini = outputFile
-                    mimeTypeForGemini = "audio/wav"
-                }
-            } else {
-                if (usingElevenLabs) {
-                    repository.updateStatusAndProgress(
-                        jobId,
-                        "Format supported ($inputMimeType). Preparing for direct upload...",
-                        1f,
-                    )
-                    sourceForElevenLabs = uri
-                } else {
-                    repository.updateStatusAndProgress(
-                        jobId,
-                        "Format supported ($inputMimeType). Copying audio for Gemini...",
-                        0.5f,
-                    )
-                    updateNotification("Copying audio...")
-
-                    val tempFile = contentResolver.openInputStream(uri)?.use { input ->
-                        File.createTempFile("${DIRECT_FILE_PREFIX}$jobId", ".tmp", app.cacheDir).apply {
-                            outputStream().use { output ->
-                                input.copyTo(output)
-                            }
-                        }
-                    } ?: throw IllegalStateException("Failed to read input audio file.")
-
-                    tempFileToClean = tempFile
-                    fileForGemini = tempFile
-                    mimeTypeForGemini = inputMimeType
-
-                    repository.updateStatusAndProgress(jobId, "Preparing for Gemini upload...", 1f)
-                }
-            }
-
-            val flow = if (usingElevenLabs) {
-                val source =
-                    sourceForElevenLabs
-                        ?: throw IllegalStateException("Internal error: ElevenLabs source is missing.")
-                val keyChars =
-                    settings.getElevenLabsApiKey() ?: throw IllegalStateException("API key missing or corrupted")
-                transcribeWithElevenLabsReturn(source, keyChars)
-            } else {
-                if (geminiModel == null) throw IllegalStateException("Gemini model not specified.")
-                val geminiFile =
-                    fileForGemini ?: throw IllegalStateException("Internal error: Gemini audio data missing.")
-                val geminiMimeType =
-                    mimeTypeForGemini
-                        ?: throw IllegalStateException("Internal error: Gemini audio data missing.")
-                val keyChars = settings.getGeminiApiKey() ?: throw IllegalStateException("API key missing or corrupted")
-                transcribeWithGeminiReturn(geminiFile, geminiMimeType, keyChars, geminiModel)
-            }
-
-            var resultData: TranscriptionData? = null
-            flow.collect { result ->
-                when (result) {
-                    is TranscriptionResult.Loading -> {
-                        val providerMsg = "${if (usingElevenLabs) "ElevenLabs" else "Gemini"}: ${result.message}"
-                        repository.updateStatus(jobId, providerMsg)
-                        updateNotification(providerMsg)
-                    }
-                    is TranscriptionResult.Success -> resultData = result.data
-                    is TranscriptionResult.Error -> throw result.exception
-                }
-            }
-
-            val data = resultData ?: throw IllegalStateException("Transcription failed without error.")
-
-            val historyId = historyDao.insert(
-                TranscriptionHistory(
-                    text = data.text,
-                    language = data.language.ifBlank { "Unknown" },
-                    model = data.model,
-                    displayName = displayName,
-                ),
-            ).toInt()
-
-            repository.updateResult(
-                jobId,
-                data.text,
-                data.language.ifBlank { "Unknown" },
-                data.model,
-                historyId,
-                1f,
-                false,
-                "Completed",
-                null,
-            )
+            val result = runProviderTranscription(jobId, preparedInput, usingElevenLabs, geminiModel)
+            persistCompletedTranscription(jobId, displayName, result)
         } finally {
-            tempFileToClean?.let { file ->
-                runCatching { file.delete() }.onFailure {
-                    android.util.Log.w("TranscriptionWorker", "Failed to delete temp file: ${file.absolutePath}", it)
-                }
+            preparedInput.tempFileToClean?.let { file ->
+                runCatching { file.delete() }
+                    .onFailure { throwable ->
+                        android.util.Log.w(
+                            "TranscriptionWorker",
+                            "Failed to delete temp file: ${file.absolutePath}",
+                            throwable,
+                        )
+                    }
             }
         }
+    }
+
+    private suspend fun prepareAudioInput(
+        jobId: Int,
+        uri: Uri,
+        inputMimeType: String?,
+        usingElevenLabs: Boolean,
+    ): PreparedAudioInput {
+        val app = applicationContext as Application
+        val conversionNeeded = inputMimeType == null ||
+            (usingElevenLabs && inputMimeType !in SUPPORTED_ELEVENLABS_MIME_TYPES) ||
+            (!usingElevenLabs && inputMimeType !in SUPPORTED_GEMINI_MIME_TYPES)
+        return if (conversionNeeded) {
+            prepareConvertedAudio(app, jobId, uri, inputMimeType, usingElevenLabs)
+        } else {
+            prepareNativeAudio(app, jobId, uri, requireNotNull(inputMimeType), usingElevenLabs)
+        }
+    }
+
+    private suspend fun prepareConvertedAudio(
+        app: Application,
+        jobId: Int,
+        uri: Uri,
+        inputMimeType: String?,
+        usingElevenLabs: Boolean,
+    ): PreparedAudioInput {
+        val reasonSuffix = inputMimeType?.let { "($it)" } ?: "(Unknown format)"
+        val providerName = if (usingElevenLabs) "ElevenLabs" else "Gemini"
+        repository.updateStatusAndProgress(
+            jobId,
+            "Format not natively supported by $providerName $reasonSuffix. Converting to 16 kHz WAV...",
+            0f,
+        )
+        updateNotification("Converting audio...")
+        val outputFile = withContext(Dispatchers.IO) {
+            File.createTempFile("${CONVERTED_FILE_PREFIX}$jobId", ".wav", app.cacheDir)
+        }
+        HardwareAudioConverter.convertToWav(
+            context = app,
+            inputUri = uri,
+            outputFile = outputFile,
+            forceMono = true,
+            targetSampleRate = 16_000,
+            onProgress = { progress ->
+                repository.updateStatusAndProgress(
+                    jobId,
+                    "Converting to 16 kHz WAV: ${"%.1f".format(progress * 100)}%",
+                    progress,
+                )
+            },
+        )
+        return if (usingElevenLabs) {
+            PreparedAudioInput.ElevenLabs(source = outputFile, tempFileToClean = outputFile)
+        } else {
+            repository.updateStatus(jobId, "Converted audio ready for Gemini...")
+            PreparedAudioInput.Gemini(file = outputFile, mimeType = "audio/wav", tempFileToClean = outputFile)
+        }
+    }
+
+    private suspend fun prepareNativeAudio(
+        app: Application,
+        jobId: Int,
+        uri: Uri,
+        inputMimeType: String,
+        usingElevenLabs: Boolean,
+    ): PreparedAudioInput = if (usingElevenLabs) {
+        repository.updateStatusAndProgress(
+            jobId,
+            "Format supported ($inputMimeType). Preparing for direct upload...",
+            1f,
+        )
+        PreparedAudioInput.ElevenLabs(source = uri, tempFileToClean = null)
+    } else {
+        repository.updateStatusAndProgress(
+            jobId,
+            "Format supported ($inputMimeType). Copying audio for Gemini...",
+            0.5f,
+        )
+        updateNotification("Copying audio...")
+        val tempFile = copyInputToTempFile(app, jobId, uri)
+        repository.updateStatusAndProgress(jobId, "Preparing for Gemini upload...", 1f)
+        PreparedAudioInput.Gemini(file = tempFile, mimeType = inputMimeType, tempFileToClean = tempFile)
+    }
+
+    private suspend fun copyInputToTempFile(app: Application, jobId: Int, uri: Uri): File {
+        val contentResolver = app.contentResolver
+        return contentResolver.openInputStream(uri)?.use { input ->
+            File.createTempFile("${DIRECT_FILE_PREFIX}$jobId", ".tmp", app.cacheDir).apply {
+                outputStream().use(input::copyTo)
+            }
+        } ?: error("Failed to read input audio file.")
+    }
+
+    private suspend fun runProviderTranscription(
+        jobId: Int,
+        preparedInput: PreparedAudioInput,
+        usingElevenLabs: Boolean,
+        geminiModel: String?,
+    ): TranscriptionData {
+        val transcriber = buildTranscriber(preparedInput, usingElevenLabs, geminiModel)
+        var resultData: TranscriptionData? = null
+        transcriber.transcribe().collect { result ->
+            when (result) {
+                is TranscriptionResult.Loading -> {
+                    val providerPrefix = if (usingElevenLabs) "ElevenLabs" else "Gemini"
+                    val providerMessage = "$providerPrefix: ${result.message}"
+                    repository.updateStatus(jobId, providerMessage)
+                    updateNotification(providerMessage)
+                }
+                is TranscriptionResult.Success -> resultData = result.data
+                is TranscriptionResult.Error -> throw result.exception
+            }
+        }
+        return checkNotNull(resultData) { "Transcription failed without error." }
+    }
+
+    private suspend fun buildTranscriber(
+        preparedInput: PreparedAudioInput,
+        usingElevenLabs: Boolean,
+        geminiModel: String?,
+    ): ProviderTranscriber = if (usingElevenLabs) {
+        val source = checkNotNull((preparedInput as? PreparedAudioInput.ElevenLabs)?.source) {
+            "Internal error: ElevenLabs source is missing."
+        }
+        val keyChars = requireNotNull(settings.getElevenLabsApiKey()) { "API key missing or corrupted" }
+        ElevenLabsTranscriber(source, keyChars, ::createRequestBodyFromUri)
+    } else {
+        val geminiInput = checkNotNull(preparedInput as? PreparedAudioInput.Gemini) {
+            "Internal error: Gemini audio data missing."
+        }
+        val modelName = requireNotNull(geminiModel) { "Gemini model not specified." }
+        val keyChars = requireNotNull(settings.getGeminiApiKey()) { "API key missing or corrupted" }
+        GeminiTranscriber(geminiInput.file, geminiInput.mimeType, keyChars, modelName)
+    }
+
+    private suspend fun persistCompletedTranscription(jobId: Int, displayName: String, data: TranscriptionData) {
+        val historyId = repository.insertHistory(
+            TranscriptionHistory(
+                text = data.text,
+                language = data.language.ifBlank { "Unknown" },
+                model = data.model,
+                displayName = displayName,
+            ),
+        )
+        repository.updateResult(
+            jobId,
+            data.text,
+            data.language.ifBlank { "Unknown" },
+            data.model,
+            historyId,
+            1f,
+            false,
+            "Completed",
+            null,
+        )
     }
 
     private fun createRequestBodyFromUri(uri: Uri): RequestBody {
@@ -318,163 +342,8 @@ class TranscriptionWorker(appContext: Context, workerParams: WorkerParameters) :
             }
             override fun writeTo(sink: BufferedSink) {
                 contentResolver.openInputStream(uri)?.use { sink.writeAll(it.source()) }
-                    ?: throw IllegalStateException("Could not open input stream for Uri: $uri")
+                    ?: error("Could not open input stream for Uri: $uri")
             }
         }
     }
-
-    private fun transcribeWithElevenLabsReturn(
-        source: Any,
-        apiKey: CharArray,
-    ): kotlinx.coroutines.flow.Flow<TranscriptionResult> = kotlinx.coroutines.flow.flow {
-        try {
-            emit(TranscriptionResult.Loading("Uploading and transcribing..."))
-            val api = RetrofitClient.api
-
-            val requestFileBody = when (source) {
-                is File -> source.asRequestBody("application/octet-stream".toMediaType())
-                is Uri -> createRequestBodyFromUri(source)
-                else -> throw IllegalArgumentException("Unsupported source type")
-            }
-
-            val filePart = MultipartBody.Part.createFormData("file", "audio_file", requestFileBody)
-            val modelIdPart = MultipartBody.Part.createFormData("model_id", ELEVEN_LABS_MODEL_ID)
-
-            val response = api.transcribe(String(apiKey), filePart, modelIdPart)
-
-            val detectedLanguage = response.languageCode ?: "Unknown"
-            val text = response.text
-
-            emit(TranscriptionResult.Loading("Success"))
-            emit(TranscriptionResult.Success(TranscriptionData(text, detectedLanguage, "ElevenLabs Scribe v2")))
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            if (e is HttpException) {
-                val code = e.code()
-                val error = if (shouldRetryHttp(code)) {
-                    TransientWorkException(friendlyHttpError(code, "ElevenLabs"), e)
-                } else {
-                    IllegalStateException(friendlyHttpError(code, "ElevenLabs"), e)
-                }
-                emit(TranscriptionResult.Error(error))
-            } else {
-                val error = if (e is IOException) {
-                    TransientWorkException("Network or API error: ${e.message}", e)
-                } else {
-                    IllegalStateException("Network or API error: ${e.message}", e)
-                }
-                emit(TranscriptionResult.Error(error))
-            }
-        } finally {
-            apiKey.fill('\u0000')
-        }
-    }
-
-    private fun transcribeWithGeminiReturn(
-        audioFile: File,
-        mimeType: String,
-        apiKey: CharArray,
-        modelName: String,
-    ): kotlinx.coroutines.flow.Flow<TranscriptionResult> = kotlinx.coroutines.flow.flow {
-        val client = Client.builder().apiKey(String(apiKey)).build()
-        var uploadedFile: GenAiFile? = null
-
-        try {
-            emit(TranscriptionResult.Loading("Uploading audio ($mimeType) via File API..."))
-            uploadedFile = withContext(Dispatchers.IO) {
-                val uploadConfig = UploadFileConfig.builder().mimeType(mimeType).build()
-                client.files.upload(audioFile.absolutePath, uploadConfig)
-            }
-            val currentUploadedFile = uploadedFile ?: throw IllegalStateException("File upload failed.")
-            val audioPart = Part.fromUri(
-                currentUploadedFile.uri().orElseThrow {
-                    IllegalStateException("Missing URI")
-                },
-                currentUploadedFile.mimeType().orElse(mimeType),
-            )
-
-            emit(TranscriptionResult.Loading("Transcribing audio..."))
-            val responseSchema = Schema.builder().type(TYPE_OBJECT)
-                .properties(
-                    mapOf(
-                        "language_code" to Schema.builder().type(TYPE_STRING).build(),
-                        "text" to Schema.builder().type(TYPE_STRING).build(),
-                    ),
-                )
-                .required(listOf("language_code", "text")).build()
-
-            val config = GenerateContentConfig.builder().responseMimeType(
-                "application/json",
-            ).responseSchema(responseSchema).build()
-            val content = Content.fromParts(
-                Part.fromText(
-                    "Transcribe the provided audio. Return only a compact JSON object with fields: language_code (BCP-47 like en-US) and text (full transcript). Do not include any extra commentary.",
-                ),
-                audioPart,
-            )
-
-            val response = withContext(Dispatchers.IO) { client.models.generateContent(modelName, content, config) }
-
-            val json = response.text() ?: "{}"
-            val obj = JSONObject(json)
-            val transcript = obj.optString("text").ifBlank { "No text found." }
-            val language = obj.optString("language_code", "und")
-            val resolvedModel = response.modelVersion().filter(String::isNotBlank).orElse(modelName)
-
-            emit(TranscriptionResult.Loading("Success"))
-            emit(TranscriptionResult.Success(TranscriptionData(transcript, language, resolvedModel)))
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            val httpCode = if (e is HttpException) e.code() else extractHttpStatusFromMessage(e)
-            val msg = if (httpCode !=
-                null
-            ) {
-                friendlyHttpError(httpCode, "Gemini")
-            } else {
-                "Gemini error: ${e.message ?: e::class.java.simpleName}"
-            }
-            val error = when {
-                httpCode != null && shouldRetryHttp(httpCode) -> TransientWorkException(msg, e)
-                e is IOException -> TransientWorkException(msg, e)
-                else -> IllegalStateException(msg, e)
-            }
-            emit(TranscriptionResult.Error(error))
-        } finally {
-            apiKey.fill('\u0000')
-            uploadedFile?.let { remoteFile ->
-                runCatching {
-                    withContext(Dispatchers.IO) {
-                        val remoteFileName = remoteFile.name().orElse(null)
-                        if (remoteFileName != null) {
-                            client.files.delete(remoteFileName, null)
-                        } else {
-                            android.util.Log.w(
-                                "TranscriptionWorker",
-                                "Could not delete remote Gemini file as its name was not available.",
-                            )
-                        }
-                    }
-                }.onFailure {
-                    if (it is CancellationException) throw it
-                    android.util.Log.w(
-                        "TranscriptionWorker",
-                        "Failed to delete remote Gemini file: ${remoteFile.name().orElse("[name not available]")}",
-                        it,
-                    )
-                }
-            }
-        }
-    }
-
-    private fun friendlyHttpError(code: Int, provider: String): String = when (code) {
-        401 -> "Unauthorized. Check your $provider API key."
-        429 -> "Rate limit exceeded. Please wait a moment and try again."
-        in 500..599 -> "Server error (HTTP $code). $provider's servers are experiencing issues."
-        else -> "HTTP $code: unexpected error from $provider."
-    }
-
-    private fun shouldRetryHttp(code: Int): Boolean = code == 429 || code in 500..599
-
-    private fun extractHttpStatusFromMessage(e: Exception): Int? =
-        HTTP_STATUS_REGEX.find(e.message ?: "")?.groupValues?.get(1)?.toIntOrNull()
 }

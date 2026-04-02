@@ -42,6 +42,7 @@ import com.andreacovelli.whispertranscriber.ui.components.ProviderSelector
 @Composable
 fun SettingsScreen(viewModel: MainViewModel, onNavigateBack: () -> Unit) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val actions = viewModel.settingsScreenActions
     val focusManager = LocalFocusManager.current
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -78,11 +79,11 @@ fun SettingsScreen(viewModel: MainViewModel, onNavigateBack: () -> Unit) {
                     Text("Transcription Provider", style = MaterialTheme.typography.titleMedium)
                     ProviderSelector(
                         selected = uiState.provider,
-                        onSelect = viewModel::setProvider,
+                        onSelect = actions.setProvider,
                         customModelName = uiState.transcriptionCustomGeminiModelName,
                         customModelValidation = uiState.transcriptionCustomModelValidation,
-                        onValidateCustomModel = { viewModel.validateCustomGeminiModel(it, isSummarizer = false) },
-                        onResetValidation = { viewModel.resetCustomModelValidation(isSummarizer = false) },
+                        onValidateCustomModel = actions.validateTranscriptionModel,
+                        onResetValidation = actions.resetTranscriptionModelValidation,
                     )
                 }
             }
@@ -95,11 +96,11 @@ fun SettingsScreen(viewModel: MainViewModel, onNavigateBack: () -> Unit) {
                     Text("Summarizer Model", style = MaterialTheme.typography.titleMedium)
                     ProviderSelector(
                         selected = uiState.summarizerProvider,
-                        onSelect = viewModel::setSummarizerProvider,
+                        onSelect = actions.setSummarizerProvider,
                         customModelName = uiState.summarizerCustomGeminiModelName,
                         customModelValidation = uiState.summarizerCustomModelValidation,
-                        onValidateCustomModel = { viewModel.validateCustomGeminiModel(it, isSummarizer = true) },
-                        onResetValidation = { viewModel.resetCustomModelValidation(isSummarizer = true) },
+                        onValidateCustomModel = actions.validateSummarizerModel,
+                        onResetValidation = actions.resetSummarizerModelValidation,
                         showElevenLabs = false,
                     )
                 }
@@ -123,7 +124,7 @@ fun SettingsScreen(viewModel: MainViewModel, onNavigateBack: () -> Unit) {
                         )
                         Switch(
                             checked = uiState.automaticSummarizationEnabled,
-                            onCheckedChange = { viewModel.setAutomaticSummarization(it) },
+                            onCheckedChange = actions.setAutomaticSummarization,
                         )
                     }
                 }
@@ -135,9 +136,9 @@ fun SettingsScreen(viewModel: MainViewModel, onNavigateBack: () -> Unit) {
                 apiKeyState = uiState.elevenLabsApiKeyState,
                 keyValidationState = uiState.elevenLabsKeyValidation,
                 onLoadSavedKey = viewModel::loadElevenLabsKeyForDisplay,
-                onSave = viewModel::setElevenLabsKey,
-                onForget = viewModel::forgetElevenLabsKey,
-                onResetValidation = viewModel::resetElevenLabsKeyValidation,
+                onSave = actions.saveElevenLabsKey,
+                onForget = actions.forgetElevenLabsKey,
+                onResetValidation = actions.resetElevenLabsKeyValidation,
                 forgetMessage = "ElevenLabs key forgotten",
                 snackbarHostState = snackbarHostState,
             )
@@ -148,9 +149,9 @@ fun SettingsScreen(viewModel: MainViewModel, onNavigateBack: () -> Unit) {
                 apiKeyState = uiState.geminiApiKeyState,
                 keyValidationState = uiState.geminiKeyValidation,
                 onLoadSavedKey = viewModel::loadGeminiKeyForDisplay,
-                onSave = viewModel::setGeminiKey,
-                onForget = viewModel::forgetGeminiKey,
-                onResetValidation = viewModel::resetGeminiKeyValidation,
+                onSave = actions.saveGeminiKey,
+                onForget = actions.forgetGeminiKey,
+                onResetValidation = actions.resetGeminiKeyValidation,
                 forgetMessage = "Gemini key forgotten",
                 snackbarHostState = snackbarHostState,
             )

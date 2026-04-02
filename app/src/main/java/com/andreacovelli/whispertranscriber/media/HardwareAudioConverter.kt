@@ -37,6 +37,41 @@ object HardwareAudioConverter {
 
     data class Result(val sampleRate: Int, val channelCount: Int, val durationUs: Long)
 
+    private data class DecoderState(
+        var sampleRate: Int,
+        var channelCount: Int,
+        var pcmEncoding: Int,
+        val forceMono: Boolean,
+        val targetSampleRate: Int,
+        var outputChannels: Int,
+        var writer: WavWriter? = null,
+        var resampler: PolyphaseResampler? = null,
+    )
+
+    private class ScratchBuffers {
+        var shortScratch = ShortArray(0)
+        var floatScratch = FloatArray(0)
+        var monoScratch = FloatArray(0)
+
+        fun ensureShortCapacity(minSize: Int) {
+            if (shortScratch.size < minSize) {
+                shortScratch = ShortArray(max(minSize, shortScratch.size.coerceAtLeast(1024) * 2))
+            }
+        }
+
+        fun ensureFloatCapacity(minSize: Int) {
+            if (floatScratch.size < minSize) {
+                floatScratch = FloatArray(max(minSize, floatScratch.size.coerceAtLeast(2048) * 2))
+            }
+        }
+
+        fun ensureMonoCapacity(minSize: Int) {
+            if (monoScratch.size < minSize) {
+                monoScratch = FloatArray(max(minSize, monoScratch.size.coerceAtLeast(2048) * 2))
+            }
+        }
+    }
+
     suspend fun convertToWav(
         context: Context,
         inputUri: Uri,
@@ -49,309 +84,48 @@ object HardwareAudioConverter {
 
         var extractor: MediaExtractor? = null
         var decoder: MediaCodec? = null
-        var writer: WavWriter? = null
+        var state: DecoderState? = null
         val storageManager = context.getSystemService(Context.STORAGE_SERVICE) as StorageManager
         var storageUuid: UUID? = null
 
         try {
-            extractor = MediaExtractor()
-            // Use a specific exception for clearer error handling.
-            val afd = context.contentResolver.openAssetFileDescriptor(inputUri, "r")
-                ?: throw FileNotFoundException("Unable to open input URI: $inputUri")
-            afd.use { afd ->
-                extractor.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+            val extraction = openExtractorAndFormat(context, inputUri)
+            extractor = extraction.first
+            val srcFormat = extraction.second
+            val durationUs = srcFormat.longValueOr(MediaFormat.KEY_DURATION, -1L)
+            storageUuid = reserveOutputStorage(
+                storageManager = storageManager,
+                outputFile = outputFile,
+                srcFormat = srcFormat,
+                forceMono = forceMono,
+                targetSampleRate = targetSampleRate,
+            )
+            if (durationUs > 0) {
+                onProgress?.invoke(0f)
             }
 
-            var audioTrackIndex = -1
-            var trackFormat: MediaFormat? = null
-            for (i in 0 until extractor.trackCount) {
-                val f = extractor.getTrackFormat(i)
-                val mime = f.getString(MediaFormat.KEY_MIME) ?: continue
-                if (mime.startsWith("audio/")) {
-                    audioTrackIndex = i
-                    trackFormat = f
-                    break
-                }
-            }
-            require(audioTrackIndex >= 0) { "No audio track found" }
-            extractor.selectTrack(audioTrackIndex)
-            val srcFormat = trackFormat!!
-            val srcMime = srcFormat.getString(MediaFormat.KEY_MIME)!!
-
-            val durationUs = if (srcFormat.containsKey(MediaFormat.KEY_DURATION)) {
-                srcFormat.getLong(MediaFormat.KEY_DURATION)
-            } else {
-                -1L
-            }
-
-            // --- Disk Space Check ---
-            var decChannels = if (srcFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
-                srcFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-            } else {
-                2
-            }
-            val outChannelsInit = if (forceMono) 1 else decChannels
-            val bytesPerSec = targetSampleRate * outChannelsInit * BYTES_PER_SAMPLE_16_BIT
-
-            val estimatedBytes = if (durationUs > 0) {
-                ((durationUs / MICROSECONDS_IN_SECOND) * bytesPerSec).toLong() + CONVERSION_SIZE_BUFFER_BYTES
-            } else {
-                DEFAULT_CONVERSION_SIZE_BYTES
-            }
-            val parentDir = outputFile.parentFile
-
-            if (parentDir != null) {
-                try {
-                    // Try to use StorageManager for smarter allocation (API 26+).
-                    storageUuid = storageManager.getUuidForPath(parentDir)
-                } catch (e: Exception) {
-                    android.util.Log.w(
-                        "HardwareAudioConverter",
-                        "Failed to get storage UUID for path $parentDir, falling back to usableSpace",
-                        e,
-                    )
-                }
-            }
-
-            if (storageUuid != null) {
-                val allocatableBytes = storageManager.getAllocatableBytes(storageUuid)
-
-                if (allocatableBytes < estimatedBytes) {
-                    throw IOException(
-                        "Insufficient disk space for conversion. Needed at least ${estimatedBytes / BYTES_IN_MEGABYTE} MiB, but only ${allocatableBytes / BYTES_IN_MEGABYTE} MiB is allocatable.",
-                    )
-                }
-
-                storageManager.allocateBytes(storageUuid, estimatedBytes)
-            } else {
-                val usableSpace = parentDir?.usableSpace ?: 0L
-                if (usableSpace < estimatedBytes) {
-                    throw IOException(
-                        "Insufficient disk space for conversion. Needed at least ${estimatedBytes / BYTES_IN_MEGABYTE} MiB, but only ${usableSpace / BYTES_IN_MEGABYTE} MiB is available.",
-                    )
-                }
-            }
-
-            if (durationUs > 0) onProgress?.invoke(0f)
-
-            decoder = MediaCodec.createDecoderByType(srcMime)
-            decoder.configure(srcFormat, null, null, 0)
+            decoder = MediaCodec.createDecoderByType(requireNotNull(srcFormat.getString(MediaFormat.KEY_MIME)))
+            requireNotNull(decoder).configure(srcFormat, null, null, 0)
             decoder.start()
 
-            var decSampleRate = if (srcFormat.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
-                srcFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-            } else {
-                44100
-            }
-            var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
+            state = createDecoderState(srcFormat, forceMono, targetSampleRate)
+            val scratchBuffers = ScratchBuffers()
+            decodeAudioStream(
+                extractor = requireNotNull(extractor),
+                decoder = requireNotNull(decoder),
+                outputFile = outputFile,
+                durationUs = durationUs,
+                state = requireNotNull(state),
+                scratchBuffers = scratchBuffers,
+                onProgress = onProgress,
+            )
 
-            var outChannelsToWrite = if (forceMono) 1 else decChannels
-
-            val needResample = { inRate: Int -> inRate != targetSampleRate }
-            var resampler: PolyphaseResampler? = null
-
-            var shortScratch = ShortArray(0)
-            var floatScratch = FloatArray(0)
-            var monoScratch = FloatArray(0)
-            fun ensureShortCapacity(minSize: Int) {
-                if (shortScratch.size < minSize) {
-                    shortScratch = ShortArray(max(minSize, shortScratch.size.coerceAtLeast(1024) * 2))
-                }
-            }
-            fun ensureFloatCapacity(minSize: Int) {
-                if (floatScratch.size < minSize) {
-                    floatScratch = FloatArray(max(minSize, floatScratch.size.coerceAtLeast(2048) * 2))
-                }
-            }
-            fun ensureMonoCapacity(minSize: Int) {
-                if (monoScratch.size < minSize) {
-                    monoScratch = FloatArray(max(minSize, monoScratch.size.coerceAtLeast(2048) * 2))
-                }
-            }
-
-            val inputTimeoutUs = 10000L
-            val outputTimeoutUs = 10000L
-            val info = MediaCodec.BufferInfo()
-            var inputEos = false
-            var outputEos = false
-
-            val hasDuration = durationUs > 0
-            var lastProgress = -1f
-
-            while (!outputEos && currentCoroutineContext().isActive) {
-                if (!inputEos) {
-                    val inIdx = decoder.dequeueInputBuffer(inputTimeoutUs)
-                    if (inIdx >= 0) {
-                        val ib = decoder.getInputBuffer(inIdx)!!
-                        ib.clear()
-                        val size = extractor.readSampleData(ib, 0)
-                        if (size < 0) {
-                            decoder.queueInputBuffer(inIdx, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                            inputEos = true
-                        } else {
-                            val pts = extractor.sampleTime
-                            decoder.queueInputBuffer(inIdx, 0, size, pts, 0)
-
-                            // Progress update based on queued input PTS
-                            if (hasDuration && pts >= 0) {
-                                val p = (pts.toDouble() / durationUs.toDouble()).coerceIn(0.0, 1.0).toFloat()
-                                if (p - lastProgress >= 0.01f || p == 1f) {
-                                    lastProgress = p
-                                    onProgress?.invoke(p)
-                                }
-                            }
-                            extractor.advance()
-                        }
-                    }
-                }
-
-                when (val outIdx = decoder.dequeueOutputBuffer(info, outputTimeoutUs)) {
-                    MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                        val fmt = decoder.outputFormat
-                        if (fmt.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
-                            decSampleRate = fmt.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-                        }
-                        if (fmt.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
-                            decChannels = fmt.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-                        }
-                        pcmEncoding = if (fmt.containsKey(MediaFormat.KEY_PCM_ENCODING)) {
-                            fmt.getInteger(MediaFormat.KEY_PCM_ENCODING)
-                        } else {
-                            AudioFormat.ENCODING_PCM_16BIT
-                        }
-                        outChannelsToWrite = if (forceMono) 1 else decChannels
-
-                        if (needResample(decSampleRate)) {
-                            resampler = PolyphaseResampler(
-                                inRate = decSampleRate,
-                                outRate = targetSampleRate,
-                                channels = outChannelsToWrite,
-                            )
-                        }
-                    }
-                    MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
-                    else -> {
-                        if (outIdx >= 0) {
-                            val ob = decoder.getOutputBuffer(outIdx)!!
-                            if (info.size > 0) {
-                                ob.position(info.offset)
-                                ob.limit(info.offset + info.size)
-                                ob.order(ByteOrder.LITTLE_ENDIAN)
-
-                                if (pcmEncoding == AudioFormat.ENCODING_PCM_FLOAT) {
-                                    val floatsCount = info.size / 4
-                                    val frames = floatsCount / decChannels
-                                    ensureFloatCapacity(floatsCount)
-                                    ob.asFloatBuffer().get(floatScratch, 0, floatsCount)
-
-                                    val (interleaved, interleavedSamples, framesAfterMix) =
-                                        if (outChannelsToWrite == decChannels) {
-                                            Triple(floatScratch, floatsCount, frames)
-                                        } else {
-                                            ensureMonoCapacity(frames)
-                                            val outCount = downmixToMonoInterleavedInto(
-                                                src = floatScratch,
-                                                frames = frames,
-                                                srcChannels = decChannels,
-                                                dst = monoScratch,
-                                            )
-                                            Triple(monoScratch, outCount, frames)
-                                        }
-
-                                    // Resample or write directly (Optimized: Handle Pair<Count, Buffer>)
-                                    val resPair = resampler?.process(interleaved, framesAfterMix)
-                                    if (resPair != null) {
-                                        val (count, buffer) = resPair
-                                        if (writer == null) {
-                                            writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
-                                        }
-                                        writer.writeFloatsInterleaved(buffer, outChannelsToWrite, count)
-                                    } else if (resampler == null) {
-                                        if (writer == null) {
-                                            writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
-                                        }
-                                        writer.writeFloatsInterleaved(
-                                            interleaved,
-                                            outChannelsToWrite,
-                                            interleavedSamples,
-                                        )
-                                    }
-                                } else {
-                                    // PCM16 -> float path
-                                    val shortsCount = info.size / 2
-                                    ensureShortCapacity(shortsCount)
-                                    ob.asShortBuffer().get(shortScratch, 0, shortsCount)
-
-                                    val frames = shortsCount / decChannels
-                                    val floatsNeeded = frames * decChannels
-                                    ensureFloatCapacity(floatsNeeded)
-
-                                    // Convert to float [-1,1]
-                                    val inv = 1.0f / 32768.0f
-                                    var si = 0
-                                    var fi = 0
-                                    while (si < shortsCount) {
-                                        // Optimized: Removed redundant coerceIn as shorts are inherently in range
-                                        floatScratch[fi++] = (shortScratch[si++].toInt() * inv)
-                                    }
-
-                                    // (Downmix remains the same)
-                                    val (interleaved, interleavedSamples, framesAfterMix) =
-                                        if (outChannelsToWrite == decChannels) {
-                                            Triple(floatScratch, floatsNeeded, frames)
-                                        } else {
-                                            ensureMonoCapacity(frames)
-                                            val outCount = downmixToMonoInterleavedInto(
-                                                src = floatScratch,
-                                                frames = frames,
-                                                srcChannels = decChannels,
-                                                dst = monoScratch,
-                                            )
-                                            Triple(monoScratch, outCount, frames)
-                                        }
-
-                                    // Resample or write directly (Optimized: Handle Pair<Count, Buffer>)
-                                    val resPair = resampler?.process(interleaved, framesAfterMix)
-                                    if (resPair != null) {
-                                        val (count, buffer) = resPair
-                                        if (writer == null) {
-                                            writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
-                                        }
-                                        writer.writeFloatsInterleaved(buffer, outChannelsToWrite, count)
-                                    } else if (resampler == null) {
-                                        if (writer == null) {
-                                            writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
-                                        }
-                                        writer.writeFloatsInterleaved(
-                                            interleaved,
-                                            outChannelsToWrite,
-                                            interleavedSamples,
-                                        )
-                                    }
-                                }
-                            }
-                            val eos = (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
-                            decoder.releaseOutputBuffer(outIdx, false)
-                            if (eos) outputEos = true
-                        }
-                    }
-                }
-            }
-
-            // Flush remaining samples (Optimized: Handle Pair<Count, Buffer>)
-            resampler?.finish()?.let { (flushCount, flushBuffer) ->
-                if (flushCount > 0) {
-                    if (writer == null) {
-                        writer = WavWriter(outputFile, targetSampleRate, outChannelsToWrite, 16)
-                    }
-                    writer.writeFloatsInterleaved(flushBuffer, outChannelsToWrite, flushCount)
-                }
-            }
-            if (hasDuration) onProgress?.invoke(1f)
+            flushResampler(requireNotNull(state), outputFile)
+            if (durationUs > 0) onProgress?.invoke(1f)
 
             Result(
                 sampleRate = targetSampleRate,
-                channelCount = outChannelsToWrite,
+                channelCount = requireNotNull(state).outputChannels,
                 durationUs = durationUs,
             )
         } finally {
@@ -366,7 +140,7 @@ object HardwareAudioConverter {
                 "Decoder stop" to { decoder?.stop() },
                 "Decoder release" to { decoder?.release() },
                 "Extractor release" to { extractor?.release() },
-                "Writer close" to { writer?.close() },
+                "Writer close" to { state?.writer?.close() },
             ).forEach { (name, action) ->
                 runCatching(action).onFailure {
                     android.util.Log.w("HardwareAudioConverter", "$name failed", it)
@@ -374,6 +148,348 @@ object HardwareAudioConverter {
             }
         }
     }
+
+    private fun openExtractorAndFormat(context: Context, inputUri: Uri): Pair<MediaExtractor, MediaFormat> {
+        val extractor = MediaExtractor()
+        val afd = context.contentResolver.openAssetFileDescriptor(inputUri, "r")
+            ?: throw FileNotFoundException("Unable to open input URI: $inputUri")
+        afd.use { descriptor ->
+            extractor.setDataSource(descriptor.fileDescriptor, descriptor.startOffset, descriptor.length)
+        }
+        val audioTrack = (0 until extractor.trackCount)
+            .map { index -> index to extractor.getTrackFormat(index) }
+            .firstOrNull { (_, format) -> format.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true }
+            ?: error("No audio track found")
+        extractor.selectTrack(audioTrack.first)
+        return extractor to audioTrack.second
+    }
+
+    private fun reserveOutputStorage(
+        storageManager: StorageManager,
+        outputFile: File,
+        srcFormat: MediaFormat,
+        forceMono: Boolean,
+        targetSampleRate: Int,
+    ): UUID? {
+        val outputChannels = if (forceMono) 1 else srcFormat.intValueOr(MediaFormat.KEY_CHANNEL_COUNT, 2)
+        val bytesPerSecond = targetSampleRate * outputChannels * BYTES_PER_SAMPLE_16_BIT
+        val durationUs = srcFormat.longValueOr(MediaFormat.KEY_DURATION, -1L)
+        val estimatedBytes = if (durationUs > 0) {
+            ((durationUs / MICROSECONDS_IN_SECOND) * bytesPerSecond).toLong() + CONVERSION_SIZE_BUFFER_BYTES
+        } else {
+            DEFAULT_CONVERSION_SIZE_BYTES
+        }
+        val parentDir = outputFile.parentFile
+        val storageUuid = resolveStorageUuid(storageManager, parentDir)
+        if (storageUuid != null) {
+            ensureAllocatableSpace(storageManager, storageUuid, estimatedBytes)
+            return storageUuid
+        }
+        ensureUsableSpace(parentDir, estimatedBytes)
+        return null
+    }
+
+    private fun resolveStorageUuid(storageManager: StorageManager, parentDir: File?): UUID? {
+        if (parentDir == null) return null
+        return try {
+            storageManager.getUuidForPath(parentDir)
+        } catch (e: IOException) {
+            android.util.Log.w(
+                "HardwareAudioConverter",
+                "Failed to get storage UUID for path $parentDir, falling back to usableSpace",
+                e,
+            )
+            null
+        } catch (e: IllegalArgumentException) {
+            android.util.Log.w(
+                "HardwareAudioConverter",
+                "Failed to get storage UUID for path $parentDir, falling back to usableSpace",
+                e,
+            )
+            null
+        }
+    }
+
+    private fun ensureAllocatableSpace(storageManager: StorageManager, storageUuid: UUID, estimatedBytes: Long) {
+        val allocatableBytes = storageManager.getAllocatableBytes(storageUuid)
+        if (allocatableBytes < estimatedBytes) {
+            throw IOException(
+                "Insufficient disk space for conversion. Needed at least ${estimatedBytes / BYTES_IN_MEGABYTE} MiB, but only ${allocatableBytes / BYTES_IN_MEGABYTE} MiB is allocatable.",
+            )
+        }
+        storageManager.allocateBytes(storageUuid, estimatedBytes)
+    }
+
+    private fun ensureUsableSpace(parentDir: File?, estimatedBytes: Long) {
+        val usableSpace = parentDir?.usableSpace ?: 0L
+        if (usableSpace < estimatedBytes) {
+            throw IOException(
+                "Insufficient disk space for conversion. Needed at least ${estimatedBytes / BYTES_IN_MEGABYTE} MiB, but only ${usableSpace / BYTES_IN_MEGABYTE} MiB is available.",
+            )
+        }
+    }
+
+    private fun createDecoderState(srcFormat: MediaFormat, forceMono: Boolean, targetSampleRate: Int): DecoderState {
+        val sampleRate = srcFormat.intValueOr(MediaFormat.KEY_SAMPLE_RATE, 44100)
+        val channelCount = srcFormat.intValueOr(MediaFormat.KEY_CHANNEL_COUNT, 2)
+        val outputChannels = if (forceMono) 1 else channelCount
+        return DecoderState(
+            sampleRate = sampleRate,
+            channelCount = channelCount,
+            pcmEncoding = AudioFormat.ENCODING_PCM_16BIT,
+            forceMono = forceMono,
+            targetSampleRate = targetSampleRate,
+            outputChannels = outputChannels,
+            resampler = if (sampleRate != targetSampleRate) {
+                PolyphaseResampler(sampleRate, targetSampleRate, outputChannels)
+            } else {
+                null
+            },
+        )
+    }
+
+    private suspend fun decodeAudioStream(
+        extractor: MediaExtractor,
+        decoder: MediaCodec,
+        outputFile: File,
+        durationUs: Long,
+        state: DecoderState,
+        scratchBuffers: ScratchBuffers,
+        onProgress: (suspend (Float) -> Unit)?,
+    ) {
+        val inputTimeoutUs = 10000L
+        val outputTimeoutUs = 10000L
+        val info = MediaCodec.BufferInfo()
+        var inputEos = false
+        var outputEos = false
+        var lastProgress = -1f
+
+        while (!outputEos && currentCoroutineContext().isActive) {
+            if (!inputEos) {
+                inputEos = queueNextInputBuffer(
+                    decoder = decoder,
+                    extractor = extractor,
+                    inputTimeoutUs = inputTimeoutUs,
+                    durationUs = durationUs,
+                    lastProgress = lastProgress,
+                    onProgress = onProgress,
+                ).also { result ->
+                    lastProgress = result.lastProgress
+                }.inputEos
+            }
+            outputEos = handleDecoderOutput(
+                decoder = decoder,
+                info = info,
+                outputTimeoutUs = outputTimeoutUs,
+                outputFile = outputFile,
+                state = state,
+                scratchBuffers = scratchBuffers,
+            )
+        }
+    }
+
+    private data class InputFeedResult(val inputEos: Boolean, val lastProgress: Float)
+
+    private suspend fun queueNextInputBuffer(
+        decoder: MediaCodec,
+        extractor: MediaExtractor,
+        inputTimeoutUs: Long,
+        durationUs: Long,
+        lastProgress: Float,
+        onProgress: (suspend (Float) -> Unit)?,
+    ): InputFeedResult {
+        val inputIndex = decoder.dequeueInputBuffer(inputTimeoutUs)
+        if (inputIndex < 0) return InputFeedResult(inputEos = false, lastProgress = lastProgress)
+
+        val inputBuffer = requireNotNull(decoder.getInputBuffer(inputIndex))
+        inputBuffer.clear()
+        val size = extractor.readSampleData(inputBuffer, 0)
+        if (size < 0) {
+            decoder.queueInputBuffer(inputIndex, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+            return InputFeedResult(inputEos = true, lastProgress = lastProgress)
+        }
+
+        val presentationTimeUs = extractor.sampleTime
+        decoder.queueInputBuffer(inputIndex, 0, size, presentationTimeUs, 0)
+        val updatedProgress = updateProgress(durationUs, presentationTimeUs, lastProgress, onProgress)
+        extractor.advance()
+        return InputFeedResult(inputEos = false, lastProgress = updatedProgress)
+    }
+
+    private suspend fun updateProgress(
+        durationUs: Long,
+        presentationTimeUs: Long,
+        lastProgress: Float,
+        onProgress: (suspend (Float) -> Unit)?,
+    ): Float {
+        if (durationUs <= 0 || presentationTimeUs < 0) return lastProgress
+        val progress = (presentationTimeUs.toDouble() / durationUs.toDouble()).coerceIn(0.0, 1.0).toFloat()
+        if (progress - lastProgress >= 0.01f || progress == 1f) {
+            onProgress?.invoke(progress)
+            return progress
+        }
+        return lastProgress
+    }
+
+    private fun handleDecoderOutput(
+        decoder: MediaCodec,
+        info: MediaCodec.BufferInfo,
+        outputTimeoutUs: Long,
+        outputFile: File,
+        state: DecoderState,
+        scratchBuffers: ScratchBuffers,
+    ): Boolean = when (val outputIndex = decoder.dequeueOutputBuffer(info, outputTimeoutUs)) {
+        MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+            updateDecoderState(decoder.outputFormat, state)
+            false
+        }
+        MediaCodec.INFO_TRY_AGAIN_LATER -> false
+        else -> {
+            if (outputIndex >= 0) {
+                processOutputBuffer(decoder, outputIndex, info, outputFile, state, scratchBuffers)
+            }
+            outputIndex >= 0 && (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
+        }
+    }
+
+    private fun updateDecoderState(outputFormat: MediaFormat, state: DecoderState) {
+        state.sampleRate = outputFormat.intValueOr(MediaFormat.KEY_SAMPLE_RATE, state.sampleRate)
+        state.channelCount = outputFormat.intValueOr(MediaFormat.KEY_CHANNEL_COUNT, state.channelCount)
+        state.pcmEncoding = outputFormat.intValueOr(MediaFormat.KEY_PCM_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
+        state.outputChannels = if (state.forceMono) 1 else state.channelCount
+        state.resampler = if (state.sampleRate != state.targetSampleRate) {
+            PolyphaseResampler(state.sampleRate, state.targetSampleRate, state.outputChannels)
+        } else {
+            null
+        }
+    }
+
+    private fun processOutputBuffer(
+        decoder: MediaCodec,
+        outputIndex: Int,
+        info: MediaCodec.BufferInfo,
+        outputFile: File,
+        state: DecoderState,
+        scratchBuffers: ScratchBuffers,
+    ) {
+        val outputBuffer = requireNotNull(decoder.getOutputBuffer(outputIndex))
+        if (info.size > 0) {
+            outputBuffer.position(info.offset)
+            outputBuffer.limit(info.offset + info.size)
+            outputBuffer.order(ByteOrder.LITTLE_ENDIAN)
+            if (state.pcmEncoding == AudioFormat.ENCODING_PCM_FLOAT) {
+                processFloatOutput(outputBuffer, info, outputFile, state, scratchBuffers)
+            } else {
+                processPcm16Output(outputBuffer, info, outputFile, state, scratchBuffers)
+            }
+        }
+        decoder.releaseOutputBuffer(outputIndex, false)
+    }
+
+    private fun processFloatOutput(
+        outputBuffer: ByteBuffer,
+        info: MediaCodec.BufferInfo,
+        outputFile: File,
+        state: DecoderState,
+        scratchBuffers: ScratchBuffers,
+    ) {
+        val floatsCount = info.size / 4
+        val frames = floatsCount / state.channelCount
+        scratchBuffers.ensureFloatCapacity(floatsCount)
+        outputBuffer.asFloatBuffer().get(scratchBuffers.floatScratch, 0, floatsCount)
+        writeDecodedFrames(
+            interleaved = if (state.outputChannels == state.channelCount) {
+                scratchBuffers.floatScratch
+            } else {
+                scratchBuffers.ensureMonoCapacity(frames)
+                downmixToMonoInterleavedInto(
+                    src = scratchBuffers.floatScratch,
+                    frames = frames,
+                    srcChannels = state.channelCount,
+                    dst = scratchBuffers.monoScratch,
+                )
+                scratchBuffers.monoScratch
+            },
+            interleavedSamples = if (state.outputChannels == state.channelCount) floatsCount else frames,
+            framesAfterMix = frames,
+            outputFile = outputFile,
+            state = state,
+        )
+    }
+
+    private fun processPcm16Output(
+        outputBuffer: ByteBuffer,
+        info: MediaCodec.BufferInfo,
+        outputFile: File,
+        state: DecoderState,
+        scratchBuffers: ScratchBuffers,
+    ) {
+        val shortsCount = info.size / 2
+        val frames = shortsCount / state.channelCount
+        scratchBuffers.ensureShortCapacity(shortsCount)
+        scratchBuffers.ensureFloatCapacity(frames * state.channelCount)
+        outputBuffer.asShortBuffer().get(scratchBuffers.shortScratch, 0, shortsCount)
+        convertShortsToFloats(scratchBuffers.shortScratch, shortsCount, scratchBuffers.floatScratch)
+        val interleaved = if (state.outputChannels == state.channelCount) {
+            scratchBuffers.floatScratch
+        } else {
+            scratchBuffers.ensureMonoCapacity(frames)
+            downmixToMonoInterleavedInto(
+                src = scratchBuffers.floatScratch,
+                frames = frames,
+                srcChannels = state.channelCount,
+                dst = scratchBuffers.monoScratch,
+            )
+            scratchBuffers.monoScratch
+        }
+        val interleavedSamples = if (state.outputChannels == state.channelCount) frames * state.channelCount else frames
+        writeDecodedFrames(interleaved, interleavedSamples, frames, outputFile, state)
+    }
+
+    private fun convertShortsToFloats(shorts: ShortArray, count: Int, destination: FloatArray) {
+        val multiplier = 1.0f / 32768.0f
+        var sourceIndex = 0
+        while (sourceIndex < count) {
+            destination[sourceIndex] = shorts[sourceIndex].toInt() * multiplier
+            sourceIndex++
+        }
+    }
+
+    private fun writeDecodedFrames(
+        interleaved: FloatArray,
+        interleavedSamples: Int,
+        framesAfterMix: Int,
+        outputFile: File,
+        state: DecoderState,
+    ) {
+        val resampled = state.resampler?.process(interleaved, framesAfterMix)
+        if (resampled != null) {
+            writeFloats(outputFile, state, resampled.second, resampled.first)
+        } else if (state.resampler == null) {
+            writeFloats(outputFile, state, interleaved, interleavedSamples)
+        }
+    }
+
+    private fun flushResampler(state: DecoderState, outputFile: File) {
+        state.resampler?.finish()?.let { (flushCount, flushBuffer) ->
+            if (flushCount > 0) {
+                writeFloats(outputFile, state, flushBuffer, flushCount)
+            }
+        }
+    }
+
+    private fun writeFloats(outputFile: File, state: DecoderState, buffer: FloatArray, count: Int) {
+        if (state.writer == null) {
+            state.writer = WavWriter(outputFile, state.targetSampleRate, state.outputChannels, 16)
+        }
+        state.writer?.writeFloatsInterleaved(buffer, state.outputChannels, count)
+    }
+
+    private fun MediaFormat.intValueOr(key: String, fallback: Int): Int =
+        if (containsKey(key)) getInteger(key) else fallback
+
+    private fun MediaFormat.longValueOr(key: String, fallback: Long): Long =
+        if (containsKey(key)) getLong(key) else fallback
 
     // Downmix to mono with 0.9f headroom into a provided buffer
     // src: interleaved float with srcChannels, frames total
@@ -459,40 +575,38 @@ object HardwareAudioConverter {
             while (true) {
                 val base = kotlin.math.floor(posRel).toInt()
                 val leftIndex = base - center
+                val shouldAdvance = leftIndex < 0
+                val shouldStop = leftIndex + ntaps > workFrames
 
-                // Handle boundary conditions robustly
-                if (leftIndex < 0) {
+                if (shouldStop) break
+                if (shouldAdvance) {
                     posRel += step
                     srcPosGlobal += step
-                    continue
-                }
+                } else {
+                    val frac = posRel - base
+                    var phase = (frac * nphases).roundToInt()
+                    if (phase == nphases) phase = 0
+                    val k = kernel[phase]
 
-                if (leftIndex + ntaps > workFrames) break
-
-                val frac = posRel - base
-                var phase = (frac * nphases).roundToInt()
-                if (phase == nphases) phase = 0
-                val k = kernel[phase]
-
-                // Ensure capacity before writing output in the loop
-                if (outIndex + channels > outBuffer.size) {
-                    ensureOutCapacity(outBuffer.size * 2)
-                }
-
-                for (ch in 0 until channels) {
-                    var acc = 0.0f
-                    var j = 0
-                    var idx = (leftIndex * channels) + ch
-                    while (j < ntaps) {
-                        acc += work[idx] * k[j]
-                        idx += channels
-                        j++
+                    if (outIndex + channels > outBuffer.size) {
+                        ensureOutCapacity(outBuffer.size * 2)
                     }
-                    outBuffer[outIndex++] = acc // Write directly to buffer
-                }
 
-                posRel += step
-                srcPosGlobal += step
+                    for (ch in 0 until channels) {
+                        var acc = 0.0f
+                        var j = 0
+                        var idx = (leftIndex * channels) + ch
+                        while (j < ntaps) {
+                            acc += work[idx] * k[j]
+                            idx += channels
+                            j++
+                        }
+                        outBuffer[outIndex++] = acc
+                    }
+
+                    posRel += step
+                    srcPosGlobal += step
+                }
             }
 
             // Update tail buffer
@@ -533,43 +647,38 @@ object HardwareAudioConverter {
             while (true) {
                 val base = kotlin.math.floor(posRel).toInt()
                 val leftIndex = base - center
+                val shouldAdvance = leftIndex < 0
+                val shouldStop = leftIndex >= ntaps || leftIndex + ntaps > workFrames
 
-                if (leftIndex < 0) {
+                if (shouldStop) break
+                if (shouldAdvance) {
                     posRel += step
                     srcPosGlobal += step
-                    continue
-                }
+                } else {
+                    val frac = posRel - base
+                    var phase = (frac * nphases).roundToInt()
+                    if (phase == nphases) phase = 0
+                    val k = kernel[phase]
 
-                // Stop when the filter center passes the end of the actual data (end of tail buffer).
-                if (leftIndex >= ntaps) break
-
-                // Safety break if we run out of the zero-padded buffer
-                if (leftIndex + ntaps > workFrames) break
-
-                val frac = posRel - base
-                var phase = (frac * nphases).roundToInt()
-                if (phase == nphases) phase = 0
-                val k = kernel[phase]
-
-                // Ensure capacity in the loop
-                if (outIndex + channels > outBuffer.size) {
-                    ensureOutCapacity(outBuffer.size * 2)
-                }
-
-                for (ch in 0 until channels) {
-                    var acc = 0.0f
-                    var j = 0
-                    var idx = (leftIndex * channels) + ch
-                    while (j < ntaps) {
-                        acc += work[idx] * k[j]
-                        idx += channels
-                        j++
+                    if (outIndex + channels > outBuffer.size) {
+                        ensureOutCapacity(outBuffer.size * 2)
                     }
-                    outBuffer[outIndex++] = acc
-                }
 
-                posRel += step
-                srcPosGlobal += step
+                    for (ch in 0 until channels) {
+                        var acc = 0.0f
+                        var j = 0
+                        var idx = (leftIndex * channels) + ch
+                        while (j < ntaps) {
+                            acc += work[idx] * k[j]
+                            idx += channels
+                            j++
+                        }
+                        outBuffer[outIndex++] = acc
+                    }
+
+                    posRel += step
+                    srcPosGlobal += step
+                }
             }
 
             return Pair(outIndex, outBuffer)

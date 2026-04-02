@@ -21,6 +21,12 @@ class TranscriptionRepository(context: Context) {
         jobDao.update(job)
     }
 
+    suspend fun insertHistory(historyItem: TranscriptionHistory): Int = historyDao.insert(historyItem).toInt()
+
+    suspend fun updateHistorySummary(historyId: Int, summary: String) {
+        historyDao.updateSummary(historyId, summary)
+    }
+
     suspend fun updateRunning(id: Int, isRunning: Boolean, status: String) {
         jobDao.updateRunning(id, isRunning, status)
     }

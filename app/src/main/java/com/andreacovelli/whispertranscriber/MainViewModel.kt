@@ -3,40 +3,20 @@ package com.andreacovelli.whispertranscriber
 
 import android.app.Application
 import android.net.Uri
-import android.provider.OpenableColumns
-import android.webkit.MimeTypeMap
 import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.work.BackoffPolicy
-import androidx.work.Constraints
-import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
-import androidx.work.workDataOf
-import com.andreacovelli.whispertranscriber.data.AppDatabase
-import com.andreacovelli.whispertranscriber.data.TranscriptionHistoryDao
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
-import com.google.genai.Client
-import com.google.genai.types.Content
-import com.google.genai.types.GenerateContentConfig
-import com.google.genai.types.Part
-import java.io.File
-import java.io.IOException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.Request
-import org.json.JSONObject
 
 sealed class CustomModelValidation {
     object Idle : CustomModelValidation()
@@ -86,6 +66,32 @@ data class TranscriptionJobState(
     val isSummarizing: Boolean = false,
 )
 
+data class MainScreenActions(
+    val clearCompletedJobs: () -> Unit,
+    val summarizeJob: (Int) -> Unit,
+    val clearSummary: (Int) -> Unit,
+    val clearTranscript: (Int) -> Unit,
+    val retryJob: (Int) -> Unit,
+    val cancelJob: (Int) -> Unit,
+    val deleteJob: (Int) -> Unit,
+)
+
+data class SettingsScreenActions(
+    val setProvider: (TranscriptionProvider) -> Unit,
+    val setSummarizerProvider: (TranscriptionProvider) -> Unit,
+    val setAutomaticSummarization: (Boolean) -> Unit,
+    val saveElevenLabsKey: (String) -> Unit,
+    val saveGeminiKey: (String) -> Unit,
+    val validateTranscriptionModel: (String) -> Unit,
+    val validateSummarizerModel: (String) -> Unit,
+    val resetTranscriptionModelValidation: () -> Unit,
+    val resetSummarizerModelValidation: () -> Unit,
+    val resetElevenLabsKeyValidation: () -> Unit,
+    val resetGeminiKeyValidation: () -> Unit,
+    val forgetElevenLabsKey: () -> Unit,
+    val forgetGeminiKey: () -> Unit,
+)
+
 fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     id = id,
     uri = uri.toUri(),
@@ -106,13 +112,11 @@ fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     isSummarizing = isSummarizing,
 )
 
+private val TranscriptionJob.hasSummaryBlockingState: Boolean
+    get() = isRunning || isSummarizing || error != null || summaryError != null
+
 private val TranscriptionJob.isReadyForAutoSummary: Boolean
-    get() = !isRunning &&
-        !isSummarizing &&
-        transcript.isNotBlank() &&
-        summary.isBlank() &&
-        error == null &&
-        summaryError == null
+    get() = !hasSummaryBlockingState && transcript.isNotBlank() && summary.isBlank()
 
 data class TranscriptionData(val text: String, val language: String, val model: String)
 
@@ -123,22 +127,7 @@ sealed interface TranscriptionResult {
 }
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
-
     companion object {
-        private const val TRANSCRIPTION_QUEUE = "TranscriptionQueue"
-        private const val GEMINI_MODELS_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
-        private const val GEMINI_API_KEY_HEADER = "x-goog-api-key"
-
-        private const val ERR_ENTER_MODEL_NAME = "Enter a model name"
-        private const val ERR_ENTER_GEMINI_KEY = "Enter your Gemini API key first"
-        private const val ERR_MODEL_NOT_FOUND = "Model \"%s\" not found"
-        private const val ERR_HTTP_VERIFY = "HTTP %d: could not verify model"
-
-        private const val CONVERTED_FILE_PREFIX = "converted_"
-        private const val DIRECT_FILE_PREFIX = "direct_"
-        private const val STAGED_FILE_PREFIX = "staged_"
-        private const val STAGED_AUDIO_DIR = "queued_audio"
-
         private val staleSummariesRecovered = AtomicBoolean(false)
     }
 
@@ -146,10 +135,107 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val uiState = _uiState.asStateFlow()
 
     private val settings = ApiKeyManager(application)
-    private val historyDao: TranscriptionHistoryDao
     private val repository = TranscriptionRepository(application)
-
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val queueService = TranscriptionQueueService(
+        application = application,
+        repository = repository,
+        workManager = WorkManager.getInstance(application),
+        ioDispatcher = ioDispatcher,
+    )
+    private val validationService = GeminiValidationService(
+        settings = settings,
+        okHttpClient = RetrofitClient.okHttpClient,
+        ioDispatcher = ioDispatcher,
+    )
+    private val summarizationService = SummarizationService(
+        settings = settings,
+        repository = repository,
+        ioDispatcher = ioDispatcher,
+    )
+
+    val mainScreenActions = MainScreenActions(
+        clearCompletedJobs = {
+            viewModelScope.launch {
+                queueService.clearCompletedJobs()
+            }
+        },
+        summarizeJob = { jobId -> runSummarization(jobId, allowResummarize = true) },
+        clearSummary = { jobId ->
+            viewModelScope.launch {
+                repository.clearJobSummary(jobId)
+            }
+        },
+        clearTranscript = { jobId ->
+            viewModelScope.launch {
+                repository.clearJobTranscription(jobId)
+            }
+        },
+        retryJob = { jobId ->
+            viewModelScope.launch {
+                queueService.retryJob(jobId)
+            }
+        },
+        cancelJob = { jobId ->
+            viewModelScope.launch {
+                queueService.cancelJob(jobId)
+            }
+        },
+        deleteJob = { jobId ->
+            viewModelScope.launch {
+                queueService.deleteJob(jobId)
+            }
+        },
+    )
+
+    val settingsScreenActions = SettingsScreenActions(
+        setProvider = { provider ->
+            _uiState.update { it.copy(provider = provider) }
+            viewModelScope.launch {
+                settings.saveProvider(provider)
+            }
+        },
+        setSummarizerProvider = { provider ->
+            _uiState.update { it.copy(summarizerProvider = provider) }
+            viewModelScope.launch {
+                settings.saveSummarizerProvider(provider)
+            }
+        },
+        setAutomaticSummarization = { enabled ->
+            _uiState.update { it.copy(automaticSummarizationEnabled = enabled) }
+            viewModelScope.launch {
+                settings.saveAutomaticSummarization(enabled)
+            }
+        },
+        saveElevenLabsKey = ::setElevenLabsKey,
+        saveGeminiKey = ::setGeminiKey,
+        validateTranscriptionModel = ::validateTranscriptionGeminiModel,
+        validateSummarizerModel = ::validateSummarizerGeminiModel,
+        resetTranscriptionModelValidation = {
+            _uiState.update { it.copy(transcriptionCustomModelValidation = CustomModelValidation.Idle) }
+        },
+        resetSummarizerModelValidation = {
+            _uiState.update { it.copy(summarizerCustomModelValidation = CustomModelValidation.Idle) }
+        },
+        resetElevenLabsKeyValidation = {
+            _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Idle) }
+        },
+        resetGeminiKeyValidation = {
+            _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Idle) }
+        },
+        forgetElevenLabsKey = {
+            viewModelScope.launch {
+                settings.forgetElevenLabsApiKey()
+                _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Idle) }
+            }
+        },
+        forgetGeminiKey = {
+            viewModelScope.launch {
+                settings.forgetGeminiApiKey()
+                _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Idle) }
+            }
+        },
+    )
 
     init {
         if (staleSummariesRecovered.compareAndSet(false, true)) {
@@ -213,74 +299,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         viewModelScope.launch(ioDispatcher) {
-            cleanupOldTempWavs(maxAgeMs = TimeUnit.DAYS.toMillis(3))
-        }
-
-        val database = AppDatabase.getDatabase(application)
-        historyDao = database.transcriptionHistoryDao()
-    }
-
-    private fun enqueueWorker(jobId: Int) {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
-        val workRequest = OneTimeWorkRequestBuilder<TranscriptionWorker>()
-            .setInputData(workDataOf("jobId" to jobId))
-            .setConstraints(constraints)
-            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
-            .addTag(jobTag(jobId))
-            .build()
-        WorkManager.getInstance(getApplication())
-            .beginUniqueWork(
-                TRANSCRIPTION_QUEUE,
-                ExistingWorkPolicy.APPEND_OR_REPLACE,
-                workRequest,
-            )
-            .enqueue()
-    }
-
-    private fun jobTag(jobId: Int): String = "TranscriptionJob_$jobId"
-
-    private fun stagedAudioDir(): File =
-        File(getApplication<Application>().filesDir, STAGED_AUDIO_DIR).apply { mkdirs() }
-
-    private fun deleteStagedFile(path: String?) {
-        if (path.isNullOrBlank()) return
-        runCatching { File(path).delete() }
-    }
-
-    private suspend fun stageSharedAudio(uri: Uri, index: Int): Pair<File, String?> = withContext(ioDispatcher) {
-        val app = getApplication<Application>()
-        val contentResolver = app.contentResolver
-        val mimeType = contentResolver.getType(uri)?.lowercase()
-        val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)
-            ?: MimeTypeMap.getFileExtensionFromUrl(uri.toString()).takeIf { it.isNotBlank() }
-            ?: "bin"
-        val stagedFile = File.createTempFile("${STAGED_FILE_PREFIX}${index}_", ".$extension", stagedAudioDir())
-        contentResolver.openInputStream(uri)?.use { input ->
-            stagedFile.outputStream().use { output -> input.copyTo(output) }
-        } ?: throw IOException("Failed to read shared audio: $uri")
-        stagedFile to mimeType
-    }
-
-    fun setProvider(p: TranscriptionProvider) {
-        _uiState.update { it.copy(provider = p) }
-        viewModelScope.launch {
-            settings.saveProvider(p)
-        }
-    }
-
-    fun setSummarizerProvider(p: TranscriptionProvider) {
-        _uiState.update { it.copy(summarizerProvider = p) }
-        viewModelScope.launch {
-            settings.saveSummarizerProvider(p)
-        }
-    }
-
-    fun setAutomaticSummarization(enabled: Boolean) {
-        _uiState.update { it.copy(automaticSummarizationEnabled = enabled) }
-        viewModelScope.launch {
-            settings.saveAutomaticSummarization(enabled)
+            queueService.cleanupOldTempFiles(tempFileMaxAgeMs = TimeUnit.DAYS.toMillis(3))
         }
     }
 
@@ -289,24 +308,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (trimmed.isBlank()) return
         _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Validating) }
         viewModelScope.launch {
-            try {
-                val response = withContext(ioDispatcher) {
-                    RetrofitClient.api.getUser(trimmed)
-                }
-                if (response.isSuccessful) {
-                    settings.saveElevenLabsApiKey(trimmed)
-                    _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Idle) }
-                } else {
-                    val errorMessage = if (response.code() == 401) {
-                        "Invalid API key"
-                    } else {
-                        "Validation failed: HTTP ${response.code()}"
-                    }
-                    _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Error(errorMessage)) }
-                }
-            } catch (e: Exception) {
+            val result = validationService.validateElevenLabsKey(trimmed)
+            if (result.isValid) {
+                settings.saveElevenLabsApiKey(trimmed)
+                _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Idle) }
+            } else {
                 _uiState.update {
-                    it.copy(elevenLabsKeyValidation = KeyValidationState.Error(e.message ?: "Validation failed"))
+                    it.copy(
+                        elevenLabsKeyValidation = KeyValidationState.Error(result.errorMessage ?: "Validation failed"),
+                    )
                 }
             }
         }
@@ -317,176 +327,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (trimmed.isBlank()) return
         _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Validating) }
         viewModelScope.launch {
-            try {
-                val request = Request.Builder()
-                    .url(GEMINI_MODELS_BASE_URL)
-                    .header(GEMINI_API_KEY_HEADER, trimmed)
-                    .build()
-                val (isSuccess, code) = withContext(ioDispatcher) {
-                    RetrofitClient.okHttpClient.newCall(request).execute().use { resp ->
-                        resp.isSuccessful to resp.code
-                    }
-                }
-                if (isSuccess) {
-                    settings.saveGeminiApiKey(trimmed)
-                    _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Idle) }
-                } else {
-                    val errorMessage = if (code == 400) {
-                        "Invalid API key"
-                    } else {
-                        "Validation failed: HTTP $code"
-                    }
-                    _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Error(errorMessage)) }
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(geminiKeyValidation = KeyValidationState.Error(e.message ?: "Validation failed"))
-                }
-            }
-        }
-    }
-
-    fun resetCustomModelValidation(isSummarizer: Boolean = false) {
-        _uiState.update {
-            if (isSummarizer) {
-                it.copy(summarizerCustomModelValidation = CustomModelValidation.Idle)
+            val result = validationService.validateGeminiKey(trimmed)
+            if (result.isValid) {
+                settings.saveGeminiApiKey(trimmed)
+                _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Idle) }
             } else {
-                it.copy(transcriptionCustomModelValidation = CustomModelValidation.Idle)
+                _uiState.update {
+                    it.copy(geminiKeyValidation = KeyValidationState.Error(result.errorMessage ?: "Validation failed"))
+                }
             }
         }
     }
 
-    fun resetElevenLabsKeyValidation() {
-        _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Idle) }
+    fun validateTranscriptionGeminiModel(modelName: String) {
+        validateCustomGeminiModel(modelName, isSummarizer = false)
     }
 
-    fun resetGeminiKeyValidation() {
-        _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Idle) }
+    fun validateSummarizerGeminiModel(modelName: String) {
+        validateCustomGeminiModel(modelName, isSummarizer = true)
     }
 
-    fun validateCustomGeminiModel(modelName: String, isSummarizer: Boolean = false) {
+    private fun validateCustomGeminiModel(modelName: String, isSummarizer: Boolean) {
         val trimmed = modelName.trim()
         if (trimmed.isBlank()) {
-            if (isSummarizer) {
-                _uiState.update {
-                    it.copy(summarizerCustomModelValidation = CustomModelValidation.Error(ERR_ENTER_MODEL_NAME))
-                }
-            } else {
-                _uiState.update {
-                    it.copy(transcriptionCustomModelValidation = CustomModelValidation.Error(ERR_ENTER_MODEL_NAME))
-                }
-            }
+            updateModelValidationState(
+                isSummarizer = isSummarizer,
+                validation = CustomModelValidation.Error("Enter a model name"),
+            )
             return
         }
-        if (isSummarizer) {
-            _uiState.update { it.copy(summarizerCustomModelValidation = CustomModelValidation.Validating) }
-        } else {
-            _uiState.update { it.copy(transcriptionCustomModelValidation = CustomModelValidation.Validating) }
-        }
+        updateModelValidationState(isSummarizer = isSummarizer, validation = CustomModelValidation.Validating)
 
         viewModelScope.launch {
-            val keyChars = settings.getGeminiApiKey()
-            if (keyChars == null || keyChars.isEmpty()) {
-                val keyState = _uiState.value.geminiApiKeyState
-                val errMsg = if (keyState is ApiKeyState.Error) {
-                    "Keystore error: ${keyState.message}. Please re-enter your key."
-                } else {
-                    ERR_ENTER_GEMINI_KEY
-                }
-
-                if (isSummarizer) {
-                    _uiState.update { it.copy(summarizerCustomModelValidation = CustomModelValidation.Error(errMsg)) }
-                } else {
-                    _uiState.update {
-                        it.copy(transcriptionCustomModelValidation = CustomModelValidation.Error(errMsg))
-                    }
-                }
-                return@launch
+            val result = validationService.validateCustomModel(trimmed)
+            if (result.isValid) {
+                persistValidatedModel(trimmed, isSummarizer, result.displayName.orEmpty())
+            } else {
+                updateModelValidationState(
+                    isSummarizer = isSummarizer,
+                    validation = CustomModelValidation.Error(result.errorMessage ?: "Validation failed"),
+                )
             }
-
-            try {
-                val url = "$GEMINI_MODELS_BASE_URL/$trimmed"
-                val request = Request.Builder()
-                    .url(url)
-                    .header(GEMINI_API_KEY_HEADER, String(keyChars).also { keyChars.fill('\u0000') })
-                    .build()
-                val (isSuccess, code, bodyText) = withContext(ioDispatcher) {
-                    RetrofitClient.okHttpClient.newCall(request).execute().use { resp ->
-                        Triple(resp.isSuccessful, resp.code, resp.body.string())
-                    }
-                }
-                if (!isSuccess) {
-                    val msg = if (code == 404) {
-                        ERR_MODEL_NOT_FOUND.format(trimmed)
-                    } else {
-                        ERR_HTTP_VERIFY.format(code)
-                    }
-                    if (isSummarizer) {
-                        _uiState.update { it.copy(summarizerCustomModelValidation = CustomModelValidation.Error(msg)) }
-                    } else {
-                        _uiState.update {
-                            it.copy(transcriptionCustomModelValidation = CustomModelValidation.Error(msg))
-                        }
-                    }
-                    return@launch
-                }
-                val displayName = try {
-                    JSONObject(bodyText).optString("displayName", trimmed)
-                } catch (_: Exception) {
-                    trimmed
-                }
-
-                if (isSummarizer) {
-                    settings.saveSummarizerCustomGeminiModelName(trimmed)
-                    _uiState.update {
-                        it.copy(
-                            summarizerCustomGeminiModelName = trimmed,
-                            summarizerCustomModelValidation = CustomModelValidation.Valid(displayName),
-                        )
-                    }
-                } else {
-                    settings.saveTranscriptionCustomGeminiModelName(trimmed)
-                    _uiState.update {
-                        it.copy(
-                            transcriptionCustomGeminiModelName = trimmed,
-                            transcriptionCustomModelValidation = CustomModelValidation.Valid(displayName),
-                        )
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                if (isSummarizer) {
-                    _uiState.update {
-                        it.copy(
-                            summarizerCustomModelValidation = CustomModelValidation.Error(
-                                e.message ?: "Validation failed",
-                            ),
-                        )
-                    }
-                } else {
-                    _uiState.update {
-                        it.copy(
-                            transcriptionCustomModelValidation = CustomModelValidation.Error(
-                                e.message ?: "Validation failed",
-                            ),
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    fun forgetElevenLabsKey() {
-        viewModelScope.launch {
-            settings.forgetElevenLabsApiKey()
-            _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Idle) }
-        }
-    }
-    fun forgetGeminiKey() {
-        viewModelScope.launch {
-            settings.forgetGeminiApiKey()
-            _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Idle) }
         }
     }
 
@@ -503,245 +384,59 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun loadGeminiKeyForDisplay(): String? = loadKeyForDisplay(settings::getGeminiApiKey)
 
-    fun cancelJob(jobId: Int) {
-        viewModelScope.launch {
-            repository.updateError(jobId, "Cancelled", false, "Cancelled")
-            WorkManager.getInstance(getApplication()).cancelAllWorkByTag(jobTag(jobId))
-        }
-    }
-
-    fun clearCompletedJobs() {
-        viewModelScope.launch {
-            repository.clearCompletedJobs().forEach(::deleteStagedFile)
-        }
-    }
-
-    fun deleteJob(jobId: Int) {
-        viewModelScope.launch {
-            deleteStagedFile(repository.deleteJob(jobId))
-        }
-    }
-
-    fun retryJob(jobId: Int) {
-        viewModelScope.launch {
-            val job = repository.getJob(jobId) ?: return@launch
-            val resetJob = job.copy(
-                status = "Queued",
-                progress = 0f,
-                error = null,
-                summaryError = null,
-                isRunning = false,
-                isSummarizing = false,
-                transcript = "",
-                summary = "",
-                historyId = null,
-                language = "",
-                model = "",
-            )
-            repository.updateJob(resetJob)
-            enqueueWorker(jobId)
-        }
-    }
-
-    private fun cleanupOldTempWavs(maxAgeMs: Long = TimeUnit.DAYS.toMillis(3)) {
-        val app = getApplication<Application>()
-        val cache = app.cacheDir ?: return
-        val cutoff = System.currentTimeMillis() - maxAgeMs
-
-        val files = cache.listFiles() ?: return
-        for (f in files) {
-            val name = f.name
-            if (!f.isFile) continue
-            if (f.lastModified() >= cutoff) continue
-
-            val isConvertedWav = name.startsWith(CONVERTED_FILE_PREFIX) && name.endsWith(".wav")
-            val isDirectTmp = name.startsWith(DIRECT_FILE_PREFIX) && name.endsWith(".tmp")
-
-            if (isConvertedWav || isDirectTmp) {
-                runCatching { f.delete() }
-            }
-        }
-
-        val stagedCutoff = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(7)
-        stagedAudioDir().listFiles().orEmpty().forEach { file ->
-            if (file.isFile && file.lastModified() < stagedCutoff) {
-                runCatching { file.delete() }
-            }
-        }
-    }
-
     fun handleAudioShareMultiple(uris: List<Uri>) {
         if (uris.isEmpty()) return
 
         viewModelScope.launch {
             _uiState.update { it.copy(status = "Queuing ${uris.size} file(s)...") }
-
-            val provider = _uiState.value.provider
-            val requestedModel = when (provider) {
-                TranscriptionProvider.ELEVEN_LABS -> null
-                TranscriptionProvider.GEMINI_CUSTOM -> _uiState.value.transcriptionCustomGeminiModelName.ifBlank {
-                    null
-                }
-                else -> provider.modelName
-            }
-
-            for ((index, uri) in uris.withIndex()) {
-                val displayName = resolveDisplayName(uri).ifBlank { uri.lastPathSegment ?: "Audio ${index + 1}" }
-                val (stagedFile, mimeType) = stageSharedAudio(uri, index)
-                val job = TranscriptionJob(
-                    uri = uri.toString(),
-                    displayName = displayName,
-                    sourceMimeType = mimeType,
-                    stagedFilePath = stagedFile.absolutePath,
-                    providerName = provider.name,
-                    requestedModel = requestedModel,
-                    status = "Queued",
-                    progress = 0f,
-                    isRunning = false,
-                )
-                val jobId = repository.addJob(job).toInt()
-                enqueueWorker(jobId)
-            }
+            val result = queueService.enqueueSharedAudio(
+                uris = uris,
+                provider = _uiState.value.provider,
+                customModelName = _uiState.value.transcriptionCustomGeminiModelName,
+            )
+            _uiState.update { it.copy(status = result.statusMessage) }
         }
-    }
-
-    private suspend fun resolveDisplayName(uri: Uri): String {
-        return withContext(ioDispatcher) {
-            val cr = getApplication<Application>().contentResolver
-            val proj = arrayOf(OpenableColumns.DISPLAY_NAME)
-            try {
-                cr.query(uri, proj, null, null, null)?.use { c ->
-                    val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (idx >= 0 && c.moveToFirst()) {
-                        return@withContext c.getString(idx) ?: ""
-                    }
-                }
-            } catch (_: Exception) { }
-            ""
-        }
-    }
-
-    fun clearSummary(jobId: Int) {
-        viewModelScope.launch {
-            repository.clearJobSummary(jobId)
-        }
-    }
-
-    fun clearTranscription(jobId: Int) {
-        viewModelScope.launch {
-            repository.clearJobTranscription(jobId)
-        }
-    }
-
-    fun summarizeJob(jobId: Int) {
-        launchSummarization(jobId, allowResummarize = true)
     }
 
     private fun requestAutoSummary(jobId: Int) {
-        launchSummarization(jobId, allowResummarize = false)
+        runSummarization(jobId, allowResummarize = false)
     }
 
-    private fun launchSummarization(jobId: Int, allowResummarize: Boolean) {
+    private fun runSummarization(jobId: Int, allowResummarize: Boolean) {
         viewModelScope.launch {
-            val claimed = if (allowResummarize) {
-                repository.claimManualSummary(jobId)
-            } else {
-                repository.claimAutoSummary(jobId)
+            val result = summarizationService.summarize(jobId, _uiState.value, allowResummarize)
+            _uiState.update { state ->
+                state.copy(status = result.statusMessage)
             }
-            if (!claimed) return@launch
+        }
+    }
 
-            var summarizingCleared = false
-            try {
-                val state = _uiState.value
-                val job = repository.getJob(jobId) ?: run {
-                    repository.setSummarizing(jobId, false)
-                    summarizingCleared = true
-                    return@launch
-                }
+    private fun updateModelValidationState(isSummarizer: Boolean, validation: CustomModelValidation) {
+        _uiState.update {
+            if (isSummarizer) {
+                it.copy(summarizerCustomModelValidation = validation)
+            } else {
+                it.copy(transcriptionCustomModelValidation = validation)
+            }
+        }
+    }
 
-                val text = job.transcript
-                if (text.isBlank()) {
-                    repository.setSummarizing(jobId, false)
-                    summarizingCleared = true
-                    _uiState.update { it.copy(status = "Nothing to summarize for ${job.displayName}.") }
-                    return@launch
-                }
-                val keyChars = settings.getGeminiApiKey()
-                if (keyChars == null || keyChars.isEmpty()) {
-                    val errorMsg = "Gemini API Key is not set (Settings) or Keystore error."
-                    repository.failSummarization(jobId, errorMsg)
-                    summarizingCleared = true
-                    _uiState.update { it.copy(status = "Error: $errorMsg") }
-                    return@launch
-                }
-                val apiKey = String(keyChars)
-                keyChars.fill('\u0000')
-
-                val providerForSummary = state.summarizerProvider
-                val modelName = when {
-                    providerForSummary == TranscriptionProvider.GEMINI_CUSTOM -> {
-                        val customName = state.summarizerCustomGeminiModelName
-                        if (customName.isBlank()) {
-                            val errorMsg = "No custom Gemini model set for summarization."
-                            repository.failSummarization(jobId, errorMsg)
-                            summarizingCleared = true
-                            _uiState.update { it.copy(status = "Error: $errorMsg") }
-                            return@launch
-                        }
-                        customName
-                    }
-                    providerForSummary.isGemini() -> providerForSummary.modelName!!
-                    else -> TranscriptionProvider.GEMINI_FLASH.modelName!!
-                }
-
-                _uiState.update { it.copy(status = "Summarizing with $modelName...") }
-
-                val client = Client.builder().apiKey(apiKey).build()
-                val prompt = """
-                    You are an expert summarizer.
-                    Provide a concise, easy-to-read summary of the following text, in the same language.
-                    Use bullet points (-) for key takeaways if appropriate. The output should be plain text,
-                    no markdown.
-                """.trimIndent()
-
-                val content = Content.fromParts(
-                    Part.fromText(prompt),
-                    Part.fromText(text),
+    private suspend fun persistValidatedModel(modelName: String, isSummarizer: Boolean, displayName: String) {
+        if (isSummarizer) {
+            settings.saveSummarizerCustomGeminiModelName(modelName)
+            _uiState.update {
+                it.copy(
+                    summarizerCustomGeminiModelName = modelName,
+                    summarizerCustomModelValidation = CustomModelValidation.Valid(displayName),
                 )
-
-                val response = withContext(ioDispatcher) {
-                    val config = GenerateContentConfig.builder()
-                        .responseMimeType("text/plain")
-                        .build()
-                    client.models.generateContent(modelName, content, config)
-                }
-
-                val summary = response.text()?.trim().orEmpty().ifBlank { "No summary generated." }
-
-                repository.succeedSummarization(jobId, summary)
-                summarizingCleared = true
-                _uiState.update { it.copy(status = "Summary generated.") }
-
-                withContext(ioDispatcher) {
-                    val hid = job.historyId
-                    if (hid != null) {
-                        historyDao.updateSummary(hid, summary)
-                    }
-                }
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                val errorMsg = e.message ?: e::class.java.simpleName
-                repository.failSummarization(jobId, errorMsg)
-                summarizingCleared = true
-                _uiState.update {
-                    it.copy(status = "Summarization error: $errorMsg")
-                }
-            } finally {
-                if (!summarizingCleared) {
-                    withContext(NonCancellable) {
-                        repository.setSummarizing(jobId, false)
-                    }
-                }
+            }
+        } else {
+            settings.saveTranscriptionCustomGeminiModelName(modelName)
+            _uiState.update {
+                it.copy(
+                    transcriptionCustomGeminiModelName = modelName,
+                    transcriptionCustomModelValidation = CustomModelValidation.Valid(displayName),
+                )
             }
         }
     }
