@@ -191,6 +191,25 @@ interface TranscriptionJobDao {
     @Query("SELECT * FROM active_jobs WHERE id = :id")
     suspend fun getJobById(id: Int): TranscriptionJob?
 
+    @Query(
+        """
+        UPDATE active_jobs
+        SET status = 'Queued',
+            progress = 0,
+            transcript = '',
+            language = '',
+            model = '',
+            summary = '',
+            error = NULL,
+            summaryError = NULL,
+            isRunning = 0,
+            isSummarizing = 0,
+            historyId = NULL
+        WHERE id = :jobId
+        """,
+    )
+    suspend fun retryById(jobId: Int): Int
+
     @Query("SELECT * FROM active_jobs WHERE isRunning = 0 AND status != 'Queued'")
     suspend fun getCompletedJobs(): List<TranscriptionJob>
 

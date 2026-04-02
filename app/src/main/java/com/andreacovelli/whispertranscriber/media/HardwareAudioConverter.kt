@@ -156,7 +156,7 @@ object HardwareAudioConverter {
         afd.use { descriptor ->
             extractor.setDataSource(descriptor.fileDescriptor, descriptor.startOffset, descriptor.length)
         }
-        val audioTrack = (0 until extractor.trackCount)
+        val audioTrack = (0 until extractor.trackCount).asSequence()
             .map { index -> index to extractor.getTrackFormat(index) }
             .firstOrNull { (_, format) -> format.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true }
             ?: error("No audio track found")

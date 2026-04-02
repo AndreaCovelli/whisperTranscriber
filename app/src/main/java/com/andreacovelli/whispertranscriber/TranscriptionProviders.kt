@@ -183,4 +183,12 @@ internal fun friendlyHttpError(code: Int, provider: String): String = when (code
 internal fun shouldRetryHttp(code: Int): Boolean = code == 429 || code in 500..599
 
 internal fun extractHttpStatusFromMessage(error: Throwable): Int? =
-    Regex("""\b([45]\d{2})\b""").find(error.message.orEmpty())?.groupValues?.get(1)?.toIntOrNull()
+    HTTP_STATUS_PATTERNS.firstNotNullOfOrNull { pattern ->
+        pattern.find(error.message.orEmpty())?.groupValues?.get(1)?.toIntOrNull()
+    }
+
+private val HTTP_STATUS_PATTERNS = listOf(
+    Regex("""\bHTTP\s+([45]\d{2})\b""", RegexOption.IGNORE_CASE),
+    Regex("""\bstatus(?:\s+code)?\s*[:=]?\s*([45]\d{2})\b""", RegexOption.IGNORE_CASE),
+    Regex("""\bcode\s*[:=]?\s*([45]\d{2})\b""", RegexOption.IGNORE_CASE),
+)

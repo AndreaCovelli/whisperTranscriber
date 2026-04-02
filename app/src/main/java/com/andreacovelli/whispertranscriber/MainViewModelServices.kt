@@ -95,23 +95,9 @@ internal class TranscriptionQueueService(
     }
 
     suspend fun retryJob(jobId: Int) {
-        val job = repository.getJob(jobId) ?: return
-        repository.updateJob(
-            job.copy(
-                status = "Queued",
-                progress = 0f,
-                error = null,
-                summaryError = null,
-                isRunning = false,
-                isSummarizing = false,
-                transcript = "",
-                summary = "",
-                historyId = null,
-                language = "",
-                model = "",
-            ),
-        )
-        enqueueWorker(jobId)
+        if (repository.retryJob(jobId)) {
+            enqueueWorker(jobId)
+        }
     }
 
     suspend fun cleanupOldTempFiles(
@@ -167,9 +153,14 @@ internal class TranscriptionQueueService(
             ?: MimeTypeMap.getFileExtensionFromUrl(uri.toString()).takeIf(String::isNotBlank)
             ?: "bin"
         val stagedFile = File.createTempFile("${STAGED_FILE_PREFIX}${index}_", ".$extension", stagedAudioDir())
-        contentResolver.openInputStream(uri)?.use { input ->
-            stagedFile.outputStream().use(input::copyTo)
-        } ?: throw IOException("Failed to read shared audio: $uri")
+        try {
+            contentResolver.openInputStream(uri)?.use { input ->
+                stagedFile.outputStream().use(input::copyTo)
+            } ?: throw IOException("Failed to read shared audio: $uri")
+        } catch (e: IOException) {
+            deleteQuietly(stagedFile)
+            throw e
+        }
         stagedFile to mimeType
     }
 
