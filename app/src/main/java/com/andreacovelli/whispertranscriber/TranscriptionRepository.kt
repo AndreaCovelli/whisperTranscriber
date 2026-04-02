@@ -1,6 +1,7 @@
 package com.andreacovelli.whispertranscriber
 
 import android.content.Context
+import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import androidx.room.withTransaction
 import com.andreacovelli.whispertranscriber.data.AppDatabase
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
@@ -74,7 +75,7 @@ class TranscriptionRepository(context: Context) {
         db.withTransaction {
             val job = jobDao.getJobById(jobId) ?: return@withTransaction
             jobDao.updateSummary(jobId, "")
-            jobDao.updateSummaryError(jobId, "")
+            jobDao.updateSummaryError(jobId, null)
             val hid = job.historyId
             if (hid != null) {
                 historyDao.updateSummary(hid, "")
@@ -104,11 +105,19 @@ class TranscriptionRepository(context: Context) {
         return jobDao.getJobById(jobId)
     }
 
-    suspend fun clearCompletedJobs() {
+    suspend fun clearCompletedJobs(): List<String> {
+        val completedJobs = jobDao.getCompletedJobs()
         jobDao.clearCompleted()
+        return completedJobs.mapNotNull { it.stagedFilePath }
     }
 
-    suspend fun deleteJob(jobId: Int) {
+    suspend fun deleteJob(jobId: Int): String? {
+        val job = jobDao.getJobById(jobId)
         jobDao.deleteById(jobId)
+        return job?.stagedFilePath
+    }
+
+    suspend fun findHistoryItem(historyId: Int): TranscriptionHistory? {
+        return historyDao.getById(historyId)
     }
 }

@@ -59,119 +59,111 @@ object HardwareAudioConverter {
 
         try {
             extractor = MediaExtractor()
-        // Use specific exception for clearer error handling
-        val afd = context.contentResolver.openAssetFileDescriptor(inputUri, "r")
-            ?: throw FileNotFoundException("Unable to open input URI: $inputUri")
+            // Use a specific exception for clearer error handling.
+            val afd = context.contentResolver.openAssetFileDescriptor(inputUri, "r")
+                ?: throw FileNotFoundException("Unable to open input URI: $inputUri")
             afd.use { afd ->
                 extractor.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
             }
 
-        var audioTrackIndex = -1
-        var trackFormat: MediaFormat? = null
-        for (i in 0 until extractor.trackCount) {
-            val f = extractor.getTrackFormat(i)
-            val mime = f.getString(MediaFormat.KEY_MIME) ?: continue
-            if (mime.startsWith("audio/")) {
-                audioTrackIndex = i
-                trackFormat = f
-                break
+            var audioTrackIndex = -1
+            var trackFormat: MediaFormat? = null
+            for (i in 0 until extractor.trackCount) {
+                val f = extractor.getTrackFormat(i)
+                val mime = f.getString(MediaFormat.KEY_MIME) ?: continue
+                if (mime.startsWith("audio/")) {
+                    audioTrackIndex = i
+                    trackFormat = f
+                    break
+                }
             }
-        }
-        require(audioTrackIndex >= 0) { "No audio track found" }
-        extractor.selectTrack(audioTrackIndex)
-        val srcFormat = trackFormat!!
-        val srcMime = srcFormat.getString(MediaFormat.KEY_MIME)!!
+            require(audioTrackIndex >= 0) { "No audio track found" }
+            extractor.selectTrack(audioTrackIndex)
+            val srcFormat = trackFormat!!
+            val srcMime = srcFormat.getString(MediaFormat.KEY_MIME)!!
 
-        val durationUs = if (srcFormat.containsKey(MediaFormat.KEY_DURATION))
-            srcFormat.getLong(MediaFormat.KEY_DURATION) else -1L
+            val durationUs = if (srcFormat.containsKey(MediaFormat.KEY_DURATION))
+                srcFormat.getLong(MediaFormat.KEY_DURATION) else -1L
         
         // --- Disk Space Check ---
-        var decChannels = if (srcFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT))
-            srcFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else 2
-        val outChannelsInit = if (forceMono) 1 else decChannels
-        val bytesPerSec = targetSampleRate * outChannelsInit * BYTES_PER_SAMPLE_16_BIT
+            var decChannels = if (srcFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT))
+                srcFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else 2
+            val outChannelsInit = if (forceMono) 1 else decChannels
+            val bytesPerSec = targetSampleRate * outChannelsInit * BYTES_PER_SAMPLE_16_BIT
         
-        val estimatedBytes = if (durationUs > 0) {
-            ((durationUs / MICROSECONDS_IN_SECOND) * bytesPerSec).toLong() + CONVERSION_SIZE_BUFFER_BYTES
-        } else {
-            DEFAULT_CONVERSION_SIZE_BYTES
-        }
-        val parentDir = outputFile.parentFile
+            val estimatedBytes = if (durationUs > 0) {
+                ((durationUs / MICROSECONDS_IN_SECOND) * bytesPerSec).toLong() + CONVERSION_SIZE_BUFFER_BYTES
+            } else {
+                DEFAULT_CONVERSION_SIZE_BYTES
+            }
+            val parentDir = outputFile.parentFile
         
-        if (parentDir != null) {
-            try {
-                // Try to use StorageManager for smarter allocation (API 26+)
-                // getUuidForPath throws IOException if the path is not known to the storage manager
-                storageUuid = storageManager.getUuidForPath(parentDir)
-            } catch (e: Exception) {
-                // If getUuidForPath fails (e.g. specialized filesystem), fallback to standard File.usableSpace later
-                android.util.Log.w("HardwareAudioConverter", "Failed to get storage UUID for path $parentDir, falling back to usableSpace", e)
+            if (parentDir != null) {
+                try {
+                    // Try to use StorageManager for smarter allocation (API 26+).
+                    storageUuid = storageManager.getUuidForPath(parentDir)
+                } catch (e: Exception) {
+                    android.util.Log.w("HardwareAudioConverter", "Failed to get storage UUID for path $parentDir, falling back to usableSpace", e)
+                }
             }
-        }
 
-        if (storageUuid != null) {
-            // Use StorageManager for smarter allocation
-            // allocatableBytes includes clearable cache space
-            val allocatableBytes = storageManager.getAllocatableBytes(storageUuid)
-            
-            if (allocatableBytes < estimatedBytes) {
-                throw IOException("Insufficient disk space for conversion. Needed at least ${estimatedBytes / BYTES_IN_MEGABYTE} MiB, but only ${allocatableBytes / BYTES_IN_MEGABYTE} MiB is allocatable.")
+            if (storageUuid != null) {
+                val allocatableBytes = storageManager.getAllocatableBytes(storageUuid)
+
+                if (allocatableBytes < estimatedBytes) {
+                    throw IOException("Insufficient disk space for conversion. Needed at least ${estimatedBytes / BYTES_IN_MEGABYTE} MiB, but only ${allocatableBytes / BYTES_IN_MEGABYTE} MiB is allocatable.")
+                }
+
+                storageManager.allocateBytes(storageUuid, estimatedBytes)
+            } else {
+                val usableSpace = parentDir?.usableSpace ?: 0L
+                if (usableSpace < estimatedBytes) {
+                    throw IOException("Insufficient disk space for conversion. Needed at least ${estimatedBytes / BYTES_IN_MEGABYTE} MiB, but only ${usableSpace / BYTES_IN_MEGABYTE} MiB is available.")
+                }
             }
-            
-            // Reserve the space (clears caches if needed). Fatal if this fails.
-            storageManager.allocateBytes(storageUuid, estimatedBytes)
-        } else {
-            // Fallback for null parent or unsupported filesystem
-            val usableSpace = parentDir?.usableSpace ?: 0L
-            if (usableSpace < estimatedBytes) {
-                throw IOException("Insufficient disk space for conversion. Needed at least ${estimatedBytes / BYTES_IN_MEGABYTE} MiB, but only ${usableSpace / BYTES_IN_MEGABYTE} MiB is available.")
+
+            if (durationUs > 0) onProgress?.invoke(0f)
+
+            decoder = MediaCodec.createDecoderByType(srcMime)
+            decoder.configure(srcFormat, null, null, 0)
+            decoder.start()
+
+            var decSampleRate = if (srcFormat.containsKey(MediaFormat.KEY_SAMPLE_RATE))
+                srcFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE) else 44100
+            var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
+
+            var outChannelsToWrite = if (forceMono) 1 else decChannels
+
+            val needResample = { inRate: Int -> inRate != targetSampleRate }
+            var resampler: PolyphaseResampler? = null
+
+            var shortScratch = ShortArray(0)
+            var floatScratch = FloatArray(0)
+            var monoScratch = FloatArray(0)
+            fun ensureShortCapacity(minSize: Int) {
+                if (shortScratch.size < minSize) {
+                    shortScratch = ShortArray(max(minSize, shortScratch.size.coerceAtLeast(1024) * 2))
+                }
             }
-        }
-        // ------------------------
-
-        if (durationUs > 0) onProgress?.invoke(0f)
-
-        decoder = MediaCodec.createDecoderByType(srcMime)
-        decoder.configure(srcFormat, null, null, 0)
-        decoder.start()
-
-        var decSampleRate = if (srcFormat.containsKey(MediaFormat.KEY_SAMPLE_RATE))
-            srcFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE) else 44100
-        // decChannels already initialized above
-        var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
-
-        var outChannelsToWrite = if (forceMono) 1 else decChannels
-
-        val needResample = { inRate: Int -> inRate != targetSampleRate }
-        var resampler: PolyphaseResampler? = null
-
-        var shortScratch = ShortArray(0)
-        var floatScratch = FloatArray(0)   // holds interleaved floats (no downmix)
-        var monoScratch = FloatArray(0)    // holds mono floats (downmixed)
-        fun ensureShortCapacity(minSize: Int) {
-            if (shortScratch.size < minSize) {
-                shortScratch = ShortArray(max(minSize, shortScratch.size.coerceAtLeast(1024) * 2))
+            fun ensureFloatCapacity(minSize: Int) {
+                if (floatScratch.size < minSize) {
+                    floatScratch = FloatArray(max(minSize, floatScratch.size.coerceAtLeast(2048) * 2))
+                }
             }
-        }
-        fun ensureFloatCapacity(minSize: Int) {
-            if (floatScratch.size < minSize) {
-                floatScratch = FloatArray(max(minSize, floatScratch.size.coerceAtLeast(2048) * 2))
+            fun ensureMonoCapacity(minSize: Int) {
+                if (monoScratch.size < minSize) {
+                    monoScratch = FloatArray(max(minSize, monoScratch.size.coerceAtLeast(2048) * 2))
+                }
             }
-        }
-        fun ensureMonoCapacity(minSize: Int) {
-            if (monoScratch.size < minSize) {
-                monoScratch = FloatArray(max(minSize, monoScratch.size.coerceAtLeast(2048) * 2))
-            }
-        }
 
-        val inputTimeoutUs = 10000L
-        val outputTimeoutUs = 10000L
-        val info = MediaCodec.BufferInfo()
-        var inputEos = false
-        var outputEos = false
+            val inputTimeoutUs = 10000L
+            val outputTimeoutUs = 10000L
+            val info = MediaCodec.BufferInfo()
+            var inputEos = false
+            var outputEos = false
 
-        val hasDuration = durationUs > 0
-        var lastProgress = -1f
+            val hasDuration = durationUs > 0
+            var lastProgress = -1f
 
             while (!outputEos && currentCoroutineContext().isActive) {
                 if (!inputEos) {

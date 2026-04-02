@@ -24,7 +24,6 @@ import com.google.genai.types.Schema
 import com.google.genai.types.UploadFileConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
@@ -36,7 +35,10 @@ import okio.source
 import org.json.JSONObject
 import retrofit2.HttpException
 import java.io.File
+import java.io.IOException
 import androidx.core.net.toUri
+
+private class TransientWorkException(message: String, cause: Throwable? = null) : IOException(message, cause)
 
 class TranscriptionWorker(
     appContext: Context,
@@ -115,17 +117,24 @@ class TranscriptionWorker(
             repository.updateRunning(jobId, true, "Starting...")
             updateNotification("Processing: ${job.displayName}")
 
-            val persistedProvider = settings.providerFlow.firstOrNull() ?: TranscriptionProvider.ELEVEN_LABS
-            val usingElevenLabs = persistedProvider == TranscriptionProvider.ELEVEN_LABS
-            val geminiModelName = when (persistedProvider) {
-                TranscriptionProvider.GEMINI_CUSTOM -> settings.transcriptionCustomGeminiModelNameFlow.firstOrNull()
-                else -> persistedProvider.modelName
+            val requestedProvider = runCatching { TranscriptionProvider.valueOf(job.providerName) }
+                .getOrDefault(TranscriptionProvider.ELEVEN_LABS)
+            val usingElevenLabs = requestedProvider == TranscriptionProvider.ELEVEN_LABS
+            val geminiModelName = when (requestedProvider) {
+                TranscriptionProvider.ELEVEN_LABS -> null
+                else -> job.requestedModel ?: requestedProvider.modelName
             }
+
+            val stagedUri = job.stagedFilePath
+                ?.takeIf { it.isNotBlank() }
+                ?.let { File(it).takeIf(File::exists)?.toUri() }
+                ?: job.uri.toUri()
 
             processSingleJob(
                 jobId = jobId,
-                uri = job.uri.toUri(),
+                uri = stagedUri,
                 displayName = job.displayName,
+                inputMimeType = job.sourceMimeType?.lowercase(),
                 usingElevenLabs = usingElevenLabs,
                 geminiModel = geminiModelName
             )
@@ -135,16 +144,21 @@ class TranscriptionWorker(
         } catch (e: Exception) {
             val msg = e.message ?: e::class.java.simpleName
             repository.updateError(jobId, msg, false, "Error")
-            return Result.failure()
+            return if (e is TransientWorkException) Result.retry() else Result.failure()
         }
     }
 
-    private suspend fun processSingleJob(jobId: Int, uri: Uri, displayName: String, usingElevenLabs: Boolean, geminiModel: String?) {
+    private suspend fun processSingleJob(
+        jobId: Int,
+        uri: Uri,
+        displayName: String,
+        inputMimeType: String?,
+        usingElevenLabs: Boolean,
+        geminiModel: String?
+    ) {
         val app = applicationContext as Application
         val contentResolver = app.contentResolver
         val historyDao = AppDatabase.getDatabase(app).transcriptionHistoryDao()
-
-        val inputMimeType = contentResolver.getType(uri)?.lowercase()
 
         val conversionNeeded = when {
             inputMimeType == null -> true
@@ -322,8 +336,22 @@ class TranscriptionWorker(
             emit(TranscriptionResult.Success(TranscriptionData(text, detectedLanguage, "ElevenLabs Scribe v2")))
         } catch (e: Exception) {
             if (e is CancellationException) throw e
-            if (e is HttpException) emit(TranscriptionResult.Error(IllegalStateException(friendlyHttpError(e.code(), "ElevenLabs"), e)))
-            else emit(TranscriptionResult.Error(IllegalStateException("Network or API error: ${e.message}", e)))
+            if (e is HttpException) {
+                val code = e.code()
+                val error = if (shouldRetryHttp(code)) {
+                    TransientWorkException(friendlyHttpError(code, "ElevenLabs"), e)
+                } else {
+                    IllegalStateException(friendlyHttpError(code, "ElevenLabs"), e)
+                }
+                emit(TranscriptionResult.Error(error))
+            } else {
+                val error = if (e is IOException) {
+                    TransientWorkException("Network or API error: ${e.message}", e)
+                } else {
+                    IllegalStateException("Network or API error: ${e.message}", e)
+                }
+                emit(TranscriptionResult.Error(error))
+            }
         } finally {
             apiKey.fill('\u0000')
         }
@@ -369,7 +397,12 @@ class TranscriptionWorker(
             if (e is CancellationException) throw e
             val httpCode = if (e is HttpException) e.code() else extractHttpStatusFromMessage(e)
             val msg = if (httpCode != null) friendlyHttpError(httpCode, "Gemini") else "Gemini error: ${e.message ?: e::class.java.simpleName}"
-            emit(TranscriptionResult.Error(IllegalStateException(msg, e)))
+            val error = when {
+                httpCode != null && shouldRetryHttp(httpCode) -> TransientWorkException(msg, e)
+                e is IOException -> TransientWorkException(msg, e)
+                else -> IllegalStateException(msg, e)
+            }
+            emit(TranscriptionResult.Error(error))
         } finally {
             apiKey.fill('\u0000')
             uploadedFile?.let { remoteFile ->
@@ -395,6 +428,8 @@ class TranscriptionWorker(
         in 500..599 -> "Server error (HTTP $code). $provider's servers are experiencing issues."
         else -> "HTTP $code: unexpected error from $provider."
     }
+
+    private fun shouldRetryHttp(code: Int): Boolean = code == 429 || code in 500..599
 
     private fun extractHttpStatusFromMessage(e: Exception): Int? =
         HTTP_STATUS_REGEX.find(e.message ?: "")?.groupValues?.get(1)?.toIntOrNull()
