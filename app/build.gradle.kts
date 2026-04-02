@@ -153,8 +153,6 @@ dependencies {
 
     // Google ML Kit
     implementation(libs.google.genai)
-    implementation(libs.kotlinx.serialization.core)
-    implementation(libs.kotlinx.serialization.json)
 
     // Room
     implementation(libs.androidx.room.runtime)
@@ -178,4 +176,10 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+
+    constraints {
+        // Keep Room migration testing and AndroidX saved state/navigation on one serialization runtime.
+        implementation(libs.kotlinx.serialization.core)
+        implementation(libs.kotlinx.serialization.json)
+    }
 }

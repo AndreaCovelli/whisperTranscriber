@@ -95,7 +95,7 @@ class HistoryFtsSyncInstrumentedTest {
             historyDao.updateText(historyId, "Retrospective notes")
             historyDao.updateSummary(historyId, "Retrospective summary")
 
-            assertFalse(ftsMatches(migratedDb, "Planning*"))
+            assertFalse(ftsMatches(migratedDb, "sprint*"))
             assertTrue(ftsMatches(migratedDb, "Retrospective*"))
 
             historyDao.deleteById(historyId)
