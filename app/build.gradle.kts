@@ -6,6 +6,8 @@ plugins {
     alias(libs.plugins.spotless)
 }
 
+val ktlintVersion = "1.7.1"
+
 android {
     val keystorePath = findProperty("keystorePath") as? String
     val propKeystorePassword = findProperty("keystorePassword") as? String
@@ -86,7 +88,7 @@ configure<io.gitlab.arturbosch.detekt.extensions.DetektExtension> {
 configure<com.diffplug.gradle.spotless.SpotlessExtension> {
     kotlin {
         target("src/**/*.kt")
-        ktlint(libs.versions.ktlint.get())
+        ktlint(ktlintVersion)
             .editorConfigOverride(
                 mapOf(
                     "ktlint_code_style" to "android_studio",
@@ -99,7 +101,7 @@ configure<com.diffplug.gradle.spotless.SpotlessExtension> {
     }
     kotlinGradle {
         target("*.gradle.kts", "app/*.gradle.kts")
-        ktlint(libs.versions.ktlint.get())
+        ktlint(ktlintVersion)
         trimTrailingWhitespace()
         endWithNewline()
     }

@@ -106,6 +106,14 @@ fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     isSummarizing = isSummarizing,
 )
 
+private val TranscriptionJob.isReadyForAutoSummary: Boolean
+    get() = !isRunning &&
+        !isSummarizing &&
+        transcript.isNotBlank() &&
+        summary.isBlank() &&
+        error == null &&
+        summaryError == null
+
 data class TranscriptionData(val text: String, val language: String, val model: String)
 
 sealed interface TranscriptionResult {
@@ -195,13 +203,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _uiState.value.geminiApiKeyState is ApiKeyState.Present
                     ) {
                         jobsList.forEach { job ->
-                            if (!job.isRunning &&
-                                !job.isSummarizing &&
-                                job.transcript.isNotBlank() &&
-                                job.summary.isBlank() &&
-                                job.error == null &&
-                                job.summaryError == null
-                            ) {
+                            if (job.isReadyForAutoSummary) {
                                 requestAutoSummary(job.id)
                             }
                         }

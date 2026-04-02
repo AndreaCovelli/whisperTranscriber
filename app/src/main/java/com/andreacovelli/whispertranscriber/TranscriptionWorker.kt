@@ -455,6 +455,7 @@ class TranscriptionWorker(appContext: Context, workerParams: WorkerParameters) :
                         }
                     }
                 }.onFailure {
+                    if (it is CancellationException) throw it
                     android.util.Log.w(
                         "TranscriptionWorker",
                         "Failed to delete remote Gemini file: ${remoteFile.name().orElse("[name not available]")}",
