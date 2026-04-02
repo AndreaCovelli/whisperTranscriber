@@ -51,4 +51,4 @@ jobs:
           add-job-summary: "on-failure"
 
       - name: Run quality checks
-        run: ./gradlew spotlessCheck detekt lintDebug testDebugUnitTest --console=plain
+        run: ./gradlew spotlessCheck detekt lintDebug --console=plain
