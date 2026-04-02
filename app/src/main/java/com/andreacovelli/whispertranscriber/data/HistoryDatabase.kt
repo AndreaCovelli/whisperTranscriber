@@ -6,12 +6,14 @@ import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Delete
 import androidx.room.Entity
+import androidx.room.Fts4
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.Transaction
 import androidx.room.Update
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
@@ -27,6 +29,17 @@ data class TranscriptionHistory(
     val summary: String = "",
     val displayName: String = "",
     val timestamp: Long = System.currentTimeMillis()
+)
+
+@Fts4
+@Entity(tableName = "transcription_history_fts")
+data class TranscriptionHistoryFts(
+    @PrimaryKey
+    @androidx.room.ColumnInfo(name = "rowid")
+    val rowId: Int,
+    val text: String,
+    val summary: String,
+    val displayName: String
 )
 
 @Entity(tableName = "active_jobs")
@@ -56,28 +69,89 @@ data class TranscriptionJob(
 @Dao
 interface TranscriptionHistoryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(historyItem: TranscriptionHistory): Long
+    suspend fun insertHistory(historyItem: TranscriptionHistory): Long
 
-    @Delete
-    suspend fun delete(historyItem: TranscriptionHistory)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertFts(historyItem: TranscriptionHistoryFts)
+
+    @Query("DELETE FROM transcription_history WHERE id = :id")
+    suspend fun deleteById(id: Int)
+
+    @Query("DELETE FROM transcription_history_fts WHERE rowid = :id")
+    suspend fun deleteFtsById(id: Int)
 
     @Query("DELETE FROM transcription_history")
-    suspend fun deleteAll()
+    suspend fun deleteAllHistory()
+
+    @Query("DELETE FROM transcription_history_fts")
+    suspend fun deleteAllFts()
 
     @Query("SELECT * FROM transcription_history ORDER BY timestamp DESC")
     fun getAllHistoryPaged(): PagingSource<Int, TranscriptionHistory>
 
-    @Query("SELECT * FROM transcription_history WHERE displayName LIKE '%' || :query || '%' OR text LIKE '%' || :query || '%' OR summary LIKE '%' || :query || '%' ORDER BY timestamp DESC")
+    @Query(
+        """
+        SELECT h.*
+        FROM transcription_history AS h
+        INNER JOIN transcription_history_fts AS fts ON h.id = fts.rowid
+        WHERE transcription_history_fts MATCH :query
+        ORDER BY h.timestamp DESC
+        """
+    )
     fun searchHistoryPaged(query: String): PagingSource<Int, TranscriptionHistory>
 
     @Query("UPDATE transcription_history SET summary = :summary WHERE id = :id")
-    suspend fun updateSummary(id: Int, summary: String)
+    suspend fun updateSummaryValue(id: Int, summary: String)
+
+    @Query("UPDATE transcription_history_fts SET summary = :summary WHERE rowid = :id")
+    suspend fun updateFtsSummary(id: Int, summary: String)
 
     @Query("UPDATE transcription_history SET text = :text WHERE id = :id")
-    suspend fun updateText(id: Int, text: String)
+    suspend fun updateTextValue(id: Int, text: String)
+
+    @Query("UPDATE transcription_history_fts SET text = :text WHERE rowid = :id")
+    suspend fun updateFtsText(id: Int, text: String)
 
     @Query("SELECT * FROM transcription_history WHERE id = :id")
     suspend fun getById(id: Int): TranscriptionHistory?
+
+    @Transaction
+    suspend fun insert(historyItem: TranscriptionHistory): Long {
+        val id = insertHistory(historyItem).toInt()
+        insertFts(
+            TranscriptionHistoryFts(
+                rowId = id,
+                text = historyItem.text,
+                summary = historyItem.summary,
+                displayName = historyItem.displayName
+            )
+        )
+        return id.toLong()
+    }
+
+    @Transaction
+    suspend fun delete(historyItem: TranscriptionHistory) {
+        deleteById(historyItem.id)
+        deleteFtsById(historyItem.id)
+    }
+
+    @Transaction
+    suspend fun deleteAll() {
+        deleteAllHistory()
+        deleteAllFts()
+    }
+
+    @Transaction
+    suspend fun updateSummary(id: Int, summary: String) {
+        updateSummaryValue(id, summary)
+        updateFtsSummary(id, summary)
+    }
+
+    @Transaction
+    suspend fun updateText(id: Int, text: String) {
+        updateTextValue(id, text)
+        updateFtsText(id, text)
+    }
 }
 
 @Dao
@@ -168,7 +242,11 @@ interface TranscriptionJobDao {
     suspend fun clearCompleted()
 }
 
-@Database(entities = [TranscriptionHistory::class, TranscriptionJob::class], version = 7, exportSchema = false)
+@Database(
+    entities = [TranscriptionHistory::class, TranscriptionHistoryFts::class, TranscriptionJob::class],
+    version = 8,
+    exportSchema = false
+)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun transcriptionHistoryDao(): TranscriptionHistoryDao
     abstract fun transcriptionJobDao(): TranscriptionJobDao
@@ -233,6 +311,24 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE VIRTUAL TABLE IF NOT EXISTS `transcription_history_fts`
+                    USING fts4(`text` NOT NULL, `summary` NOT NULL, `displayName` NOT NULL)
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO transcription_history_fts(rowid, text, summary, displayName)
+                    SELECT id, text, summary, displayName
+                    FROM transcription_history
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -246,7 +342,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_3_4,
                         MIGRATION_4_5,
                         MIGRATION_5_6,
-                        MIGRATION_6_7
+                        MIGRATION_6_7,
+                        MIGRATION_7_8
                     )
                     .build()
                 INSTANCE = instance

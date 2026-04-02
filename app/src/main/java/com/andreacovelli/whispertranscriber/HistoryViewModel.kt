@@ -23,6 +23,16 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
+private val HISTORY_SEARCH_TOKEN_REGEX = Regex("[\\p{L}\\p{N}]+")
+
+internal fun buildHistorySearchQuery(rawQuery: String): String {
+    return HISTORY_SEARCH_TOKEN_REGEX
+        .findAll(rawQuery)
+        .map { "${it.value}*" }
+        .distinct()
+        .joinToString(" ")
+}
+
 class HistoryViewModel(application: Application) : AndroidViewModel(application) {
 
     private val historyDao: TranscriptionHistoryDao
@@ -64,10 +74,11 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
             Pager(
                 config = PagingConfig(pageSize = 20, enablePlaceholders = true),
                 pagingSourceFactory = {
-                    if (query.isBlank()) {
+                    val ftsQuery = buildHistorySearchQuery(query)
+                    if (ftsQuery.isBlank()) {
                         historyDao.getAllHistoryPaged()
                     } else {
-                        historyDao.searchHistoryPaged(query)
+                        historyDao.searchHistoryPaged(ftsQuery)
                     }
                 }
             ).flow
