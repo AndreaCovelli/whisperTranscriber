@@ -43,6 +43,9 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+private fun buildPrefixMatchRegex(token: String): Regex =
+    Regex("""\b${Regex.escape(token)}""", RegexOption.IGNORE_CASE)
+
 private fun buildHighlightedText(
     text: String,
     tokens: List<String>,
@@ -53,13 +56,7 @@ private fun buildHighlightedText(
 
     val matches = tokens
         .flatMap { token ->
-            buildList {
-                var startIndex = text.indexOf(token, ignoreCase = true)
-                while (startIndex >= 0) {
-                    add(startIndex until (startIndex + token.length))
-                    startIndex = text.indexOf(token, startIndex + token.length, ignoreCase = true)
-                }
-            }
+            buildPrefixMatchRegex(token).findAll(text).map { it.range }.toList()
         }
         .sortedBy { it.first }
 

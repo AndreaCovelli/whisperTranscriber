@@ -296,22 +296,25 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private fun createBuilder(context: Context, databaseName: String) = Room.databaseBuilder(
+            context.applicationContext,
+            AppDatabase::class.java,
+            databaseName,
+        ).addMigrations(
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+            MIGRATION_4_5,
+            MIGRATION_5_6,
+            MIGRATION_6_7,
+            MIGRATION_7_8,
+        )
+
+        internal fun buildTestDatabase(context: Context, databaseName: String): AppDatabase =
+            createBuilder(context, databaseName).build()
+
         fun getDatabase(context: Context): AppDatabase = INSTANCE ?: synchronized(this) {
-            val instance = Room.databaseBuilder(
-                context.applicationContext,
-                AppDatabase::class.java,
-                "transcription_database",
-            )
-                .addMigrations(
-                    MIGRATION_1_2,
-                    MIGRATION_2_3,
-                    MIGRATION_3_4,
-                    MIGRATION_4_5,
-                    MIGRATION_5_6,
-                    MIGRATION_6_7,
-                    MIGRATION_7_8,
-                )
-                .build()
+            val instance = createBuilder(context, "transcription_database").build()
             INSTANCE = instance
             instance
         }
