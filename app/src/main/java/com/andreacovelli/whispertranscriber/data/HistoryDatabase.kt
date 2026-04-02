@@ -310,7 +310,9 @@ abstract class AppDatabase : RoomDatabase() {
             AppDatabase::class.java,
             databaseName,
         ).apply {
-            MIGRATIONS.forEach(::addMigrations)
+            MIGRATIONS.forEach { migration ->
+                addMigrations(migration)
+            }
         }
 
         fun getDatabase(context: Context): AppDatabase = INSTANCE ?: synchronized(this) {
