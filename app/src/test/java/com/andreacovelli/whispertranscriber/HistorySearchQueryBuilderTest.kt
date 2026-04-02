@@ -9,7 +9,7 @@ class HistorySearchQueryBuilderTest {
     fun buildHistorySearchQuery_normalizesSearchTermsIntoFtsPrefixes() {
         assertEquals(
             "meeting* notes* wav*",
-            buildHistorySearchQuery("meeting notes.wav")
+            buildHistorySearchQuery("meeting notes.wav"),
         )
     }
 
@@ -17,7 +17,7 @@ class HistorySearchQueryBuilderTest {
     fun buildHistorySearchQuery_deduplicatesAndDropsUnsupportedCharacters() {
         assertEquals(
             "alpha* beta*",
-            buildHistorySearchQuery("alpha ### beta alpha")
+            buildHistorySearchQuery("alpha ### beta alpha"),
         )
     }
 }

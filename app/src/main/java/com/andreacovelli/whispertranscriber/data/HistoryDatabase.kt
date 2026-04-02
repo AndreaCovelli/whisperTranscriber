@@ -28,7 +28,7 @@ data class TranscriptionHistory(
     val model: String = "",
     val summary: String = "",
     val displayName: String = "",
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
 )
 
 @Fts4
@@ -39,7 +39,7 @@ data class TranscriptionHistoryFts(
     val rowId: Int,
     val text: String,
     val summary: String,
-    val displayName: String
+    val displayName: String,
 )
 
 @Entity(tableName = "active_jobs")
@@ -63,7 +63,7 @@ data class TranscriptionJob(
     val isRunning: Boolean = false,
     val isSummarizing: Boolean = false,
     val historyId: Int? = null,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
 )
 
 @Dao
@@ -96,7 +96,7 @@ interface TranscriptionHistoryDao {
         INNER JOIN transcription_history_fts AS fts ON h.id = fts.rowid
         WHERE transcription_history_fts MATCH :query
         ORDER BY h.timestamp DESC
-        """
+        """,
     )
     fun searchHistoryPaged(query: String): PagingSource<Int, TranscriptionHistory>
 
@@ -123,8 +123,8 @@ interface TranscriptionHistoryDao {
                 rowId = id,
                 text = historyItem.text,
                 summary = historyItem.summary,
-                displayName = historyItem.displayName
-            )
+                displayName = historyItem.displayName,
+            ),
         )
         return id.toLong()
     }
@@ -168,8 +168,20 @@ interface TranscriptionJobDao {
     @Query("UPDATE active_jobs SET status = :status, progress = :progress WHERE id = :id")
     suspend fun updateStatusAndProgress(id: Int, status: String, progress: Float)
 
-    @Query("UPDATE active_jobs SET transcript = :transcript, language = :language, model = :model, historyId = :historyId, progress = :progress, isRunning = :isRunning, status = :status, error = :error WHERE id = :id")
-    suspend fun updateResult(id: Int, transcript: String, language: String, model: String, historyId: Int?, progress: Float, isRunning: Boolean, status: String, error: String?)
+    @Query(
+        "UPDATE active_jobs SET transcript = :transcript, language = :language, model = :model, historyId = :historyId, progress = :progress, isRunning = :isRunning, status = :status, error = :error WHERE id = :id",
+    )
+    suspend fun updateResult(
+        id: Int,
+        transcript: String,
+        language: String,
+        model: String,
+        historyId: Int?,
+        progress: Float,
+        isRunning: Boolean,
+        status: String,
+        error: String?,
+    )
 
     @Query("UPDATE active_jobs SET error = :error, isRunning = :isRunning, status = :status WHERE id = :id")
     suspend fun updateError(id: Int, error: String, isRunning: Boolean, status: String)
@@ -177,7 +189,9 @@ interface TranscriptionJobDao {
     @Query("UPDATE active_jobs SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: Int, status: String)
 
-    @Query("UPDATE active_jobs SET transcript = '', language = '', model = '', summary = '', status = 'Cleared' WHERE id = :id")
+    @Query(
+        "UPDATE active_jobs SET transcript = '', language = '', model = '', summary = '', status = 'Cleared' WHERE id = :id",
+    )
     suspend fun clearTranscriptionResult(id: Int)
 
     @Query("UPDATE active_jobs SET summary = :summary WHERE id = :id")
@@ -206,7 +220,7 @@ interface TranscriptionJobDao {
           AND summary = ''
           AND error IS NULL
           AND summaryError IS NULL
-        """
+        """,
     )
     suspend fun claimAutoSummary(id: Int): Int
 
@@ -219,7 +233,7 @@ interface TranscriptionJobDao {
           AND isSummarizing = 0
           AND transcript != ''
           AND error IS NULL
-        """
+        """,
     )
     suspend fun claimManualSummary(id: Int): Int
 
@@ -245,7 +259,7 @@ interface TranscriptionJobDao {
 @Database(
     entities = [TranscriptionHistory::class, TranscriptionHistoryFts::class, TranscriptionJob::class],
     version = 8,
-    exportSchema = false
+    exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun transcriptionHistoryDao(): TranscriptionHistoryDao
@@ -275,24 +289,26 @@ abstract class AppDatabase : RoomDatabase() {
 
         private val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("""
+                db.execSQL(
+                    """
                     CREATE TABLE IF NOT EXISTS `active_jobs` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
-                        `uri` TEXT NOT NULL, 
-                        `displayName` TEXT NOT NULL, 
-                        `status` TEXT NOT NULL, 
-                        `progress` REAL NOT NULL, 
-                        `transcript` TEXT NOT NULL, 
-                        `language` TEXT NOT NULL, 
-                        `model` TEXT NOT NULL, 
-                        `summary` TEXT NOT NULL, 
-                        `error` TEXT, 
-                        `isRunning` INTEGER NOT NULL, 
-                        `isSummarizing` INTEGER NOT NULL, 
-                        `historyId` INTEGER, 
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `uri` TEXT NOT NULL,
+                        `displayName` TEXT NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `progress` REAL NOT NULL,
+                        `transcript` TEXT NOT NULL,
+                        `language` TEXT NOT NULL,
+                        `model` TEXT NOT NULL,
+                        `summary` TEXT NOT NULL,
+                        `error` TEXT,
+                        `isRunning` INTEGER NOT NULL,
+                        `isSummarizing` INTEGER NOT NULL,
+                        `historyId` INTEGER,
                         `timestamp` INTEGER NOT NULL
                     )
-                """.trimIndent())
+                    """.trimIndent(),
+                )
             }
         }
 
@@ -317,38 +333,36 @@ abstract class AppDatabase : RoomDatabase() {
                     """
                     CREATE VIRTUAL TABLE IF NOT EXISTS `transcription_history_fts`
                     USING fts4(`text` NOT NULL, `summary` NOT NULL, `displayName` NOT NULL)
-                    """.trimIndent()
+                    """.trimIndent(),
                 )
                 db.execSQL(
                     """
                     INSERT INTO transcription_history_fts(rowid, text, summary, displayName)
                     SELECT id, text, summary, displayName
                     FROM transcription_history
-                    """.trimIndent()
+                    """.trimIndent(),
                 )
             }
         }
 
-        fun getDatabase(context: Context): AppDatabase {
-            return INSTANCE ?: synchronized(this) {
-                val instance = Room.databaseBuilder(
-                    context.applicationContext,
-                    AppDatabase::class.java,
-                    "transcription_database"
+        fun getDatabase(context: Context): AppDatabase = INSTANCE ?: synchronized(this) {
+            val instance = Room.databaseBuilder(
+                context.applicationContext,
+                AppDatabase::class.java,
+                "transcription_database",
+            )
+                .addMigrations(
+                    MIGRATION_1_2,
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                    MIGRATION_6_7,
+                    MIGRATION_7_8,
                 )
-                    .addMigrations(
-                        MIGRATION_1_2,
-                        MIGRATION_2_3,
-                        MIGRATION_3_4,
-                        MIGRATION_4_5,
-                        MIGRATION_5_6,
-                        MIGRATION_6_7,
-                        MIGRATION_7_8
-                    )
-                    .build()
-                INSTANCE = instance
-                instance
-            }
+                .build()
+            INSTANCE = instance
+            instance
         }
     }
 }

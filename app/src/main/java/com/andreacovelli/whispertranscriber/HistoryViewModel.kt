@@ -13,25 +13,23 @@ import com.andreacovelli.whispertranscriber.data.TranscriptionHistoryDao
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
 private val HISTORY_SEARCH_TOKEN_REGEX = Regex("[\\p{L}\\p{N}]+")
 
-internal fun buildHistorySearchQuery(rawQuery: String): String {
-    return HISTORY_SEARCH_TOKEN_REGEX
-        .findAll(rawQuery)
-        .map { "${it.value}*" }
-        .distinct()
-        .joinToString(" ")
-}
+internal fun buildHistorySearchQuery(rawQuery: String): String = HISTORY_SEARCH_TOKEN_REGEX
+    .findAll(rawQuery)
+    .map { "${it.value}*" }
+    .distinct()
+    .joinToString(" ")
 
 class HistoryViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -80,7 +78,7 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
                     } else {
                         historyDao.searchHistoryPaged(ftsQuery)
                     }
-                }
+                },
             ).flow
         }
         .cachedIn(viewModelScope)

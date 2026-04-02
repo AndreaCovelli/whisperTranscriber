@@ -23,11 +23,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun ExpandableText(
-    text: String,
-    modifier: Modifier = Modifier,
-    minimizedMaxLines: Int = 6
-) {
+fun ExpandableText(text: String, modifier: Modifier = Modifier, minimizedMaxLines: Int = 6) {
     var expanded by rememberSaveable(text) { mutableStateOf(false) }
     var isOverflowing by remember { mutableStateOf(false) }
 
@@ -38,16 +34,16 @@ fun ExpandableText(
             .animateContentSize(
                 animationSpec = spring(
                     dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMedium
-                )
-            )
+                    stiffness = Spring.StiffnessMedium,
+                ),
+            ),
     ) {
         if (expanded) {
             SelectionContainer {
                 Text(
                     text = text,
                     style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         } else {
@@ -59,7 +55,7 @@ fun ExpandableText(
                 onTextLayout = { result ->
                     isOverflowing = result.hasVisualOverflow
                 },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             )
         }
 
@@ -71,7 +67,7 @@ fun ExpandableText(
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier
                     .align(Alignment.End)
-                    .clickable { expanded = !expanded }
+                    .clickable { expanded = !expanded },
             )
         }
     }

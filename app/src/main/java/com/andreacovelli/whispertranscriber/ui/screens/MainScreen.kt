@@ -53,11 +53,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(
-    viewModel: MainViewModel,
-    onNavigateToHistory: () -> Unit,
-    onNavigateToSettings: () -> Unit
-) {
+fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit, onNavigateToSettings: () -> Unit) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
@@ -71,33 +67,33 @@ fun MainScreen(
                     IconButton(onClick = onNavigateToHistory) {
                         Icon(
                             imageVector = Icons.Default.History,
-                            contentDescription = "View Transcription History"
+                            contentDescription = "View Transcription History",
                         )
                     }
                     IconButton(onClick = onNavigateToSettings) {
                         Icon(
                             imageVector = Icons.Default.Settings,
-                            contentDescription = "Settings"
+                            contentDescription = "Settings",
                         )
                     }
-                }
+                },
             )
-        }
+        },
     ) { paddingValues ->
         val transcriptionProviderLabel = providerDisplayLabel(
             provider = uiState.provider,
-            customModelName = uiState.transcriptionCustomGeminiModelName
+            customModelName = uiState.transcriptionCustomGeminiModelName,
         )
         val summarizerProviderLabel = providerDisplayLabel(
             provider = uiState.summarizerProvider,
-            customModelName = uiState.summarizerCustomGeminiModelName
+            customModelName = uiState.summarizerCustomGeminiModelName,
         )
         LazyColumn(
             modifier = Modifier
                 .padding(paddingValues)
                 .fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item {
                 Card(
@@ -105,27 +101,27 @@ fun MainScreen(
                         .fillMaxWidth()
                         .clickable { onNavigateToSettings() },
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer
-                    )
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    ),
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Column(
                             modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
                             Text(
                                 text = "Transcription: $transcriptionProviderLabel",
                                 style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
                             )
                             Text(
                                 text = "Summarizer: $summarizerProviderLabel",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
                             )
                         }
                         Spacer(Modifier.width(8.dp))
@@ -133,7 +129,7 @@ fun MainScreen(
                             Icons.AutoMirrored.Filled.ArrowForward,
                             contentDescription = "Go to Settings",
                             modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
                         )
                     }
                 }
@@ -142,12 +138,12 @@ fun MainScreen(
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         Text(
                             "Status",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Text(uiState.status, style = MaterialTheme.typography.bodyMedium)
                     }
@@ -159,22 +155,22 @@ fun MainScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 32.dp),
-                        contentAlignment = Alignment.Center
+                        contentAlignment = Alignment.Center,
                     ) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Mic,
                                 contentDescription = null,
                                 modifier = Modifier.size(48.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Text(
                                 "Share one or more audio files to start transcribing.",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -200,7 +196,9 @@ fun MainScreen(
                         onClearSummary = { viewModel.clearSummary(job.id) },
                         onClearTranscript = { viewModel.clearTranscription(job.id) },
                         onCopyTranscript = {
-                            scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", job.transcript))) }
+                            scope.launch {
+                                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", job.transcript)))
+                            }
                             Toast.makeText(context, "Copied transcript", Toast.LENGTH_SHORT).show()
                         },
                         onCopySummary = {
@@ -215,7 +213,7 @@ fun MainScreen(
                         },
                         onRetry = { viewModel.retryJob(job.id) },
                         onCancel = { viewModel.cancelJob(job.id) },
-                        onDelete = { viewModel.deleteJob(job.id) }
+                        onDelete = { viewModel.deleteJob(job.id) },
                     )
                 }
             }

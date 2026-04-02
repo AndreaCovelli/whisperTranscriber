@@ -31,9 +31,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,10 +57,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HistoryScreen(
-    historyViewModel: HistoryViewModel = viewModel(),
-    onNavigateBack: () -> Unit
-) {
+fun HistoryScreen(historyViewModel: HistoryViewModel = viewModel(), onNavigateBack: () -> Unit) {
     val pagedItems = historyViewModel.pagedHistoryItems.collectAsLazyPagingItems()
     val clipboardManager = LocalClipboard.current
     val scope = rememberCoroutineScope()
@@ -71,7 +68,7 @@ fun HistoryScreen(
 
     val expandedIdsSaver = listSaver<Set<Int>, Int>(
         save = { it.toList() },
-        restore = { it.toSet() }
+        restore = { it.toSet() },
     )
     var expandedIds by rememberSaveable(stateSaver = expandedIdsSaver) { mutableStateOf(emptySet()) }
 
@@ -102,7 +99,7 @@ fun HistoryScreen(
             },
             dismissButton = {
                 TextButton(onClick = { setShowDeleteAllDialog(false) }) { Text("Cancel") }
-            }
+            },
         )
     }
 
@@ -121,9 +118,9 @@ fun HistoryScreen(
                             Icon(Icons.Default.DeleteSweep, "Delete all history")
                         }
                     }
-                }
+                },
             )
-        }
+        },
     ) { paddingValues ->
         val focusManager = LocalFocusManager.current
         Column(
@@ -132,8 +129,8 @@ fun HistoryScreen(
                 .padding(paddingValues)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) { focusManager.clearFocus() }
+                    indication = null,
+                ) { focusManager.clearFocus() },
         ) {
             if (pagedItems.itemCount > 0 || searchQuery.isNotEmpty()) {
                 OutlinedTextField(
@@ -152,7 +149,7 @@ fun HistoryScreen(
                         }
                     } else {
                         null
-                    }
+                    },
                 )
             }
             if (pagedItems.itemCount == 0) {
@@ -160,22 +157,25 @@ fun HistoryScreen(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth(),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        if (searchQuery.isEmpty()) "No history yet."
-                        else "No results for \"$searchQuery\"",
-                        style = MaterialTheme.typography.bodyLarge
+                        if (searchQuery.isEmpty()) {
+                            "No history yet."
+                        } else {
+                            "No results for \"$searchQuery\""
+                        },
+                        style = MaterialTheme.typography.bodyLarge,
                     )
                 }
             } else {
                 LazyColumn(
                     modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 8.dp)
+                    contentPadding = PaddingValues(vertical = 8.dp),
                 ) {
                     items(
                         count = pagedItems.itemCount,
-                        key = pagedItems.itemKey { it.id }
+                        key = pagedItems.itemKey { it.id },
                     ) { index ->
                         val item = pagedItems[index]
                         if (item != null) {
@@ -191,13 +191,15 @@ fun HistoryScreen(
                                     }
                                 },
                                 onCopy = { text ->
-                                    scope.launch { clipboardManager.setClipEntry(ClipEntry(ClipData.newPlainText("", text))) }
+                                    scope.launch {
+                                        clipboardManager.setClipEntry(ClipEntry(ClipData.newPlainText("", text)))
+                                    }
                                     Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                                 },
                                 onClearSummary = { historyViewModel.clearSummary(item) },
                                 onDelete = { historyViewModel.deleteHistoryItem(item) },
                                 onShare = { historyViewModel.prepareShareContent(item) },
-                                searchQuery = searchQuery
+                                searchQuery = searchQuery,
                             )
                         }
                     }

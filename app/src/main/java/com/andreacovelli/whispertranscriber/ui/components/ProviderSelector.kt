@@ -38,7 +38,7 @@ fun ProviderSelector(
     customModelValidation: CustomModelValidation,
     onValidateCustomModel: (String) -> Unit,
     onResetValidation: () -> Unit,
-    showElevenLabs: Boolean = true
+    showElevenLabs: Boolean = true,
 ) {
     var customInput by remember(customModelName) { mutableStateOf(customModelName) }
     var fieldHadFocus by remember(customModelName) { mutableStateOf(false) }
@@ -48,7 +48,7 @@ fun ProviderSelector(
             ProviderRadioOption(
                 text = "ElevenLabs",
                 isSelected = selected == TranscriptionProvider.ELEVEN_LABS,
-                onClick = { onSelect(TranscriptionProvider.ELEVEN_LABS) }
+                onClick = { onSelect(TranscriptionProvider.ELEVEN_LABS) },
             )
 
             Spacer(Modifier.height(8.dp))
@@ -56,38 +56,38 @@ fun ProviderSelector(
         Text(
             "Gemini Models",
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.small,
-            color = MaterialTheme.colorScheme.surfaceVariant
+            color = MaterialTheme.colorScheme.surfaceVariant,
         ) {
             Column {
                 ProviderRadioOption(
                     text = "Gemini Flash Lite",
                     isSelected = selected == TranscriptionProvider.GEMINI_FLASH_LITE,
-                    onClick = { onSelect(TranscriptionProvider.GEMINI_FLASH_LITE) }
+                    onClick = { onSelect(TranscriptionProvider.GEMINI_FLASH_LITE) },
                 )
                 ProviderRadioOption(
                     text = "Gemini Flash",
                     isSelected = selected == TranscriptionProvider.GEMINI_FLASH,
-                    onClick = { onSelect(TranscriptionProvider.GEMINI_FLASH) }
+                    onClick = { onSelect(TranscriptionProvider.GEMINI_FLASH) },
                 )
                 ProviderRadioOption(
                     text = "Gemini Pro",
                     isSelected = selected == TranscriptionProvider.GEMINI_PRO,
-                    onClick = { onSelect(TranscriptionProvider.GEMINI_PRO) }
+                    onClick = { onSelect(TranscriptionProvider.GEMINI_PRO) },
                 )
                 ProviderRadioOption(
                     text = "Custom model",
                     isSelected = selected == TranscriptionProvider.GEMINI_CUSTOM,
-                    onClick = { onSelect(TranscriptionProvider.GEMINI_CUSTOM) }
+                    onClick = { onSelect(TranscriptionProvider.GEMINI_CUSTOM) },
                 )
                 if (selected == TranscriptionProvider.GEMINI_CUSTOM) {
                     Column(
                         modifier = Modifier.padding(start = 40.dp, end = 12.dp, bottom = 12.dp),
-                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp)
+                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp),
                     ) {
                         OutlinedTextField(
                             value = customInput,
@@ -106,33 +106,40 @@ fun ProviderSelector(
                                     }
                                 },
                             singleLine = true,
-                            isError = customModelValidation is CustomModelValidation.Error
+                            isError = customModelValidation is CustomModelValidation.Error,
                         )
                         when (customModelValidation) {
                             is CustomModelValidation.Validating -> {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)
+                                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(
+                                        6.dp,
+                                    ),
                                 ) {
-                                    CircularProgressIndicator(modifier = Modifier.height(14.dp).width(14.dp), strokeWidth = 2.dp)
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.height(14.dp).width(14.dp),
+                                        strokeWidth = 2.dp,
+                                    )
                                     Text("Validating…", style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                             is CustomModelValidation.Valid -> {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)
+                                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(
+                                        6.dp,
+                                    ),
                                 ) {
                                     Icon(
                                         Icons.Default.Check,
                                         contentDescription = null,
                                         modifier = Modifier.height(14.dp).width(14.dp),
-                                        tint = MaterialTheme.colorScheme.primary
+                                        tint = MaterialTheme.colorScheme.primary,
                                     )
                                     Text(
                                         customModelValidation.displayName,
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary
+                                        color = MaterialTheme.colorScheme.primary,
                                     )
                                 }
                             }
@@ -140,7 +147,7 @@ fun ProviderSelector(
                                 Text(
                                     customModelValidation.message,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.error
+                                    color = MaterialTheme.colorScheme.error,
                                 )
                             }
                             else -> Unit
@@ -153,25 +160,20 @@ fun ProviderSelector(
 }
 
 @Composable
-private fun ProviderRadioOption(
-    text: String,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
+private fun ProviderRadioOption(text: String, isSelected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .selectable(
                 selected = isSelected,
                 onClick = onClick,
-                role = Role.RadioButton
+                role = Role.RadioButton,
             ),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         RadioButton(
             selected = isSelected,
-            onClick = null
+            onClick = null,
         )
         Spacer(Modifier.width(8.dp))
         Text(text)

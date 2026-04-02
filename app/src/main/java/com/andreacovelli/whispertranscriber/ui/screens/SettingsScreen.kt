@@ -40,10 +40,7 @@ import com.andreacovelli.whispertranscriber.ui.components.ProviderSelector
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(
-    viewModel: MainViewModel,
-    onNavigateBack: () -> Unit
-) {
+fun SettingsScreen(viewModel: MainViewModel, onNavigateBack: () -> Unit) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -56,10 +53,10 @@ fun SettingsScreen(
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                     }
-                }
+                },
             )
         },
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -69,14 +66,14 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
-                    indication = null
+                    indication = null,
                 ) { focusManager.clearFocus() },
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text("Transcription Provider", style = MaterialTheme.typography.titleMedium)
                     ProviderSelector(
@@ -85,7 +82,7 @@ fun SettingsScreen(
                         customModelName = uiState.transcriptionCustomGeminiModelName,
                         customModelValidation = uiState.transcriptionCustomModelValidation,
                         onValidateCustomModel = { viewModel.validateCustomGeminiModel(it, isSummarizer = false) },
-                        onResetValidation = { viewModel.resetCustomModelValidation(isSummarizer = false) }
+                        onResetValidation = { viewModel.resetCustomModelValidation(isSummarizer = false) },
                     )
                 }
             }
@@ -93,7 +90,7 @@ fun SettingsScreen(
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text("Summarizer Model", style = MaterialTheme.typography.titleMedium)
                     ProviderSelector(
@@ -103,7 +100,7 @@ fun SettingsScreen(
                         customModelValidation = uiState.summarizerCustomModelValidation,
                         onValidateCustomModel = { viewModel.validateCustomGeminiModel(it, isSummarizer = true) },
                         onResetValidation = { viewModel.resetCustomModelValidation(isSummarizer = true) },
-                        showElevenLabs = false
+                        showElevenLabs = false,
                     )
                 }
             }
@@ -111,22 +108,22 @@ fun SettingsScreen(
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text("Automatic Summarization", style = MaterialTheme.typography.titleMedium)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
                             text = "Summarize completed transcriptions automatically",
                             style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
                         )
                         Switch(
                             checked = uiState.automaticSummarizationEnabled,
-                            onCheckedChange = { viewModel.setAutomaticSummarization(it) }
+                            onCheckedChange = { viewModel.setAutomaticSummarization(it) },
                         )
                     }
                 }
@@ -142,7 +139,7 @@ fun SettingsScreen(
                 onForget = viewModel::forgetElevenLabsKey,
                 onResetValidation = viewModel::resetElevenLabsKeyValidation,
                 forgetMessage = "ElevenLabs key forgotten",
-                snackbarHostState = snackbarHostState
+                snackbarHostState = snackbarHostState,
             )
 
             ApiKeyCard(
@@ -155,7 +152,7 @@ fun SettingsScreen(
                 onForget = viewModel::forgetGeminiKey,
                 onResetValidation = viewModel::resetGeminiKeyValidation,
                 forgetMessage = "Gemini key forgotten",
-                snackbarHostState = snackbarHostState
+                snackbarHostState = snackbarHostState,
             )
 
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
@@ -164,13 +161,17 @@ fun SettingsScreen(
                         .padding(16.dp)
                         .fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text("App Info", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        text = stringResource(R.string.app_version_info, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE),
+                        text = stringResource(
+                            R.string.app_version_info,
+                            BuildConfig.VERSION_NAME,
+                            BuildConfig.VERSION_CODE,
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }

@@ -1,9 +1,9 @@
 package com.andreacovelli.whispertranscriber
 
 import android.content.Context
-import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import androidx.room.withTransaction
 import com.andreacovelli.whispertranscriber.data.AppDatabase
+import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.data.TranscriptionJobDao
 import kotlinx.coroutines.flow.Flow
@@ -15,9 +15,7 @@ class TranscriptionRepository(context: Context) {
 
     val jobsState: Flow<List<TranscriptionJob>> = jobDao.getAllJobs()
 
-    suspend fun addJob(job: TranscriptionJob): Long {
-        return jobDao.insert(job)
-    }
+    suspend fun addJob(job: TranscriptionJob): Long = jobDao.insert(job)
 
     suspend fun updateJob(job: TranscriptionJob) {
         jobDao.update(job)
@@ -31,7 +29,17 @@ class TranscriptionRepository(context: Context) {
         jobDao.updateStatusAndProgress(id, status, progress)
     }
 
-    suspend fun updateResult(id: Int, transcript: String, language: String, model: String, historyId: Int?, progress: Float, isRunning: Boolean, status: String, error: String?) {
+    suspend fun updateResult(
+        id: Int,
+        transcript: String,
+        language: String,
+        model: String,
+        historyId: Int?,
+        progress: Float,
+        isRunning: Boolean,
+        status: String,
+        error: String?,
+    ) {
         jobDao.updateResult(id, transcript, language, model, historyId, progress, isRunning, status, error)
     }
 
@@ -59,17 +67,11 @@ class TranscriptionRepository(context: Context) {
         jobDao.failSummarization(id, error)
     }
 
-    suspend fun claimAutoSummary(id: Int): Boolean {
-        return jobDao.claimAutoSummary(id) > 0
-    }
+    suspend fun claimAutoSummary(id: Int): Boolean = jobDao.claimAutoSummary(id) > 0
 
-    suspend fun claimManualSummary(id: Int): Boolean {
-        return jobDao.claimManualSummary(id) > 0
-    }
+    suspend fun claimManualSummary(id: Int): Boolean = jobDao.claimManualSummary(id) > 0
 
-    suspend fun resetStaleSummaries(): Int {
-        return jobDao.resetStaleSummaries()
-    }
+    suspend fun resetStaleSummaries(): Int = jobDao.resetStaleSummaries()
 
     suspend fun clearJobSummary(jobId: Int) {
         db.withTransaction {
@@ -101,9 +103,7 @@ class TranscriptionRepository(context: Context) {
         }
     }
 
-    suspend fun getJob(jobId: Int): TranscriptionJob? {
-        return jobDao.getJobById(jobId)
-    }
+    suspend fun getJob(jobId: Int): TranscriptionJob? = jobDao.getJobById(jobId)
 
     suspend fun clearCompletedJobs(): List<String> {
         val completedJobs = jobDao.getCompletedJobs()
@@ -117,7 +117,5 @@ class TranscriptionRepository(context: Context) {
         return job?.stagedFilePath
     }
 
-    suspend fun findHistoryItem(historyId: Int): TranscriptionHistory? {
-        return historyDao.getById(historyId)
-    }
+    suspend fun findHistoryItem(historyId: Int): TranscriptionHistory? = historyDao.getById(historyId)
 }

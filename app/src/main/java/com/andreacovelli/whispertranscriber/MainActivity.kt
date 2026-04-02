@@ -51,21 +51,21 @@ class MainActivity : ComponentActivity() {
                         exitTransition = {
                             slideOutOfContainer(
                                 AnimatedContentTransitionScope.SlideDirection.Left,
-                                animationSpec = tween(300)
+                                animationSpec = tween(300),
                             )
                         },
                         popEnterTransition = {
                             slideIntoContainer(
                                 AnimatedContentTransitionScope.SlideDirection.Right,
-                                animationSpec = tween(300)
+                                animationSpec = tween(300),
                             )
                         },
-                        popExitTransition = { null }
+                        popExitTransition = { null },
                     ) {
                         MainScreen(
                             viewModel = mainViewModel,
                             onNavigateToHistory = { navController.navigate(AppRoutes.HISTORY) },
-                            onNavigateToSettings = { navController.navigate(AppRoutes.SETTINGS) }
+                            onNavigateToSettings = { navController.navigate(AppRoutes.SETTINGS) },
                         )
                     }
 
@@ -74,22 +74,22 @@ class MainActivity : ComponentActivity() {
                         enterTransition = {
                             slideIntoContainer(
                                 AnimatedContentTransitionScope.SlideDirection.Left,
-                                animationSpec = tween(300)
+                                animationSpec = tween(300),
                             )
                         },
                         exitTransition = {
                             slideOutOfContainer(
                                 AnimatedContentTransitionScope.SlideDirection.Left,
-                                animationSpec = tween(300)
+                                animationSpec = tween(300),
                             )
                         },
                         popEnterTransition = { null },
                         popExitTransition = {
                             slideOutOfContainer(
                                 AnimatedContentTransitionScope.SlideDirection.Right,
-                                animationSpec = tween(300)
+                                animationSpec = tween(300),
                             )
-                        }
+                        },
                     ) {
                         HistoryScreen(onNavigateBack = { navController.popBackStack() })
                     }
@@ -99,26 +99,26 @@ class MainActivity : ComponentActivity() {
                         enterTransition = {
                             slideIntoContainer(
                                 AnimatedContentTransitionScope.SlideDirection.Left,
-                                animationSpec = tween(300)
+                                animationSpec = tween(300),
                             )
                         },
                         exitTransition = {
                             slideOutOfContainer(
                                 AnimatedContentTransitionScope.SlideDirection.Left,
-                                animationSpec = tween(300)
+                                animationSpec = tween(300),
                             )
                         },
                         popEnterTransition = { null },
                         popExitTransition = {
                             slideOutOfContainer(
                                 AnimatedContentTransitionScope.SlideDirection.Right,
-                                animationSpec = tween(300)
+                                animationSpec = tween(300),
                             )
-                        }
+                        },
                     ) {
                         SettingsScreen(
                             viewModel = mainViewModel,
-                            onNavigateBack = { navController.popBackStack() }
+                            onNavigateBack = { navController.popBackStack() },
                         )
                     }
                 }

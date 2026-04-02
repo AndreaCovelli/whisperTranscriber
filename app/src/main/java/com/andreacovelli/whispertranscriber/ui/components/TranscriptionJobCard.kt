@@ -49,7 +49,7 @@ fun TranscriptionJobCard(
     onShareSummary: () -> Unit,
     onRetry: () -> Unit,
     onCancel: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
 ) {
     val queuedProviderLabel = providerDisplayLabel(job.provider, job.requestedModel)
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -59,19 +59,19 @@ fun TranscriptionJobCard(
                 .animateContentSize(
                     animationSpec = spring(
                         dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessMedium
-                    )
-                )
+                        stiffness = Spring.StiffnessMedium,
+                    ),
+                ),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = job.displayName.ifBlank { "Audio file" },
                     style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
                 if (job.isRunning || job.status == "Queued") {
                     TextButton(onClick = onCancel) {
@@ -82,7 +82,7 @@ fun TranscriptionJobCard(
                         Icon(
                             imageVector = Icons.Default.Delete,
                             contentDescription = "Delete job",
-                            tint = MaterialTheme.colorScheme.error
+                            tint = MaterialTheme.colorScheme.error,
                         )
                     }
                 }
@@ -99,7 +99,9 @@ fun TranscriptionJobCard(
                 if (job.model.isNotBlank()) {
                     if (isNotEmpty()) append(" • ")
                     append("Model: ${job.model}")
-                } else if (job.requestedModel.isNotBlank() && job.provider != com.andreacovelli.whispertranscriber.TranscriptionProvider.ELEVEN_LABS) {
+                } else if (job.requestedModel.isNotBlank() &&
+                    job.provider != com.andreacovelli.whispertranscriber.TranscriptionProvider.ELEVEN_LABS
+                ) {
                     if (isNotEmpty()) append(" • ")
                     append("Queued model: ${job.requestedModel}")
                 }
@@ -108,7 +110,7 @@ fun TranscriptionJobCard(
                 Text(
                     text = secondary,
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(4.dp))
             }
@@ -120,13 +122,13 @@ fun TranscriptionJobCard(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         text = job.error,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     )
                     Spacer(Modifier.width(8.dp))
                     OutlinedButton(onClick = onRetry) {
@@ -142,7 +144,7 @@ fun TranscriptionJobCard(
                 if (job.status.contains("Converting")) {
                     LinearProgressIndicator(
                         progress = { job.progress.coerceIn(0f, 1f) },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 } else {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -154,7 +156,7 @@ fun TranscriptionJobCard(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text("Transcription", style = MaterialTheme.typography.titleSmall)
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -168,7 +170,7 @@ fun TranscriptionJobCard(
                             Icon(
                                 Icons.Default.DeleteSweep,
                                 contentDescription = stringResource(R.string.clear_transcription),
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(24.dp),
                             )
                         }
                     }
@@ -176,7 +178,7 @@ fun TranscriptionJobCard(
                 ExpandableText(
                     text = job.transcript,
                     modifier = Modifier.fillMaxWidth(),
-                    minimizedMaxLines = 6
+                    minimizedMaxLines = 6,
                 )
             }
 
@@ -184,11 +186,11 @@ fun TranscriptionJobCard(
                 Spacer(Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.End,
                 ) {
                     OutlinedButton(
                         onClick = onRetry,
-                        modifier = if (job.transcript.isNotBlank()) Modifier.padding(end = 8.dp) else Modifier
+                        modifier = if (job.transcript.isNotBlank()) Modifier.padding(end = 8.dp) else Modifier,
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = "Redo", modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
@@ -204,7 +206,7 @@ fun TranscriptionJobCard(
                                     job.isSummarizing -> "Summarizing..."
                                     job.summary.isNotBlank() -> "Re-summarize"
                                     else -> "Summarize with Gemini"
-                                }
+                                },
                             )
                         }
                     }
@@ -217,7 +219,7 @@ fun TranscriptionJobCard(
                     text = "Summarization error: ${job.summaryError}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
 
@@ -226,7 +228,7 @@ fun TranscriptionJobCard(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text("Summary", style = MaterialTheme.typography.titleSmall)
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -240,7 +242,7 @@ fun TranscriptionJobCard(
                             Icon(
                                 Icons.Default.DeleteSweep,
                                 contentDescription = stringResource(R.string.clear_summary),
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(24.dp),
                             )
                         }
                     }

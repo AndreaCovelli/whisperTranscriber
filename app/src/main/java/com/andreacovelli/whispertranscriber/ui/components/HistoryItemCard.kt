@@ -5,9 +5,9 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -43,12 +43,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private fun buildHighlightedText(
-    text: String,
-    query: String,
-    background: Color,
-    onBackground: Color
-): AnnotatedString {
+private fun buildHighlightedText(text: String, query: String, background: Color, onBackground: Color): AnnotatedString {
     if (query.isBlank()) return AnnotatedString(text)
     return buildAnnotatedString {
         var cursor = 0
@@ -88,7 +83,7 @@ fun HistoryItemCard(
     onClearSummary: () -> Unit,
     onDelete: () -> Unit,
     onShare: () -> Unit,
-    searchQuery: String = ""
+    searchQuery: String = "",
 ) {
     val formattedDate = remember(item.timestamp) {
         DateTimeFormatter.ofPattern("MMM dd, yyyy - HH:mm", Locale.getDefault())
@@ -100,7 +95,7 @@ fun HistoryItemCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
-            .clickable(onClick = onToggleExpand)
+            .clickable(onClick = onToggleExpand),
     ) {
         Column(
             modifier = Modifier
@@ -108,30 +103,33 @@ fun HistoryItemCard(
                 .animateContentSize(
                     animationSpec = spring(
                         dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessMedium
-                    )
-                )
+                        stiffness = Spring.StiffnessMedium,
+                    ),
+                ),
         ) {
             if (item.displayName.isNotBlank()) {
-                Text(rememberHighlightedText(item.displayName, searchQuery), style = MaterialTheme.typography.titleSmall)
+                Text(
+                    rememberHighlightedText(item.displayName, searchQuery),
+                    style = MaterialTheme.typography.titleSmall,
+                )
                 Spacer(Modifier.height(2.dp))
             }
             Text(
                 formattedDate,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(4.dp))
             Text(
                 "Language: ${item.language}",
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(2.dp))
             Text(
                 "Model: $displayModel",
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(8.dp))
             if (expanded) {
@@ -140,14 +138,17 @@ fun HistoryItemCard(
                     Spacer(Modifier.height(12.dp))
                     Text("Summary", style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(4.dp))
-                    Text(rememberHighlightedText(item.summary, searchQuery), style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        rememberHighlightedText(item.summary, searchQuery),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                 }
             } else {
                 Text(
                     rememberHighlightedText(item.text, searchQuery),
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 4,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
                 )
                 if (item.summary.isNotBlank()) {
                     Spacer(Modifier.height(6.dp))
@@ -156,7 +157,7 @@ fun HistoryItemCard(
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -165,13 +166,13 @@ fun HistoryItemCard(
                 Text(
                     text = "Show more",
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
             Spacer(Modifier.height(8.dp))
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
+                horizontalArrangement = Arrangement.End,
             ) {
                 val copyActions = buildList {
                     add("text" to item.text)
@@ -182,7 +183,7 @@ fun HistoryItemCard(
                         Icon(
                             Icons.Default.ContentCopy,
                             contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(18.dp),
                         )
                         Spacer(Modifier.width(4.dp))
                         Text(stringResource(R.string.copy_type, type), maxLines = 1, softWrap = false)
@@ -196,7 +197,7 @@ fun HistoryItemCard(
                         Icon(
                             Icons.Default.DeleteSweep,
                             contentDescription = stringResource(R.string.clear_summary),
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(24.dp),
                         )
                     }
                 }
@@ -204,7 +205,7 @@ fun HistoryItemCard(
                     Icon(
                         Icons.Default.Delete,
                         stringResource(R.string.delete_item_description),
-                        tint = MaterialTheme.colorScheme.error
+                        tint = MaterialTheme.colorScheme.error,
                     )
                 }
             }

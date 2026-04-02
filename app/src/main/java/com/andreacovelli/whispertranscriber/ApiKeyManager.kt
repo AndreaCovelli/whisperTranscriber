@@ -3,15 +3,15 @@ package com.andreacovelli.whispertranscriber
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.andreacovelli.whispertranscriber.security.KeystoreCrypto
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.firstOrNull
 import java.nio.charset.StandardCharsets
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
@@ -20,7 +20,8 @@ enum class TranscriptionProvider(val modelName: String? = null) {
     GEMINI_FLASH_LITE("gemini-flash-lite-latest"),
     GEMINI_FLASH("gemini-flash-latest"),
     GEMINI_PRO("gemini-pro-latest"),
-    GEMINI_CUSTOM; // model name stored separately in DataStore
+    GEMINI_CUSTOM, // model name stored separately in DataStore
+    ;
 
     fun isGemini(): Boolean = this != ELEVEN_LABS
 }
@@ -86,8 +87,11 @@ class ApiKeyManager(private val context: Context) {
 
     private suspend fun saveCustomModelName(name: String, key: Preferences.Key<String>) {
         context.dataStore.edit { prefs ->
-            if (name.isBlank()) prefs.remove(key)
-            else prefs[key] = name.trim()
+            if (name.isBlank()) {
+                prefs.remove(key)
+            } else {
+                prefs[key] = name.trim()
+            }
         }
     }
 
@@ -115,8 +119,9 @@ class ApiKeyManager(private val context: Context) {
     // Read flows for UI state (does not expose keys)
     private fun getApiKeyStateFlow(key: Preferences.Key<String>): Flow<ApiKeyState> = context.dataStore.data.map { p ->
         val enc = p[key]
-        if (enc == null) ApiKeyState.Missing
-        else {
+        if (enc == null) {
+            ApiKeyState.Missing
+        } else {
             try {
                 KeystoreCrypto.decryptFromBase64(enc)?.fill(0)
                 ApiKeyState.Present
