@@ -289,6 +289,38 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                 db.execSQL(
                     """
+                    CREATE TRIGGER IF NOT EXISTS `transcription_history_fts_ai`
+                    AFTER INSERT ON `transcription_history`
+                    BEGIN
+                        INSERT INTO `transcription_history_fts`(`rowid`, `text`, `summary`, `displayName`)
+                        VALUES (new.`id`, new.`text`, new.`summary`, new.`displayName`);
+                    END
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TRIGGER IF NOT EXISTS `transcription_history_fts_ad`
+                    AFTER DELETE ON `transcription_history`
+                    BEGIN
+                        INSERT INTO `transcription_history_fts`(`transcription_history_fts`, `rowid`, `text`, `summary`, `displayName`)
+                        VALUES('delete', old.`id`, old.`text`, old.`summary`, old.`displayName`);
+                    END
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TRIGGER IF NOT EXISTS `transcription_history_fts_au`
+                    AFTER UPDATE ON `transcription_history`
+                    BEGIN
+                        INSERT INTO `transcription_history_fts`(`transcription_history_fts`, `rowid`, `text`, `summary`, `displayName`)
+                        VALUES('delete', old.`id`, old.`text`, old.`summary`, old.`displayName`);
+                        INSERT INTO `transcription_history_fts`(`rowid`, `text`, `summary`, `displayName`)
+                        VALUES (new.`id`, new.`text`, new.`summary`, new.`displayName`);
+                    END
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
                     INSERT INTO `transcription_history_fts`(`transcription_history_fts`)
                     VALUES('rebuild')
                     """.trimIndent(),

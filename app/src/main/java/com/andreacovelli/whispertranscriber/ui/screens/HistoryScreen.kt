@@ -55,6 +55,7 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import com.andreacovelli.whispertranscriber.HistoryViewModel
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.extractHistorySearchTokens
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCard
 import kotlinx.coroutines.launch
 
@@ -76,6 +77,7 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = viewModel(), onNavigateBa
     var expandedIds by rememberSaveable(stateSaver = expandedIdsSaver) { mutableStateOf(emptySet()) }
 
     val shareTitle = stringResource(R.string.share_transcription_title)
+    val searchTokens = remember(searchQuery) { extractHistorySearchTokens(searchQuery) }
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(historyViewModel, lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -211,7 +213,7 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = viewModel(), onNavigateBa
                                 onClearSummary = { historyViewModel.clearSummary(item) },
                                 onDelete = { historyViewModel.deleteHistoryItem(item) },
                                 onShare = { historyViewModel.prepareShareContent(item) },
-                                searchQuery = searchQuery,
+                                searchTokens = searchTokens,
                             )
                         }
                     }

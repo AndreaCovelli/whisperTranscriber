@@ -38,7 +38,6 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
-import com.andreacovelli.whispertranscriber.extractHistorySearchTokens
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -115,14 +114,13 @@ fun HistoryItemCard(
     onClearSummary: () -> Unit,
     onDelete: () -> Unit,
     onShare: () -> Unit,
-    searchQuery: String = "",
+    searchTokens: List<String> = emptyList(),
 ) {
     val formattedDate = remember(item.timestamp) {
         DateTimeFormatter.ofPattern("MMM dd, yyyy - HH:mm", Locale.getDefault())
             .format(Instant.ofEpochMilli(item.timestamp).atZone(ZoneId.systemDefault()))
     }
     val displayModel = remember(item.model) { item.model.ifBlank { "Unknown" } }
-    val searchTokens = remember(searchQuery) { extractHistorySearchTokens(searchQuery) }
 
     Card(
         modifier = Modifier
