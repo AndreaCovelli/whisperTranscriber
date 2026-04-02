@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.paging.PagingSource
 import androidx.room.Dao
 import androidx.room.Database
-import androidx.room.Delete
 import androidx.room.Entity
 import androidx.room.Fts4
 import androidx.room.Insert
@@ -310,7 +309,9 @@ abstract class AppDatabase : RoomDatabase() {
             context.applicationContext,
             AppDatabase::class.java,
             databaseName,
-        ).addMigrations(*MIGRATIONS)
+        ).apply {
+            MIGRATIONS.forEach(::addMigrations)
+        }
 
         fun getDatabase(context: Context): AppDatabase = INSTANCE ?: synchronized(this) {
             val instance = createBuilder(context, "transcription_database").build()

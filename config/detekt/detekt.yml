@@ -54,6 +54,8 @@ potential-bugs:
     active: true
 
 style:
+  UnusedImports:
+    active: true
   MagicNumber:
     active: false
   WildcardImport:

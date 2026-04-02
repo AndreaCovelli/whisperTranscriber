@@ -119,6 +119,15 @@ configure<com.diffplug.gradle.spotless.SpotlessExtension> {
 tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
     jvmTarget = "21"
     baseline.set(file("$rootDir/config/detekt/baseline.xml"))
+    setSource(
+        files(
+            "src/main/java",
+            "src/test/java",
+            "src/androidTest/java",
+        ),
+    )
+    include("**/*.kt")
+    exclude("**/build/**", "**/generated/**")
     reports {
         html.required.set(true)
         sarif.required.set(true)
