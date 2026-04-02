@@ -205,7 +205,7 @@ interface TranscriptionJobDao {
 @Database(
     entities = [TranscriptionHistory::class, TranscriptionHistoryFts::class, TranscriptionJob::class],
     version = 8,
-    exportSchema = false,
+    exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun transcriptionHistoryDao(): TranscriptionHistoryDao
@@ -296,11 +296,7 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        private fun createBuilder(context: Context, databaseName: String) = Room.databaseBuilder(
-            context.applicationContext,
-            AppDatabase::class.java,
-            databaseName,
-        ).addMigrations(
+        val MIGRATIONS = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
             MIGRATION_3_4,
@@ -310,8 +306,11 @@ abstract class AppDatabase : RoomDatabase() {
             MIGRATION_7_8,
         )
 
-        internal fun buildTestDatabase(context: Context, databaseName: String): AppDatabase =
-            createBuilder(context, databaseName).build()
+        private fun createBuilder(context: Context, databaseName: String) = Room.databaseBuilder(
+            context.applicationContext,
+            AppDatabase::class.java,
+            databaseName,
+        ).addMigrations(*MIGRATIONS)
 
         fun getDatabase(context: Context): AppDatabase = INSTANCE ?: synchronized(this) {
             val instance = createBuilder(context, "transcription_database").build()

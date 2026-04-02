@@ -9,6 +9,7 @@ plugins {
 val ktlintVersion = "1.7.1"
 
 android {
+    val roomSchemaDir = "$projectDir/schemas"
     val keystorePath = findProperty("keystorePath") as? String
     val propKeystorePassword = findProperty("keystorePassword") as? String
     val propKeyAlias = findProperty("keyAlias") as? String
@@ -27,6 +28,10 @@ android {
         versionName = propVersionName ?: "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    sourceSets {
+        getByName("androidTest").assets.srcDirs(roomSchemaDir)
     }
 
     signingConfigs {
@@ -76,6 +81,10 @@ android {
 
 kotlin {
     jvmToolchain(21)
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 configure<io.gitlab.arturbosch.detekt.extensions.DetektExtension> {
@@ -163,6 +172,7 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.room.testing)
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
