@@ -43,8 +43,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private fun buildPrefixMatchRegex(token: String): Regex =
-    Regex("""\b${Regex.escape(token)}""", RegexOption.IGNORE_CASE)
+private fun buildPrefixMatchRegex(token: String): Regex = Regex("""\b${Regex.escape(token)}""", RegexOption.IGNORE_CASE)
 
 private fun buildHighlightedText(
     text: String,

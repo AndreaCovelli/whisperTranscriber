@@ -107,9 +107,7 @@ class HistoryFtsSyncInstrumentedTest {
         }
     }
 
-    private fun ftsMatches(query: String): Boolean {
-        return ftsMatches(db, query)
-    }
+    private fun ftsMatches(query: String): Boolean = ftsMatches(db, query)
 
     private fun ftsMatches(database: AppDatabase, query: String): Boolean {
         database.openHelper.writableDatabase.query(
