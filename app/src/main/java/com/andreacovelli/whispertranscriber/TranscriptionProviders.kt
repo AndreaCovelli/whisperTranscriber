@@ -246,17 +246,17 @@ internal fun formatElevenLabsSpeakerTranscript(
     languageCode: String? = null,
     speakerLabelPrefix: String = "Speaker",
 ): String {
-    if (words.none { !it.speakerId.isNullOrBlank() }) return ""
-
     val speakerLabels = linkedMapOf<String, String>()
     val sections = mutableListOf<Pair<String, StringBuilder>>()
     val shouldInsertSpaces = languageCode.shouldInsertWordSpaces()
+    var hasSpeakerIds = false
 
     words.forEach { word ->
         val token = word.text.trim()
         if (token.isEmpty()) return@forEach
 
         val speakerId = word.speakerId?.takeIf(String::isNotBlank)
+        hasSpeakerIds = hasSpeakerIds || speakerId != null
         val effectiveSpeakerId = speakerId ?: UNLABELED_SPEAKER_ID
         val label = speakerLabels.getOrPut(effectiveSpeakerId) {
             "$speakerLabelPrefix ${speakerLabelSuffix(speakerLabels.size)}"
@@ -267,6 +267,8 @@ internal fun formatElevenLabsSpeakerTranscript(
         }
         sections.last().second.appendToken(token, shouldInsertSpaces)
     }
+
+    if (!hasSpeakerIds) return ""
 
     return sections.joinToString(separator = "\n") { (speaker, text) ->
         "$speaker: ${text.toString().trim()}"

@@ -119,9 +119,12 @@ fun HistoryItemCard(
             .format(Instant.ofEpochMilli(item.timestamp).atZone(ZoneId.systemDefault()))
     }
     val displayModel = remember(item.model) { item.model.ifBlank { "Unknown" } }
-    val highlightedText = rememberHighlightedText(item.text, searchTokens)
-    val highlightedSummary = rememberHighlightedText(item.summary, searchTokens)
-    val highlightedDisplayName = rememberHighlightedText(item.displayName, searchTokens)
+    val normalizedSearchTokens = remember(searchTokens) {
+        searchTokens.filter(String::isNotBlank).distinct()
+    }
+    val highlightedText = rememberHighlightedText(item.text, normalizedSearchTokens)
+    val highlightedSummary = rememberHighlightedText(item.summary, normalizedSearchTokens)
+    val highlightedDisplayName = rememberHighlightedText(item.displayName, normalizedSearchTokens)
 
     Card(
         modifier = Modifier

@@ -49,6 +49,7 @@ data class UiState(
 
 data class TranscriptionJobState(
     val id: Int = 0,
+    val timestamp: Long = 0L,
     val uri: Uri? = null,
     val displayName: String = "",
     val provider: TranscriptionProvider = TranscriptionProvider.ELEVEN_LABS,
@@ -70,6 +71,7 @@ data class TranscriptionJobState(
 
 fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     id = id,
+    timestamp = timestamp,
     uri = uri.toUri(),
     displayName = displayName,
     provider = runCatching { TranscriptionProvider.valueOf(providerName) }

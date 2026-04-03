@@ -9,14 +9,20 @@ internal fun buildBatchProgressState(jobs: List<TranscriptionJobState>): BatchPr
         .asSequence()
         .filter { it.batchId.isNotBlank() }
         .filter { it.isRunning || it.status == "Queued" }
-        .maxByOrNull(TranscriptionJobState::id)
+        .maxWithOrNull(compareBy<TranscriptionJobState>({ it.timestamp }, { it.id }))
         ?: return null
 
-    val latestActiveBatch = jobs.filter { it.batchId == latestActiveJob.batchId }
-    if (latestActiveBatch.size <= 1) return null
+    var totalFiles = 0
+    var completedFiles = 0
+    jobs.forEach { job ->
+        if (job.batchId != latestActiveJob.batchId) return@forEach
+        totalFiles += 1
+        if (!job.isRunning && job.status != "Queued") {
+            completedFiles += 1
+        }
+    }
 
-    val totalFiles = latestActiveBatch.size
-    val completedFiles = latestActiveBatch.count { !it.isRunning && it.status != "Queued" }
+    if (totalFiles <= 1) return null
     val currentFileNumber = if (completedFiles >= totalFiles) {
         totalFiles
     } else {

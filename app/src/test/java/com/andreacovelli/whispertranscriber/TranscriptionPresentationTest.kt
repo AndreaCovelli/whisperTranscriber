@@ -19,15 +19,30 @@ class TranscriptionPresentationTest {
     @Test
     fun buildBatchProgressState_usesLatestActiveMultiFileBatch() {
         val jobs = listOf(
-            testUiJob(id = 1, batchId = "batch-old", status = "Completed"),
-            testUiJob(id = 2, batchId = "batch-old", status = "Completed"),
-            testUiJob(id = 3, batchId = "batch-new", status = "Completed"),
-            testUiJob(id = 4, batchId = "batch-new", status = "Transcribing", isRunning = true),
-            testUiJob(id = 5, batchId = "batch-new", status = "Queued"),
+            testUiJob(id = 1, timestamp = 1_000L, batchId = "batch-old", status = "Completed"),
+            testUiJob(id = 2, timestamp = 2_000L, batchId = "batch-old", status = "Completed"),
+            testUiJob(id = 3, timestamp = 3_000L, batchId = "batch-new", status = "Completed"),
+            testUiJob(id = 4, timestamp = 4_000L, batchId = "batch-new", status = "Transcribing", isRunning = true),
+            testUiJob(id = 5, timestamp = 5_000L, batchId = "batch-new", status = "Queued"),
         )
 
         assertEquals(
             BatchProgressState(currentFileNumber = 2, totalFiles = 3, completedFiles = 1),
+            buildBatchProgressState(jobs),
+        )
+    }
+
+    @Test
+    fun buildBatchProgressState_prefersLatestTimestampOverHigherId() {
+        val jobs = listOf(
+            testUiJob(id = 50, timestamp = 1_000L, batchId = "batch-old", status = "Queued"),
+            testUiJob(id = 51, timestamp = 1_000L, batchId = "batch-old", status = "Completed"),
+            testUiJob(id = 10, timestamp = 2_000L, batchId = "batch-new", status = "Queued"),
+            testUiJob(id = 11, timestamp = 2_000L, batchId = "batch-new", status = "Completed"),
+        )
+
+        assertEquals(
+            BatchProgressState(currentFileNumber = 2, totalFiles = 2, completedFiles = 1),
             buildBatchProgressState(jobs),
         )
     }
@@ -124,8 +139,15 @@ class TranscriptionPresentationTest {
         assertEquals("Speaker A: こんにちは世界。", transcript)
     }
 
-    private fun testUiJob(id: Int, batchId: String, status: String, isRunning: Boolean = false) = TranscriptionJobState(
+    private fun testUiJob(
+        id: Int,
+        timestamp: Long = id.toLong(),
+        batchId: String,
+        status: String,
+        isRunning: Boolean = false,
+    ) = TranscriptionJobState(
         id = id,
+        timestamp = timestamp,
         displayName = "file-$id.wav",
         batchId = batchId,
         status = status,
