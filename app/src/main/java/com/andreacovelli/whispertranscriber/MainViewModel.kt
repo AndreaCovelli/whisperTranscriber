@@ -66,32 +66,6 @@ data class TranscriptionJobState(
     val isSummarizing: Boolean = false,
 )
 
-data class MainScreenActions(
-    val clearCompletedJobs: () -> Unit,
-    val summarizeJob: (Int) -> Unit,
-    val clearSummary: (Int) -> Unit,
-    val clearTranscript: (Int) -> Unit,
-    val retryJob: (Int) -> Unit,
-    val cancelJob: (Int) -> Unit,
-    val deleteJob: (Int) -> Unit,
-)
-
-data class SettingsScreenActions(
-    val setProvider: (TranscriptionProvider) -> Unit,
-    val setSummarizerProvider: (TranscriptionProvider) -> Unit,
-    val setAutomaticSummarization: (Boolean) -> Unit,
-    val saveElevenLabsKey: (String) -> Unit,
-    val saveGeminiKey: (String) -> Unit,
-    val validateTranscriptionModel: (String) -> Unit,
-    val validateSummarizerModel: (String) -> Unit,
-    val resetTranscriptionModelValidation: () -> Unit,
-    val resetSummarizerModelValidation: () -> Unit,
-    val resetElevenLabsKeyValidation: () -> Unit,
-    val resetGeminiKeyValidation: () -> Unit,
-    val forgetElevenLabsKey: () -> Unit,
-    val forgetGeminiKey: () -> Unit,
-)
-
 fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     id = id,
     uri = uri.toUri(),
@@ -154,7 +128,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         ioDispatcher = ioDispatcher,
     )
 
-    val mainScreenActions = MainScreenActions(
+    val mainScreenActions = createMainScreenActions(
         clearCompletedJobs = {
             viewModelScope.launch {
                 queueService.clearCompletedJobs()
@@ -188,54 +162,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         },
     )
 
-    val settingsScreenActions = SettingsScreenActions(
-        setProvider = { provider ->
-            _uiState.update { it.copy(provider = provider) }
-            viewModelScope.launch {
-                settings.saveProvider(provider)
-            }
-        },
-        setSummarizerProvider = { provider ->
-            _uiState.update { it.copy(summarizerProvider = provider) }
-            viewModelScope.launch {
-                settings.saveSummarizerProvider(provider)
-            }
-        },
-        setAutomaticSummarization = { enabled ->
-            _uiState.update { it.copy(automaticSummarizationEnabled = enabled) }
-            viewModelScope.launch {
-                settings.saveAutomaticSummarization(enabled)
-            }
-        },
-        saveElevenLabsKey = ::setElevenLabsKey,
-        saveGeminiKey = ::setGeminiKey,
-        validateTranscriptionModel = ::validateTranscriptionGeminiModel,
-        validateSummarizerModel = ::validateSummarizerGeminiModel,
-        resetTranscriptionModelValidation = {
-            _uiState.update { it.copy(transcriptionCustomModelValidation = CustomModelValidation.Idle) }
-        },
-        resetSummarizerModelValidation = {
-            _uiState.update { it.copy(summarizerCustomModelValidation = CustomModelValidation.Idle) }
-        },
-        resetElevenLabsKeyValidation = {
-            _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Idle) }
-        },
-        resetGeminiKeyValidation = {
-            _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Idle) }
-        },
-        forgetElevenLabsKey = {
-            viewModelScope.launch {
-                settings.forgetElevenLabsApiKey()
-                _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Idle) }
-            }
-        },
-        forgetGeminiKey = {
-            viewModelScope.launch {
-                settings.forgetGeminiApiKey()
-                _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Idle) }
-            }
-        },
-    )
+    val settingsScreenActions = createSettingsScreenActions()
 
     init {
         if (staleSummariesRecovered.compareAndSet(false, true)) {
@@ -336,6 +263,57 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(geminiKeyValidation = KeyValidationState.Error(result.errorMessage ?: "Validation failed"))
                 }
             }
+        }
+    }
+
+    internal fun updateProviderSelection(provider: TranscriptionProvider) {
+        _uiState.update { it.copy(provider = provider) }
+        viewModelScope.launch {
+            settings.saveProvider(provider)
+        }
+    }
+
+    internal fun updateSummarizerProviderSelection(provider: TranscriptionProvider) {
+        _uiState.update { it.copy(summarizerProvider = provider) }
+        viewModelScope.launch {
+            settings.saveSummarizerProvider(provider)
+        }
+    }
+
+    internal fun updateAutomaticSummarization(enabled: Boolean) {
+        _uiState.update { it.copy(automaticSummarizationEnabled = enabled) }
+        viewModelScope.launch {
+            settings.saveAutomaticSummarization(enabled)
+        }
+    }
+
+    internal fun resetTranscriptionModelValidation() {
+        _uiState.update { it.copy(transcriptionCustomModelValidation = CustomModelValidation.Idle) }
+    }
+
+    internal fun resetSummarizerModelValidation() {
+        _uiState.update { it.copy(summarizerCustomModelValidation = CustomModelValidation.Idle) }
+    }
+
+    internal fun resetElevenLabsKeyValidation() {
+        _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Idle) }
+    }
+
+    internal fun resetGeminiKeyValidation() {
+        _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Idle) }
+    }
+
+    internal fun forgetElevenLabsKey() {
+        viewModelScope.launch {
+            settings.forgetElevenLabsApiKey()
+            _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Idle) }
+        }
+    }
+
+    internal fun forgetGeminiKey() {
+        viewModelScope.launch {
+            settings.forgetGeminiApiKey()
+            _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Idle) }
         }
     }
 
