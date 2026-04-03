@@ -171,11 +171,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun consumeSharedAudioIntent(intent: Intent?) {
+        if (intent == null || (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) {
+            return
+        }
         val (sharedUris, replacementIntent) = SharedAudioIntentHandler.consumeSharedUris(intent)
         if (sharedUris.isNotEmpty()) {
             mainViewModel.handleAudioShareMultiple(sharedUris)
         }
-        if (replacementIntent != null) {
+        if (replacementIntent != null && replacementIntent !== intent) {
             setIntent(replacementIntent)
         }
     }

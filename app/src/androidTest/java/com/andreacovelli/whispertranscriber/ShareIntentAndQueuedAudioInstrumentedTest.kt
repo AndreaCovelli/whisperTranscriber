@@ -55,6 +55,22 @@ class ShareIntentAndQueuedAudioInstrumentedTest {
     }
 
     @Test
+    fun historyLaunchedShareIntent_isIgnored() {
+        val sharedUri = Uri.parse("content://test/history.wav")
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "audio/wav"
+            flags = Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY
+            putExtra(Intent.EXTRA_STREAM, sharedUri)
+        }
+
+        val uris = SharedAudioIntentHandler.extractSharedUris(shareIntent.takeIf {
+            (it.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
+        })
+
+        assertTrue(uris.isEmpty())
+    }
+
+    @Test
     fun mainActivity_isConfiguredAsSingleTask() {
         val activityInfo = context.packageManager.getActivityInfoCompat(
             ComponentName(context, MainActivity::class.java),
