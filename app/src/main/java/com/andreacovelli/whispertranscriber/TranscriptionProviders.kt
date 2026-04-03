@@ -249,7 +249,10 @@ internal fun formatElevenLabsSpeakerTranscript(words: List<ElevenLabsWord>): Str
 
         val speakerId = word.speakerId?.takeIf(String::isNotBlank)
         if (speakerId == null) {
-            sections.lastOrNull()?.second?.appendToken(token)
+            if (sections.isEmpty()) {
+                sections += "Speaker A" to StringBuilder()
+            }
+            sections.last().second.appendToken(token)
             return@forEach
         }
 
@@ -274,8 +277,12 @@ private fun StringBuilder.appendToken(token: String) {
         return
     }
 
+    val isOpeningPunctuation = token.length == 1 && token[0] in "([{\"'«"
     val punctuationOnly = token.all { !it.isLetterOrDigit() }
-    if (punctuationOnly) {
+    val previousEndsWithOpeningPunctuation = lastOrNull()?.let { it in "([{\"'«" } == true
+    if (punctuationOnly && !isOpeningPunctuation) {
+        append(token)
+    } else if (previousEndsWithOpeningPunctuation) {
         append(token)
     } else {
         append(' ').append(token)

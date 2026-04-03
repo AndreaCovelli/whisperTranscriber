@@ -50,6 +50,20 @@ class TranscriptionPresentationTest {
     }
 
     @Test
+    fun formatElevenLabsSpeakerTranscript_preservesLeadingUnlabeledWordsAndOpeningPunctuationSpacing() {
+        val transcript = formatElevenLabsSpeakerTranscript(
+            listOf(
+                ElevenLabsWord(text = "Hello", start = 0.0, end = 0.4, type = "word", speakerId = null),
+                ElevenLabsWord(text = "(", start = 0.4, end = 0.5, type = "punctuation", speakerId = null),
+                ElevenLabsWord(text = "world", start = 0.5, end = 0.8, type = "word", speakerId = "speaker_1"),
+                ElevenLabsWord(text = ")", start = 0.8, end = 0.9, type = "punctuation", speakerId = "speaker_1"),
+            ),
+        )
+
+        assertEquals("Speaker A: Hello (world)", transcript)
+    }
+
+    @Test
     fun formatElevenLabsSpeakerTranscript_returnsBlankWithoutSpeakerIds() {
         val transcript = formatElevenLabsSpeakerTranscript(
             listOf(
