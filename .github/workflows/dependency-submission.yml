@@ -5,6 +5,7 @@ on:
     branches: ["main"]
   pull_request:
     branches: ["main"]
+    types: [opened, reopened, synchronize]
   workflow_dispatch:
 
 concurrency:
@@ -19,7 +20,7 @@ jobs:
     name: Detect relevant changes
     runs-on: ubuntu-latest
     outputs:
-      should_run: ${{ steps.filter.outputs.deps }}
+      should_run: ${{ steps.set-output.outputs.should_run }}
 
     steps:
       - name: Checkout
@@ -27,8 +28,25 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Detect dependency-related changes
-        id: filter
+      - name: Detect dependency-related changes on PR open
+        id: filter_pr_open
+        if: github.event_name == 'pull_request' && github.event.action != 'synchronize'
+        uses: tj-actions/changed-files@v47
+        with:
+          base_sha: ${{ github.event.pull_request.base.sha }}
+          sha: ${{ github.event.pull_request.head.sha }}
+          files: |
+            app/**
+            gradle/**
+            *.kts
+            gradle.properties
+            .editorconfig
+            gradlew*
+            .github/workflows/dependency-submission.yml
+
+      - name: Detect dependency-related changes on PR update
+        id: filter_pr_sync
+        if: github.event_name == 'pull_request' && github.event.action == 'synchronize'
         uses: tj-actions/changed-files@v47
         with:
           since_last_remote_commit: true
@@ -40,6 +58,34 @@ jobs:
             .editorconfig
             gradlew*
             .github/workflows/dependency-submission.yml
+
+      - name: Detect dependency-related changes on push
+        id: filter_push
+        if: github.event_name == 'push'
+        uses: tj-actions/changed-files@v47
+        with:
+          since_last_remote_commit: true
+          files: |
+            app/**
+            gradle/**
+            *.kts
+            gradle.properties
+            .editorconfig
+            gradlew*
+            .github/workflows/dependency-submission.yml
+
+      - name: Consolidate change detection result
+        id: set-output
+        env:
+          PR_OPEN_CHANGED: ${{ steps.filter_pr_open.outputs.any_changed }}
+          PR_SYNC_CHANGED: ${{ steps.filter_pr_sync.outputs.any_changed }}
+          PUSH_CHANGED: ${{ steps.filter_push.outputs.any_changed }}
+        run: |
+          SHOULD_RUN=false
+          if [[ "$PR_OPEN_CHANGED" == "true" || "$PR_SYNC_CHANGED" == "true" || "$PUSH_CHANGED" == "true" ]]; then
+            SHOULD_RUN=true
+          fi
+          echo "should_run=$SHOULD_RUN" >> "$GITHUB_OUTPUT"
 
   dependency-submission:
     name: Submit Gradle dependency graph
