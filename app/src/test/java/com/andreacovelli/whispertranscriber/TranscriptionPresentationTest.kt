@@ -33,12 +33,33 @@ class TranscriptionPresentationTest {
     }
 
     @Test
-    fun buildBatchProgressState_prefersLatestTimestampOverHigherId() {
+    fun buildBatchProgressState_prefersRunningBatchOverNewerQueuedBatch() {
         val jobs = listOf(
-            testUiJob(id = 50, timestamp = 1_000L, batchId = "batch-old", status = "Queued"),
-            testUiJob(id = 51, timestamp = 1_000L, batchId = "batch-old", status = "Completed"),
-            testUiJob(id = 10, timestamp = 2_000L, batchId = "batch-new", status = "Queued"),
-            testUiJob(id = 11, timestamp = 2_000L, batchId = "batch-new", status = "Completed"),
+            testUiJob(
+                id = 50,
+                timestamp = 1_000L,
+                batchId = "batch-running",
+                status = "Transcribing",
+                isRunning = true,
+            ),
+            testUiJob(id = 51, timestamp = 1_000L, batchId = "batch-running", status = "Completed"),
+            testUiJob(id = 10, timestamp = 2_000L, batchId = "batch-newer", status = "Queued"),
+            testUiJob(id = 11, timestamp = 2_000L, batchId = "batch-newer", status = "Queued"),
+        )
+
+        assertEquals(
+            BatchProgressState(currentFileNumber = 2, totalFiles = 2, completedFiles = 1),
+            buildBatchProgressState(jobs),
+        )
+    }
+
+    @Test
+    fun buildBatchProgressState_prefersEarliestQueuedTimestampOverHigherId() {
+        val jobs = listOf(
+            testUiJob(id = 50, timestamp = 1_000L, batchId = "batch-oldest", status = "Queued"),
+            testUiJob(id = 51, timestamp = 1_000L, batchId = "batch-oldest", status = "Completed"),
+            testUiJob(id = 10, timestamp = 2_000L, batchId = "batch-newer", status = "Queued"),
+            testUiJob(id = 11, timestamp = 2_000L, batchId = "batch-newer", status = "Completed"),
         )
 
         assertEquals(
