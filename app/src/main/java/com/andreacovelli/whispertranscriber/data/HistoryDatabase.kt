@@ -230,6 +230,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun transcriptionJobDao(): TranscriptionJobDao
 
     companion object {
+        private const val DATABASE_NAME = "transcription_database"
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -324,10 +326,10 @@ abstract class AppDatabase : RoomDatabase() {
             MIGRATION_7_8,
         )
 
-        private fun createBuilder(context: Context, databaseName: String) = Room.databaseBuilder(
+        private fun createBuilder(context: Context) = Room.databaseBuilder(
             context.applicationContext,
             AppDatabase::class.java,
-            databaseName,
+            DATABASE_NAME,
         ).apply {
             MIGRATIONS.forEach { migration ->
                 addMigrations(migration)
@@ -335,7 +337,7 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         fun getDatabase(context: Context): AppDatabase = INSTANCE ?: synchronized(this) {
-            val instance = createBuilder(context, "transcription_database").build()
+            val instance = createBuilder(context).build()
             INSTANCE = instance
             instance
         }
