@@ -1,5 +1,6 @@
 package com.andreacovelli.whispertranscriber
 
+import com.andreacovelli.whispertranscriber.media.formatElevenLabsSpeakerTranscript
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 import com.andreacovelli.whispertranscriber.ui.screens.buildBatchProgressState
 import org.junit.Assert.assertEquals

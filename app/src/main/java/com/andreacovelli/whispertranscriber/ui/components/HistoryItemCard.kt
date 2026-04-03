@@ -257,14 +257,16 @@ private fun HistoryItemActions(
     onClearSummary: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val copyActions = remember(item.text, item.summary) {
+        buildList {
+            add("text" to item.text)
+            if (item.summary.isNotBlank()) add("summary" to item.summary)
+        }
+    }
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.End,
     ) {
-        val copyActions = buildList {
-            add("text" to item.text)
-            if (item.summary.isNotBlank()) add("summary" to item.summary)
-        }
         copyActions.forEach { (type, content) ->
             TextButton(onClick = { onCopy(content) }) {
                 Icon(

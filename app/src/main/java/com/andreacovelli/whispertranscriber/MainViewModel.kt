@@ -95,6 +95,19 @@ fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     isSummarizing = isSummarizing,
 )
 
+internal data class JobPresentationState(
+    val jobs: List<TranscriptionJobState>,
+    val batchProgressState: BatchProgressState?,
+)
+
+internal fun buildJobPresentationState(jobs: List<TranscriptionJob>): JobPresentationState {
+    val jobStates = jobs.map(TranscriptionJob::toUiState)
+    return JobPresentationState(
+        jobs = jobStates,
+        batchProgressState = buildBatchProgressState(jobStates),
+    )
+}
+
 private val TranscriptionJob.hasSummaryBlockingState: Boolean
     get() = isRunning || isSummarizing || error != null || summaryError != null
 
@@ -211,11 +224,13 @@ class MainViewModel @Inject constructor(
             }
             launch {
                 repository.jobsState.collect { jobsList ->
-                    val jobStates = jobsList.map { it.toUiState() }
+                    val presentationState = withContext(ioDispatcher) {
+                        buildJobPresentationState(jobsList)
+                    }
                     _uiState.update {
                         it.copy(
-                            jobs = jobStates,
-                            batchProgressState = buildBatchProgressState(jobStates),
+                            jobs = presentationState.jobs,
+                            batchProgressState = presentationState.batchProgressState,
                         )
                     }
 

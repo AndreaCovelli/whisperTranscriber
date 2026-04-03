@@ -402,28 +402,31 @@ class SummarizationService @Inject constructor(
         else -> requireNotNull(TranscriptionProvider.GEMINI_FLASH.modelName)
     }
 
-    private suspend fun requestSummary(text: String, apiKey: CharArray, modelName: String): SummaryData {
-        val client = Client.builder().apiKey(String(apiKey)).build()
-        val prompt = """
-            You are an expert summarizer.
-            Provide a concise, easy-to-read summary of the following text, in the same language.
-            Use bullet points (-) for key takeaways if appropriate. The output should be plain text,
-            no markdown.
-        """.trimIndent()
+    private suspend fun requestSummary(text: String, apiKey: CharArray, modelName: String): SummaryData =
+        apiKey.useClient { client ->
+            val prompt = """
+                You are an expert summarizer.
+                Provide a concise, easy-to-read summary of the following text, in the same language.
+                Use bullet points (-) for key takeaways if appropriate. The output should be plain text,
+                no markdown.
+            """.trimIndent()
 
-        val content = Content.fromParts(
-            Part.fromText(prompt),
-            Part.fromText(text),
-        )
-        val response = withContext(ioDispatcher) {
-            val config = GenerateContentConfig.builder()
-                .responseMimeType("text/plain")
-                .build()
-            client.models.generateContent(modelName, content, config)
+            val content = Content.fromParts(
+                Part.fromText(prompt),
+                Part.fromText(text),
+            )
+            val response = withContext(ioDispatcher) {
+                val config = GenerateContentConfig.builder()
+                    .responseMimeType("text/plain")
+                    .build()
+                client.models.generateContent(modelName, content, config)
+            }
+            SummaryData(
+                text = response.text()?.trim().orEmpty().ifBlank { "No summary generated." },
+                model = response.modelVersion().orElse(null)?.takeIf { it.isNotBlank() } ?: modelName,
+            )
         }
-        return SummaryData(
-            text = response.text()?.trim().orEmpty().ifBlank { "No summary generated." },
-            model = response.modelVersion().orElse(null)?.takeIf { it.isNotBlank() } ?: modelName,
-        )
-    }
 }
+
+private inline fun <T> CharArray.useClient(block: (Client) -> T): T =
+    block(Client.builder().apiKey(String(this)).build())
