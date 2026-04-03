@@ -78,6 +78,7 @@ class TranscriptionWorker @AssistedInject constructor(
     companion object {
         const val NOTIFICATION_ID = 1001
         const val CHANNEL_ID = "transcription_channel"
+        const val SPEAKER_LABEL_PREFIX_INPUT = "speakerLabelPrefix"
 
         private const val CONVERTED_FILE_PREFIX = "converted_"
         private const val DIRECT_FILE_PREFIX = "direct_"
@@ -341,7 +342,7 @@ class TranscriptionWorker @AssistedInject constructor(
             apiKey = keyChars,
             createRequestBodyFromUri = ::createRequestBodyFromUri,
             speakerDiarizationEnabled = speakerDiarizationEnabled,
-            speakerLabelPrefix = applicationContext.getString(R.string.speaker_label_prefix),
+            speakerLabelPrefix = inputData.getString(SPEAKER_LABEL_PREFIX_INPUT).orEmpty().ifBlank { "Speaker" },
         )
     } else {
         val geminiInput = checkNotNull(preparedInput as? PreparedAudioInput.Gemini) {

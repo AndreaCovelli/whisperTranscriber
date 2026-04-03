@@ -46,6 +46,7 @@ class TranscriptionQueueService @Inject constructor(
 ) {
     companion object {
         private const val TRANSCRIPTION_QUEUE = "TranscriptionQueue"
+        private const val SPEAKER_LABEL_PREFIX_INPUT = "speakerLabelPrefix"
         private const val STAGED_FILE_PREFIX = "staged_"
         private const val STAGED_AUDIO_DIR = "queued_audio"
         private const val CONVERTED_FILE_PREFIX = "converted_"
@@ -61,6 +62,7 @@ class TranscriptionQueueService @Inject constructor(
         if (uris.isEmpty()) return QueuedShareResult(0, "Waiting for audios...")
 
         val batchId = UUID.randomUUID().toString()
+        val speakerLabelPrefix = context.getString(R.string.speaker_label_prefix)
         val requestedModel = when (provider) {
             TranscriptionProvider.ELEVEN_LABS -> null
             TranscriptionProvider.GEMINI_CUSTOM -> customModelName.ifBlank { null }
@@ -85,7 +87,7 @@ class TranscriptionQueueService @Inject constructor(
                     isRunning = false,
                 ),
             ).toInt()
-            enqueueWorker(jobId)
+            enqueueWorker(jobId, speakerLabelPrefix)
         }
 
         return QueuedShareResult(uris.size, "Queued ${uris.size} file(s).")
@@ -106,7 +108,7 @@ class TranscriptionQueueService @Inject constructor(
 
     suspend fun retryJob(jobId: Int) {
         if (repository.retryJob(jobId)) {
-            enqueueWorker(jobId)
+            enqueueWorker(jobId, context.getString(R.string.speaker_label_prefix))
         }
     }
 
@@ -133,9 +135,14 @@ class TranscriptionQueueService @Inject constructor(
             .forEach(::deleteQuietly)
     }
 
-    private fun enqueueWorker(jobId: Int) {
+    private fun enqueueWorker(jobId: Int, speakerLabelPrefix: String) {
         val workRequest = OneTimeWorkRequestBuilder<TranscriptionWorker>()
-            .setInputData(workDataOf("jobId" to jobId))
+            .setInputData(
+                workDataOf(
+                    "jobId" to jobId,
+                    SPEAKER_LABEL_PREFIX_INPUT to speakerLabelPrefix,
+                ),
+            )
             .setConstraints(
                 Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.CONNECTED)
