@@ -10,11 +10,14 @@ import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.net.toUri
+import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.media.HardwareAudioConverter
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedInject
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
@@ -36,12 +39,16 @@ private sealed interface PreparedAudioInput {
     data class Gemini(val file: File, val mimeType: String, override val tempFileToClean: File?) : PreparedAudioInput
 }
 
-class TranscriptionWorker(appContext: Context, workerParams: WorkerParameters) :
-    CoroutineWorker(appContext, workerParams) {
+@HiltWorker
+class TranscriptionWorker @AssistedInject constructor(
+    @Assisted appContext: Context,
+    @Assisted workerParams: WorkerParameters,
+    private val settings: ApiKeyManager,
+    private val repository: TranscriptionRepository,
+    private val elevenLabsApi: ElevenLabsApi,
+) : CoroutineWorker(appContext, workerParams) {
 
     private val notificationManager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    private val settings = ApiKeyManager(appContext)
-    private val repository = TranscriptionRepository(appContext)
 
     companion object {
         const val NOTIFICATION_ID = 1001
@@ -290,7 +297,7 @@ class TranscriptionWorker(appContext: Context, workerParams: WorkerParameters) :
             "Internal error: ElevenLabs source is missing."
         }
         val keyChars = requireNotNull(settings.getElevenLabsApiKey()) { "API key missing or corrupted" }
-        ElevenLabsTranscriber(source, keyChars, ::createRequestBodyFromUri)
+        ElevenLabsTranscriber(elevenLabsApi, source, keyChars, ::createRequestBodyFromUri)
     } else {
         val geminiInput = checkNotNull(preparedInput as? PreparedAudioInput.Gemini) {
             "Internal error: Gemini audio data missing."

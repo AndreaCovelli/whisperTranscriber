@@ -28,6 +28,7 @@ internal interface ProviderTranscriber {
 }
 
 internal class ElevenLabsTranscriber(
+    private val api: ElevenLabsApi,
     private val source: Any,
     private val apiKey: CharArray,
     private val createRequestBodyFromUri: (Uri) -> okhttp3.RequestBody,
@@ -46,7 +47,7 @@ internal class ElevenLabsTranscriber(
             }
             val filePart = MultipartBody.Part.createFormData("file", "audio_file", requestFileBody)
             val modelIdPart = MultipartBody.Part.createFormData("model_id", ELEVEN_LABS_MODEL_ID)
-            val response = RetrofitClient.api.transcribe(String(apiKey), filePart, modelIdPart)
+            val response = api.transcribe(String(apiKey), filePart, modelIdPart)
             emit(TranscriptionResult.Loading("Success"))
             emit(
                 TranscriptionResult.Success(

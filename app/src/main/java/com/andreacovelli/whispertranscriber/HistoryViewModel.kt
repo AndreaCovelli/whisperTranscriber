@@ -1,14 +1,15 @@
 package com.andreacovelli.whispertranscriber
 
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import android.content.Context
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
-import com.andreacovelli.whispertranscriber.data.AppDatabase
 import com.andreacovelli.whispertranscriber.data.HistoryRepository
-import com.andreacovelli.whispertranscriber.data.RoomHistoryRepository
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
@@ -22,12 +23,11 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
-class HistoryViewModel(application: Application, private val historyRepository: HistoryRepository) :
-    AndroidViewModel(application) {
-    constructor(application: Application) : this(
-        application = application,
-        historyRepository = RoomHistoryRepository(AppDatabase.getDatabase(application).transcriptionHistoryDao()),
-    )
+@HiltViewModel
+class HistoryViewModel @Inject constructor(
+    @param:ApplicationContext private val appContext: Context,
+    private val historyRepository: HistoryRepository,
+) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -37,11 +37,10 @@ class HistoryViewModel(application: Application, private val historyRepository: 
 
     fun prepareShareContent(item: TranscriptionHistory) {
         viewModelScope.launch {
-            val app = getApplication<Application>()
             val content = buildString {
                 append(item.text)
                 if (item.summary.isNotBlank()) {
-                    append(app.getString(R.string.summary_header))
+                    append(appContext.getString(R.string.summary_header))
                     append(item.summary)
                 }
             }

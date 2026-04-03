@@ -4,6 +4,7 @@ import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
 import com.andreacovelli.whispertranscriber.buildHistorySearchQuery
+import javax.inject.Inject
 import kotlinx.coroutines.flow.Flow
 
 interface HistoryRepository {
@@ -22,7 +23,7 @@ interface HistoryRepository {
     suspend fun deleteAll()
 }
 
-class RoomHistoryRepository(private val historyDao: TranscriptionHistoryDao) : HistoryRepository {
+class RoomHistoryRepository @Inject constructor(private val historyDao: TranscriptionHistoryDao) : HistoryRepository {
     override fun getPagedHistory(rawQuery: String): Flow<PagingData<TranscriptionHistory>> {
         val ftsQuery = buildHistorySearchQuery(rawQuery)
         return Pager(

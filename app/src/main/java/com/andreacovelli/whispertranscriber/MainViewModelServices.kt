@@ -1,6 +1,6 @@
 package com.andreacovelli.whispertranscriber
 
-import android.app.Application
+import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
@@ -12,16 +12,19 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
+import com.andreacovelli.whispertranscriber.di.IoDispatcher
 import com.google.genai.Client
 import com.google.genai.types.Content
 import com.google.genai.types.GenerateContentConfig
 import com.google.genai.types.Part
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -31,13 +34,14 @@ import org.json.JSONException
 import org.json.JSONObject
 import retrofit2.HttpException
 
-internal data class QueuedShareResult(val jobsCreated: Int, val statusMessage: String)
+data class QueuedShareResult(val jobsCreated: Int, val statusMessage: String)
 
-internal class TranscriptionQueueService(
-    private val application: Application,
+@Singleton
+class TranscriptionQueueService @Inject constructor(
+    @param:ApplicationContext private val context: Context,
     private val repository: TranscriptionRepository,
     private val workManager: WorkManager,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
     companion object {
         private const val TRANSCRIPTION_QUEUE = "TranscriptionQueue"
@@ -105,7 +109,7 @@ internal class TranscriptionQueueService(
         tempFileMaxAgeMs: Long = TimeUnit.DAYS.toMillis(3),
         stagedFileMaxAgeMs: Long = TimeUnit.DAYS.toMillis(7),
     ) = withContext(ioDispatcher) {
-        val cache = application.cacheDir ?: return@withContext
+        val cache = context.cacheDir ?: return@withContext
         val tempCutoff = System.currentTimeMillis() - tempFileMaxAgeMs
         cache.listFiles()
             .orEmpty()
@@ -145,10 +149,10 @@ internal class TranscriptionQueueService(
 
     private fun jobTag(jobId: Int): String = "TranscriptionJob_$jobId"
 
-    private fun stagedAudioDir(): File = File(application.filesDir, STAGED_AUDIO_DIR).apply { mkdirs() }
+    private fun stagedAudioDir(): File = File(context.filesDir, STAGED_AUDIO_DIR).apply { mkdirs() }
 
     private suspend fun stageSharedAudio(uri: Uri, index: Int): Pair<File, String?> = withContext(ioDispatcher) {
-        val contentResolver = application.contentResolver
+        val contentResolver = context.contentResolver
         val mimeType = contentResolver.getType(uri)?.lowercase()
         val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)
             ?: MimeTypeMap.getFileExtensionFromUrl(uri.toString()).takeIf(String::isNotBlank)
@@ -168,7 +172,7 @@ internal class TranscriptionQueueService(
     private suspend fun resolveDisplayName(uri: Uri): String = withContext(ioDispatcher) {
         val projection = arrayOf(OpenableColumns.DISPLAY_NAME)
         runCatching {
-            application.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+            context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
                 val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                 if (index >= 0 && cursor.moveToFirst()) {
                     cursor.getString(index).orEmpty()
@@ -195,18 +199,20 @@ internal class TranscriptionQueueService(
     }
 }
 
-internal data class KeyValidationResult(val errorMessage: String? = null) {
+data class KeyValidationResult(val errorMessage: String? = null) {
     val isValid: Boolean get() = errorMessage == null
 }
 
-internal data class CustomModelValidationResult(val displayName: String? = null, val errorMessage: String? = null) {
+data class CustomModelValidationResult(val displayName: String? = null, val errorMessage: String? = null) {
     val isValid: Boolean get() = errorMessage == null
 }
 
-internal class GeminiValidationService(
+@Singleton
+class GeminiValidationService @Inject constructor(
     private val settings: ApiKeyManager,
+    private val elevenLabsApi: ElevenLabsApi,
     private val okHttpClient: OkHttpClient,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
     companion object {
         private const val GEMINI_MODELS_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -215,7 +221,7 @@ internal class GeminiValidationService(
     }
 
     suspend fun validateElevenLabsKey(rawKey: String): KeyValidationResult = try {
-        val response = withContext(ioDispatcher) { RetrofitClient.api.getUser(rawKey) }
+        val response = withContext(ioDispatcher) { elevenLabsApi.getUser(rawKey) }
         if (response.isSuccessful) {
             KeyValidationResult()
         } else {
@@ -306,14 +312,15 @@ internal class GeminiValidationService(
     }
 }
 
-internal data class SummarizationResult(val statusMessage: String, val errorMessage: String? = null) {
+data class SummarizationResult(val statusMessage: String, val errorMessage: String? = null) {
     val isSuccess: Boolean get() = errorMessage == null
 }
 
-internal class SummarizationService(
+@Singleton
+class SummarizationService @Inject constructor(
     private val settings: ApiKeyManager,
     private val repository: TranscriptionRepository,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
     suspend fun summarize(jobId: Int, state: UiState, allowResummarize: Boolean): SummarizationResult {
         val claimed = if (allowResummarize) {

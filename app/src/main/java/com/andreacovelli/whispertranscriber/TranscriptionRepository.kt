@@ -1,38 +1,21 @@
 package com.andreacovelli.whispertranscriber
 
-import android.content.Context
 import androidx.room.withTransaction
 import com.andreacovelli.whispertranscriber.data.AppDatabase
 import com.andreacovelli.whispertranscriber.data.HistoryRepository
-import com.andreacovelli.whispertranscriber.data.RoomHistoryRepository
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.data.TranscriptionJobDao
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 
-internal data class TranscriptionRepositoryDependencies(
-    val db: AppDatabase,
-    val jobDao: TranscriptionJobDao,
-    val historyRepository: HistoryRepository,
+@Singleton
+class TranscriptionRepository @Inject constructor(
+    private val db: AppDatabase,
+    private val jobDao: TranscriptionJobDao,
+    private val historyRepository: HistoryRepository,
 ) {
-    companion object {
-        fun from(context: Context): TranscriptionRepositoryDependencies {
-            val database = AppDatabase.getDatabase(context)
-            return TranscriptionRepositoryDependencies(
-                db = database,
-                jobDao = database.transcriptionJobDao(),
-                historyRepository = RoomHistoryRepository(database.transcriptionHistoryDao()),
-            )
-        }
-    }
-}
-
-class TranscriptionRepository internal constructor(dependencies: TranscriptionRepositoryDependencies) {
-    private val db = dependencies.db
-    private val jobDao = dependencies.jobDao
-    private val historyRepository = dependencies.historyRepository
-
-    constructor(context: Context) : this(TranscriptionRepositoryDependencies.from(context))
 
     val jobsState: Flow<List<TranscriptionJob>> = jobDao.getAllJobs()
 

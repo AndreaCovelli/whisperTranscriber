@@ -1,17 +1,16 @@
-// app/src/main/java/com/andreacovelli/whispertranscriber/MainViewModel.kt
 package com.andreacovelli.whispertranscriber
 
-import android.app.Application
 import android.net.Uri
 import androidx.core.net.toUri
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.work.WorkManager
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
+import com.andreacovelli.whispertranscriber.di.IoDispatcher
+import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import javax.inject.Inject
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -100,33 +99,21 @@ sealed interface TranscriptionResult {
     data class Error(val exception: Exception) : TranscriptionResult
 }
 
-class MainViewModel(application: Application) : AndroidViewModel(application) {
+@HiltViewModel
+class MainViewModel @Inject constructor(
+    private val settings: ApiKeyManager,
+    private val repository: TranscriptionRepository,
+    private val queueService: TranscriptionQueueService,
+    private val validationService: GeminiValidationService,
+    private val summarizationService: SummarizationService,
+    @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
+) : ViewModel() {
     companion object {
         private val staleSummariesRecovered = AtomicBoolean(false)
     }
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState = _uiState.asStateFlow()
-
-    private val settings = ApiKeyManager(application)
-    private val repository = TranscriptionRepository(application)
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
-    private val queueService = TranscriptionQueueService(
-        application = application,
-        repository = repository,
-        workManager = WorkManager.getInstance(application),
-        ioDispatcher = ioDispatcher,
-    )
-    private val validationService = GeminiValidationService(
-        settings = settings,
-        okHttpClient = RetrofitClient.okHttpClient,
-        ioDispatcher = ioDispatcher,
-    )
-    private val summarizationService = SummarizationService(
-        settings = settings,
-        repository = repository,
-        ioDispatcher = ioDispatcher,
-    )
 
     val mainScreenActions = createMainScreenActions(
         clearCompletedJobs = {
