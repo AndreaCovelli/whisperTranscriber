@@ -245,39 +245,11 @@ internal fun formatElevenLabsSpeakerTranscript(
     words: List<ElevenLabsWord>,
     languageCode: String? = null,
     speakerLabelPrefix: String = "Speaker",
-): String {
-    val speakerLabels = linkedMapOf<String, String>()
-    val sections = mutableListOf<Pair<String, StringBuilder>>()
-    val shouldInsertSpaces = languageCode.shouldInsertWordSpaces()
-    var hasSpeakerIds = false
-
-    words.forEachIndexed { index, word ->
-        val token = word.text.trim()
-        if (token.isEmpty()) return@forEachIndexed
-
-        val speakerId = word.speakerId?.takeIf(String::isNotBlank)
-        hasSpeakerIds = hasSpeakerIds || speakerId != null
-        val effectiveSpeakerId = speakerId ?: UNLABELED_SPEAKER_ID
-        val label = speakerLabels.getOrPut(effectiveSpeakerId) {
-            "$speakerLabelPrefix ${speakerLabelSuffix(speakerLabels.size)}"
-        }
-        val current = sections.lastOrNull()
-        if (current == null || current.first != label) {
-            sections += label to StringBuilder()
-        }
-        sections.last().second.appendToken(
-            token = token,
-            nextToken = words.nextNonBlankTokenAfter(index),
-            shouldInsertSpaces = shouldInsertSpaces,
-        )
-    }
-
-    if (!hasSpeakerIds) return ""
-
-    return sections.joinToString(separator = "\n") { (speaker, text) ->
-        "$speaker: ${text.toString().trim()}"
-    }.trim()
-}
+): String = ElevenLabsSpeakerTranscriptFormatter(
+    words = words,
+    shouldInsertSpaces = languageCode.shouldInsertWordSpaces(),
+    speakerLabelPrefix = speakerLabelPrefix,
+).format()
 
 private fun StringBuilder.appendToken(token: String, nextToken: String?, shouldInsertSpaces: Boolean) {
     if (isEmpty()) {
@@ -304,6 +276,58 @@ private val ALPHABET = ('A'..'Z').toList()
 private val NON_SPACING_LANGUAGES = setOf("ja", "zh", "th")
 private const val ALWAYS_OPENING_PUNCTUATION = "([{«"
 private const val QUOTE_PUNCTUATION = "\"'"
+
+private data class SpeakerSection(val label: String, val text: StringBuilder = StringBuilder())
+
+private class ElevenLabsSpeakerTranscriptFormatter(
+    private val words: List<ElevenLabsWord>,
+    private val shouldInsertSpaces: Boolean,
+    private val speakerLabelPrefix: String,
+) {
+    private val speakerLabels = linkedMapOf<String, String>()
+    private val sections = mutableListOf<SpeakerSection>()
+    private var hasSpeakerIds = false
+
+    fun format(): String {
+        words.forEachIndexed(::appendWord)
+        if (!hasSpeakerIds) return ""
+        return sections.joinToString(separator = "\n") { section ->
+            "${section.label}: ${section.text.toString().trim()}"
+        }.trim()
+    }
+
+    private fun appendWord(index: Int, word: ElevenLabsWord) {
+        val token = word.text.trim()
+        if (token.isEmpty()) return
+
+        val speakerId = word.speakerId?.takeIf(String::isNotBlank)
+        hasSpeakerIds = hasSpeakerIds || speakerId != null
+
+        val section = sectionForSpeaker(speakerId)
+        section.text.appendToken(
+            token = token,
+            nextToken = words.nextNonBlankTokenAfter(index),
+            shouldInsertSpaces = shouldInsertSpaces,
+        )
+    }
+
+    private fun sectionForSpeaker(speakerId: String?): SpeakerSection {
+        val label = speakerLabelFor(speakerId)
+        val current = sections.lastOrNull()
+        if (current != null && current.label == label) {
+            return current
+        }
+
+        return SpeakerSection(label = label).also(sections::add)
+    }
+
+    private fun speakerLabelFor(speakerId: String?): String {
+        val effectiveSpeakerId = speakerId ?: UNLABELED_SPEAKER_ID
+        return speakerLabels.getOrPut(effectiveSpeakerId) {
+            "$speakerLabelPrefix ${speakerLabelSuffix(speakerLabels.size)}"
+        }
+    }
+}
 
 private fun speakerLabelSuffix(index: Int): String = if (index < ALPHABET.size) {
     ALPHABET[index].toString()
