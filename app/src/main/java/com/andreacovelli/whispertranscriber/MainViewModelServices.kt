@@ -34,14 +34,14 @@ import org.json.JSONException
 import org.json.JSONObject
 import retrofit2.HttpException
 
-internal data class QueuedShareResult(val jobsCreated: Int, val statusMessage: String)
+data class QueuedShareResult(val jobsCreated: Int, val statusMessage: String)
 
 @Singleton
-internal class TranscriptionQueueService @Inject constructor(
-    @ApplicationContext private val context: Context,
+class TranscriptionQueueService @Inject constructor(
+    @param:ApplicationContext private val context: Context,
     private val repository: TranscriptionRepository,
     private val workManager: WorkManager,
-    @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
+    @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
     companion object {
         private const val TRANSCRIPTION_QUEUE = "TranscriptionQueue"
@@ -199,20 +199,20 @@ internal class TranscriptionQueueService @Inject constructor(
     }
 }
 
-internal data class KeyValidationResult(val errorMessage: String? = null) {
+data class KeyValidationResult(val errorMessage: String? = null) {
     val isValid: Boolean get() = errorMessage == null
 }
 
-internal data class CustomModelValidationResult(val displayName: String? = null, val errorMessage: String? = null) {
+data class CustomModelValidationResult(val displayName: String? = null, val errorMessage: String? = null) {
     val isValid: Boolean get() = errorMessage == null
 }
 
 @Singleton
-internal class GeminiValidationService @Inject constructor(
+class GeminiValidationService @Inject constructor(
     private val settings: ApiKeyManager,
     private val elevenLabsApi: ElevenLabsApi,
     private val okHttpClient: OkHttpClient,
-    @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
+    @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
     companion object {
         private const val GEMINI_MODELS_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -312,15 +312,15 @@ internal class GeminiValidationService @Inject constructor(
     }
 }
 
-internal data class SummarizationResult(val statusMessage: String, val errorMessage: String? = null) {
+data class SummarizationResult(val statusMessage: String, val errorMessage: String? = null) {
     val isSuccess: Boolean get() = errorMessage == null
 }
 
 @Singleton
-internal class SummarizationService @Inject constructor(
+class SummarizationService @Inject constructor(
     private val settings: ApiKeyManager,
     private val repository: TranscriptionRepository,
-    @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
+    @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
     suspend fun summarize(jobId: Int, state: UiState, allowResummarize: Boolean): SummarizationResult {
         val claimed = if (allowResummarize) {

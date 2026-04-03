@@ -54,6 +54,7 @@ object AppModule {
         val logging = HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.NONE
             redactHeader("xi-api-key")
+            redactHeader("x-goog-api-key")
         }
 
         return OkHttpClient.Builder()
