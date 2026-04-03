@@ -28,6 +28,43 @@ object AppRoutes {
     const val SETTINGS = "settings"
 }
 
+internal object SharedAudioIntentHandler {
+    fun extractSharedUris(intent: Intent?): List<Uri> {
+        intent ?: return emptyList()
+        return when (intent.action) {
+            Intent.ACTION_SEND -> {
+                val single = intent.clipData?.getItemAt(0)?.uri
+                    ?: if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableExtra(Intent.EXTRA_STREAM)
+                    }
+                listOfNotNull(single)
+            }
+            Intent.ACTION_SEND_MULTIPLE -> {
+                val clipUris = intent.clipData?.let { clip ->
+                    (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }
+                }.orEmpty()
+                val extraUris = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
+                }
+                (clipUris + extraUris).distinctBy { it.toString() }
+            }
+            else -> emptyList()
+        }
+    }
+
+    fun consumeSharedUris(intent: Intent?): Pair<List<Uri>, Intent?> {
+        val uris = extractSharedUris(intent)
+        if (uris.isEmpty()) return emptyList<Uri>() to intent
+        return uris to Intent()
+    }
+}
+
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
@@ -38,10 +75,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         maybeRequestNotificationPermission()
-        val shared = extractSharedUris(intent)
-        if (shared.isNotEmpty()) {
-            mainViewModel.handleAudioShareMultiple(shared)
-        }
+        consumeSharedAudioIntent(intent)
 
         setContent {
             WhisperTranscriberTheme {
@@ -131,38 +165,16 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        val shared = extractSharedUris(intent)
-        if (shared.isNotEmpty()) {
-            mainViewModel.handleAudioShareMultiple(shared)
-        }
+        consumeSharedAudioIntent(intent)
     }
 
-    private fun extractSharedUris(intent: Intent?): List<Uri> {
-        intent ?: return emptyList()
-        return when (intent.action) {
-            Intent.ACTION_SEND -> {
-                val single = intent.clipData?.getItemAt(0)?.uri
-                    ?: if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
-                    } else {
-                        @Suppress("DEPRECATION")
-                        intent.getParcelableExtra(Intent.EXTRA_STREAM)
-                    }
-                listOfNotNull(single)
-            }
-            Intent.ACTION_SEND_MULTIPLE -> {
-                val clipUris = intent.clipData?.let { clip ->
-                    (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }
-                }.orEmpty()
-                val extraUris = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
-                } else {
-                    @Suppress("DEPRECATION")
-                    intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
-                }
-                (clipUris + extraUris).distinctBy { it.toString() }
-            }
-            else -> emptyList()
+    private fun consumeSharedAudioIntent(intent: Intent?) {
+        val (sharedUris, replacementIntent) = SharedAudioIntentHandler.consumeSharedUris(intent)
+        if (sharedUris.isNotEmpty()) {
+            mainViewModel.handleAudioShareMultiple(sharedUris)
+        }
+        if (replacementIntent != null) {
+            setIntent(replacementIntent)
         }
     }
 
