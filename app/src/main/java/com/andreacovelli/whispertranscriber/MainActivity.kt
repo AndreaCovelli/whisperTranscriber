@@ -33,7 +33,7 @@ internal object SharedAudioIntentHandler {
         intent ?: return emptyList()
         return when (intent.action) {
             Intent.ACTION_SEND -> {
-                val single = intent.clipData?.getItemAt(0)?.uri
+                val single = intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
                     ?: if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
                     } else {
