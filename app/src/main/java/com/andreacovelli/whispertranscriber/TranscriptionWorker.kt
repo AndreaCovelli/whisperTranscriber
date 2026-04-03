@@ -15,6 +15,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
+import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.media.HardwareAudioConverter
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -30,6 +31,30 @@ import okio.BufferedSink
 import okio.source
 
 internal class TransientWorkException(message: String, cause: Throwable? = null) : IOException(message, cause)
+
+internal sealed interface QueuedAudioInputResolution {
+    data class Ready(val uri: Uri) : QueuedAudioInputResolution
+
+    data class MissingStagedFile(val message: String) : QueuedAudioInputResolution
+}
+
+internal object QueuedAudioInputResolver {
+    fun resolve(job: TranscriptionJob): QueuedAudioInputResolution {
+        val stagedPath = job.stagedFilePath?.takeIf { it.isNotBlank() }
+        if (stagedPath == null) {
+            return QueuedAudioInputResolution.Ready(job.uri.toUri())
+        }
+
+        val stagedFile = File(stagedPath)
+        return if (stagedFile.exists()) {
+            QueuedAudioInputResolution.Ready(stagedFile.toUri())
+        } else {
+            QueuedAudioInputResolution.MissingStagedFile(
+                "Queued audio is no longer available. Please share it again.",
+            )
+        }
+    }
+}
 
 private sealed interface PreparedAudioInput {
     val tempFileToClean: File?
@@ -117,10 +142,13 @@ class TranscriptionWorker @AssistedInject constructor(
                 else -> job.requestedModel ?: requestedProvider.modelName
             }
 
-            val stagedUri = job.stagedFilePath
-                ?.takeIf { it.isNotBlank() }
-                ?.let { File(it).takeIf(File::exists)?.toUri() }
-                ?: job.uri.toUri()
+            val stagedUri = when (val resolution = QueuedAudioInputResolver.resolve(job)) {
+                is QueuedAudioInputResolution.Ready -> resolution.uri
+                is QueuedAudioInputResolution.MissingStagedFile -> {
+                    repository.updateError(jobId, resolution.message, false, "Error")
+                    return Result.failure()
+                }
+            }
 
             processSingleJob(
                 jobId = jobId,
