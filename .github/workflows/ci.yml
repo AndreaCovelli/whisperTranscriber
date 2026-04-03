@@ -41,7 +41,10 @@ jobs:
   quality:
     name: Quality
     needs: changes
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.should_run == 'true'
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      needs.changes.outputs.should_run == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -69,7 +72,10 @@ jobs:
   build:
     name: Build, Test and Auto-merge
     needs: changes
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.should_run == 'true'
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      needs.changes.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
