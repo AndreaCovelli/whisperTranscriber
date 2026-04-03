@@ -22,10 +22,8 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
-class HistoryViewModel(
-    application: Application,
-    private val historyRepository: HistoryRepository,
-) : AndroidViewModel(application) {
+class HistoryViewModel(application: Application, private val historyRepository: HistoryRepository) :
+    AndroidViewModel(application) {
     constructor(application: Application) : this(
         application = application,
         historyRepository = RoomHistoryRepository(AppDatabase.getDatabase(application).transcriptionHistoryDao()),

@@ -27,9 +27,7 @@ internal data class TranscriptionRepositoryDependencies(
     }
 }
 
-class TranscriptionRepository internal constructor(
-    dependencies: TranscriptionRepositoryDependencies,
-) {
+class TranscriptionRepository internal constructor(dependencies: TranscriptionRepositoryDependencies) {
     private val db = dependencies.db
     private val jobDao = dependencies.jobDao
     private val historyRepository = dependencies.historyRepository
