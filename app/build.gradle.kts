@@ -143,7 +143,6 @@ dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
-    implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
 
     // DataStore - use a single, consistent artifact
@@ -177,8 +176,6 @@ dependencies {
 
     // Navigation
     implementation(libs.androidx.navigation.compose)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
-
     // WorkManager
     implementation(libs.androidx.work.runtime.ktx)
     testImplementation(libs.junit)
