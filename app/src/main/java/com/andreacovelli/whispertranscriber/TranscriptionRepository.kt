@@ -10,10 +10,31 @@ import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.data.TranscriptionJobDao
 import kotlinx.coroutines.flow.Flow
 
-class TranscriptionRepository(context: Context) {
-    private val db = AppDatabase.getDatabase(context)
-    private val jobDao: TranscriptionJobDao = db.transcriptionJobDao()
-    private val historyRepository: HistoryRepository = RoomHistoryRepository(db.transcriptionHistoryDao())
+internal data class TranscriptionRepositoryDependencies(
+    val db: AppDatabase,
+    val jobDao: TranscriptionJobDao,
+    val historyRepository: HistoryRepository,
+) {
+    companion object {
+        fun from(context: Context): TranscriptionRepositoryDependencies {
+            val database = AppDatabase.getDatabase(context)
+            return TranscriptionRepositoryDependencies(
+                db = database,
+                jobDao = database.transcriptionJobDao(),
+                historyRepository = RoomHistoryRepository(database.transcriptionHistoryDao()),
+            )
+        }
+    }
+}
+
+class TranscriptionRepository internal constructor(
+    dependencies: TranscriptionRepositoryDependencies,
+) {
+    private val db = dependencies.db
+    private val jobDao = dependencies.jobDao
+    private val historyRepository = dependencies.historyRepository
+
+    constructor(context: Context) : this(TranscriptionRepositoryDependencies.from(context))
 
     val jobsState: Flow<List<TranscriptionJob>> = jobDao.getAllJobs()
 

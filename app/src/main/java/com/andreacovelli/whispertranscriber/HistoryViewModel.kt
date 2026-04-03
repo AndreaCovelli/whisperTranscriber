@@ -22,9 +22,14 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
-class HistoryViewModel(application: Application) : AndroidViewModel(application) {
-    private val historyRepository: HistoryRepository =
-        RoomHistoryRepository(AppDatabase.getDatabase(application).transcriptionHistoryDao())
+class HistoryViewModel(
+    application: Application,
+    private val historyRepository: HistoryRepository,
+) : AndroidViewModel(application) {
+    constructor(application: Application) : this(
+        application = application,
+        historyRepository = RoomHistoryRepository(AppDatabase.getDatabase(application).transcriptionHistoryDao()),
+    )
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
