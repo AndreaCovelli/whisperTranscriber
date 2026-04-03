@@ -17,8 +17,10 @@ class TranscriptionRepository(context: Context) {
 
     suspend fun addJob(job: TranscriptionJob): Long = jobDao.insert(job)
 
-    suspend fun updateJob(job: TranscriptionJob) {
-        jobDao.update(job)
+    suspend fun insertHistory(historyItem: TranscriptionHistory): Int = historyDao.insert(historyItem).toInt()
+
+    suspend fun updateHistorySummary(historyId: Int, summary: String) {
+        historyDao.updateSummary(historyId, summary)
     }
 
     suspend fun updateRunning(id: Int, isRunning: Boolean, status: String) {
@@ -104,6 +106,8 @@ class TranscriptionRepository(context: Context) {
     }
 
     suspend fun getJob(jobId: Int): TranscriptionJob? = jobDao.getJobById(jobId)
+
+    suspend fun retryJob(jobId: Int): Boolean = jobDao.retryById(jobId) > 0
 
     suspend fun clearCompletedJobs(): List<String> {
         val completedJobs = jobDao.getCompletedJobs()

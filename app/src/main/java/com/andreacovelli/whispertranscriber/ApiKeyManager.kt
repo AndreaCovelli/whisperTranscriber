@@ -1,6 +1,7 @@
 package com.andreacovelli.whispertranscriber
 
 import android.content.Context
+import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -9,6 +10,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.andreacovelli.whispertranscriber.security.KeystoreCrypto
 import java.nio.charset.StandardCharsets
+import java.security.GeneralSecurityException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
@@ -125,7 +127,9 @@ class ApiKeyManager(private val context: Context) {
             try {
                 KeystoreCrypto.decryptFromBase64(enc)?.fill(0)
                 ApiKeyState.Present
-            } catch (e: Exception) {
+            } catch (e: GeneralSecurityException) {
+                ApiKeyState.Error(e.message ?: "Keystore decryption failed")
+            } catch (e: IllegalArgumentException) {
                 ApiKeyState.Error(e.message ?: "Keystore decryption failed")
             }
         }
@@ -146,7 +150,11 @@ class ApiKeyManager(private val context: Context) {
             bytes.fill(0)
             if (cb.hasArray()) cb.array().fill('\u0000')
             chars
-        } catch (e: Exception) {
+        } catch (e: GeneralSecurityException) {
+            Log.w("ApiKeyManager", "Failed to decrypt API key", e)
+            null
+        } catch (e: IllegalArgumentException) {
+            Log.w("ApiKeyManager", "Failed to decode stored API key", e)
             null
         }
     }

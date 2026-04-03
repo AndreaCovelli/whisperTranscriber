@@ -91,7 +91,6 @@ configure<io.gitlab.arturbosch.detekt.extensions.DetektExtension> {
     buildUponDefaultConfig = true
     allRules = false
     config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
-    baseline = file("$rootDir/config/detekt/baseline.xml")
 }
 
 configure<com.diffplug.gradle.spotless.SpotlessExtension> {
@@ -118,7 +117,6 @@ configure<com.diffplug.gradle.spotless.SpotlessExtension> {
 
 tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
     jvmTarget = "21"
-    baseline.set(file("$rootDir/config/detekt/baseline.xml"))
     setSource(
         files(
             "src/main/java",

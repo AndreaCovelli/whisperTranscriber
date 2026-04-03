@@ -1,0 +1,412 @@
+package com.andreacovelli.whispertranscriber
+
+import android.app.Application
+import android.net.Uri
+import android.provider.OpenableColumns
+import android.webkit.MimeTypeMap
+import androidx.work.BackoffPolicy
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.workDataOf
+import com.andreacovelli.whispertranscriber.data.TranscriptionJob
+import com.google.genai.Client
+import com.google.genai.types.Content
+import com.google.genai.types.GenerateContentConfig
+import com.google.genai.types.Part
+import java.io.File
+import java.io.IOException
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONException
+import org.json.JSONObject
+import retrofit2.HttpException
+
+internal data class QueuedShareResult(val jobsCreated: Int, val statusMessage: String)
+
+internal class TranscriptionQueueService(
+    private val application: Application,
+    private val repository: TranscriptionRepository,
+    private val workManager: WorkManager,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) {
+    companion object {
+        private const val TRANSCRIPTION_QUEUE = "TranscriptionQueue"
+        private const val STAGED_FILE_PREFIX = "staged_"
+        private const val STAGED_AUDIO_DIR = "queued_audio"
+        private const val CONVERTED_FILE_PREFIX = "converted_"
+        private const val DIRECT_FILE_PREFIX = "direct_"
+    }
+
+    suspend fun enqueueSharedAudio(
+        uris: List<Uri>,
+        provider: TranscriptionProvider,
+        customModelName: String,
+    ): QueuedShareResult {
+        if (uris.isEmpty()) return QueuedShareResult(0, "Waiting for audios...")
+
+        val requestedModel = when (provider) {
+            TranscriptionProvider.ELEVEN_LABS -> null
+            TranscriptionProvider.GEMINI_CUSTOM -> customModelName.ifBlank { null }
+            else -> provider.modelName
+        }
+
+        uris.forEachIndexed { index, uri ->
+            val displayName = resolveDisplayName(uri).ifBlank { uri.lastPathSegment ?: "Audio ${index + 1}" }
+            val (stagedFile, mimeType) = stageSharedAudio(uri, index)
+            val jobId = repository.addJob(
+                TranscriptionJob(
+                    uri = uri.toString(),
+                    displayName = displayName,
+                    sourceMimeType = mimeType,
+                    stagedFilePath = stagedFile.absolutePath,
+                    providerName = provider.name,
+                    requestedModel = requestedModel,
+                    status = "Queued",
+                    progress = 0f,
+                    isRunning = false,
+                ),
+            ).toInt()
+            enqueueWorker(jobId)
+        }
+
+        return QueuedShareResult(uris.size, "Queued ${uris.size} file(s).")
+    }
+
+    suspend fun cancelJob(jobId: Int) {
+        repository.updateError(jobId, "Cancelled", false, "Cancelled")
+        workManager.cancelAllWorkByTag(jobTag(jobId))
+    }
+
+    suspend fun clearCompletedJobs() {
+        repository.clearCompletedJobs().forEach(::deleteStagedFile)
+    }
+
+    suspend fun deleteJob(jobId: Int) {
+        deleteStagedFile(repository.deleteJob(jobId))
+    }
+
+    suspend fun retryJob(jobId: Int) {
+        if (repository.retryJob(jobId)) {
+            enqueueWorker(jobId)
+        }
+    }
+
+    suspend fun cleanupOldTempFiles(
+        tempFileMaxAgeMs: Long = TimeUnit.DAYS.toMillis(3),
+        stagedFileMaxAgeMs: Long = TimeUnit.DAYS.toMillis(7),
+    ) = withContext(ioDispatcher) {
+        val cache = application.cacheDir ?: return@withContext
+        val tempCutoff = System.currentTimeMillis() - tempFileMaxAgeMs
+        cache.listFiles()
+            .orEmpty()
+            .asSequence()
+            .filter(File::isFile)
+            .filter { it.lastModified() < tempCutoff }
+            .filter(::isManagedTempFile)
+            .forEach(::deleteQuietly)
+
+        val stagedCutoff = System.currentTimeMillis() - stagedFileMaxAgeMs
+        stagedAudioDir().listFiles()
+            .orEmpty()
+            .asSequence()
+            .filter(File::isFile)
+            .filter { it.lastModified() < stagedCutoff }
+            .forEach(::deleteQuietly)
+    }
+
+    private fun enqueueWorker(jobId: Int) {
+        val workRequest = OneTimeWorkRequestBuilder<TranscriptionWorker>()
+            .setInputData(workDataOf("jobId" to jobId))
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build(),
+            )
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .addTag(jobTag(jobId))
+            .build()
+
+        workManager.beginUniqueWork(
+            TRANSCRIPTION_QUEUE,
+            ExistingWorkPolicy.APPEND_OR_REPLACE,
+            workRequest,
+        ).enqueue()
+    }
+
+    private fun jobTag(jobId: Int): String = "TranscriptionJob_$jobId"
+
+    private fun stagedAudioDir(): File = File(application.filesDir, STAGED_AUDIO_DIR).apply { mkdirs() }
+
+    private suspend fun stageSharedAudio(uri: Uri, index: Int): Pair<File, String?> = withContext(ioDispatcher) {
+        val contentResolver = application.contentResolver
+        val mimeType = contentResolver.getType(uri)?.lowercase()
+        val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)
+            ?: MimeTypeMap.getFileExtensionFromUrl(uri.toString()).takeIf(String::isNotBlank)
+            ?: "bin"
+        val stagedFile = File.createTempFile("${STAGED_FILE_PREFIX}${index}_", ".$extension", stagedAudioDir())
+        try {
+            contentResolver.openInputStream(uri)?.use { input ->
+                stagedFile.outputStream().use(input::copyTo)
+            } ?: throw IOException("Failed to read shared audio: $uri")
+        } catch (e: IOException) {
+            deleteQuietly(stagedFile)
+            throw e
+        }
+        stagedFile to mimeType
+    }
+
+    private suspend fun resolveDisplayName(uri: Uri): String = withContext(ioDispatcher) {
+        val projection = arrayOf(OpenableColumns.DISPLAY_NAME)
+        runCatching {
+            application.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0 && cursor.moveToFirst()) {
+                    cursor.getString(index).orEmpty()
+                } else {
+                    ""
+                }
+            }.orEmpty()
+        }.getOrDefault("")
+    }
+
+    private fun deleteStagedFile(path: String?) {
+        if (path.isNullOrBlank()) return
+        deleteQuietly(File(path))
+    }
+
+    private fun deleteQuietly(file: File) {
+        runCatching { file.delete() }
+    }
+
+    private fun isManagedTempFile(file: File): Boolean {
+        val name = file.name
+        return (name.startsWith(CONVERTED_FILE_PREFIX) && name.endsWith(".wav")) ||
+            (name.startsWith(DIRECT_FILE_PREFIX) && name.endsWith(".tmp"))
+    }
+}
+
+internal data class KeyValidationResult(val errorMessage: String? = null) {
+    val isValid: Boolean get() = errorMessage == null
+}
+
+internal data class CustomModelValidationResult(val displayName: String? = null, val errorMessage: String? = null) {
+    val isValid: Boolean get() = errorMessage == null
+}
+
+internal class GeminiValidationService(
+    private val settings: ApiKeyManager,
+    private val okHttpClient: OkHttpClient,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) {
+    companion object {
+        private const val GEMINI_MODELS_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+        private const val GEMINI_API_KEY_HEADER = "x-goog-api-key"
+        private const val ERR_ENTER_GEMINI_KEY = "Enter your Gemini API key first"
+    }
+
+    suspend fun validateElevenLabsKey(rawKey: String): KeyValidationResult = try {
+        val response = withContext(ioDispatcher) { RetrofitClient.api.getUser(rawKey) }
+        if (response.isSuccessful) {
+            KeyValidationResult()
+        } else {
+            KeyValidationResult(
+                if (response.code() == 401) "Invalid API key" else "Validation failed: HTTP ${response.code()}",
+            )
+        }
+    } catch (e: IOException) {
+        KeyValidationResult(e.message ?: "Validation failed")
+    } catch (e: HttpException) {
+        KeyValidationResult("Validation failed: HTTP ${e.code()}")
+    }
+
+    suspend fun validateGeminiKey(rawKey: String): KeyValidationResult = try {
+        val request = Request.Builder()
+            .url(GEMINI_MODELS_BASE_URL)
+            .header(GEMINI_API_KEY_HEADER, rawKey)
+            .build()
+        val result = withContext(ioDispatcher) {
+            okHttpClient.newCall(request).execute().use { response ->
+                response.isSuccessful to response.code
+            }
+        }
+        if (result.first) {
+            KeyValidationResult()
+        } else {
+            KeyValidationResult(
+                if (result.second == 400) "Invalid API key" else "Validation failed: HTTP ${result.second}",
+            )
+        }
+    } catch (e: IOException) {
+        KeyValidationResult(e.message ?: "Validation failed")
+    }
+
+    suspend fun validateCustomModel(modelName: String): CustomModelValidationResult {
+        val trimmed = modelName.trim()
+        val keyChars = settings.getGeminiApiKey()
+        if (keyChars == null || keyChars.isEmpty()) {
+            val keyState = settings.geminiApiKeyStateFlow.first()
+            val error = if (keyState is ApiKeyState.Error) {
+                "Keystore error: ${keyState.message}. Please re-enter your key."
+            } else {
+                ERR_ENTER_GEMINI_KEY
+            }
+            return CustomModelValidationResult(errorMessage = error)
+        }
+
+        return try {
+            val request = Request.Builder()
+                .url("$GEMINI_MODELS_BASE_URL/$trimmed")
+                .header(GEMINI_API_KEY_HEADER, String(keyChars))
+                .build()
+            val (isSuccess, code, bodyText) = withContext(ioDispatcher) {
+                okHttpClient.newCall(request).execute().use { response ->
+                    Triple(
+                        response.isSuccessful,
+                        response.code,
+                        runCatching { response.body.string() }.getOrDefault(""),
+                    )
+                }
+            }
+            if (!isSuccess) {
+                CustomModelValidationResult(
+                    errorMessage = if (code == 404) {
+                        "Model \"$trimmed\" not found"
+                    } else {
+                        "HTTP $code: could not verify model"
+                    },
+                )
+            } else {
+                CustomModelValidationResult(displayName = parseDisplayName(bodyText, trimmed))
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IOException) {
+            CustomModelValidationResult(errorMessage = e.message ?: "Validation failed")
+        } catch (e: HttpException) {
+            CustomModelValidationResult(errorMessage = "HTTP ${e.code()}: could not verify model")
+        } finally {
+            keyChars.fill('\u0000')
+        }
+    }
+
+    private fun parseDisplayName(bodyText: String, fallback: String): String = try {
+        JSONObject(bodyText).optString("displayName", fallback)
+    } catch (_: JSONException) {
+        fallback
+    }
+}
+
+internal data class SummarizationResult(val statusMessage: String, val errorMessage: String? = null) {
+    val isSuccess: Boolean get() = errorMessage == null
+}
+
+internal class SummarizationService(
+    private val settings: ApiKeyManager,
+    private val repository: TranscriptionRepository,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) {
+    suspend fun summarize(jobId: Int, state: UiState, allowResummarize: Boolean): SummarizationResult {
+        val claimed = if (allowResummarize) {
+            repository.claimManualSummary(jobId)
+        } else {
+            repository.claimAutoSummary(jobId)
+        }
+        if (!claimed) return SummarizationResult(statusMessage = state.status)
+
+        var summarizingCleared = false
+        return try {
+            val job = repository.getJob(jobId)
+            if (job == null) {
+                repository.setSummarizing(jobId, false)
+                summarizingCleared = true
+                return SummarizationResult(statusMessage = state.status)
+            }
+
+            val text = job.transcript
+            if (text.isBlank()) {
+                repository.setSummarizing(jobId, false)
+                summarizingCleared = true
+                SummarizationResult(statusMessage = "Nothing to summarize for ${job.displayName}.")
+            } else {
+                val modelName = resolveSummarizerModel(state)
+                val apiKey = requireGeminiApiKey()
+                val summary = requestSummary(text, apiKey, modelName)
+                repository.succeedSummarization(jobId, summary)
+                summarizingCleared = true
+                job.historyId?.let { repository.updateHistorySummary(it, summary) }
+                SummarizationResult(statusMessage = "Summary generated.")
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IOException) {
+            repository.failSummarization(jobId, e.message)
+            summarizingCleared = true
+            SummarizationResult("Summarization error: ${e.message}", e.message)
+        } catch (e: IllegalStateException) {
+            repository.failSummarization(jobId, e.message)
+            summarizingCleared = true
+            val message = e.message ?: "Summarization failed"
+            SummarizationResult("Error: $message", message)
+        } finally {
+            if (!summarizingCleared) {
+                withContext(NonCancellable + ioDispatcher) {
+                    repository.setSummarizing(jobId, false)
+                }
+            }
+        }
+    }
+
+    private suspend fun requireGeminiApiKey(): String {
+        val keyChars = settings.getGeminiApiKey()
+        if (keyChars == null || keyChars.isEmpty()) {
+            error("Gemini API Key is not set (Settings) or Keystore error.")
+        }
+        return try {
+            String(keyChars)
+        } finally {
+            keyChars.fill('\u0000')
+        }
+    }
+
+    private fun resolveSummarizerModel(state: UiState): String = when {
+        state.summarizerProvider == TranscriptionProvider.GEMINI_CUSTOM -> {
+            state.summarizerCustomGeminiModelName.ifBlank {
+                throw IllegalStateException("No custom Gemini model set for summarization.")
+            }
+        }
+        state.summarizerProvider.isGemini() -> requireNotNull(state.summarizerProvider.modelName)
+        else -> requireNotNull(TranscriptionProvider.GEMINI_FLASH.modelName)
+    }
+
+    private suspend fun requestSummary(text: String, apiKey: String, modelName: String): String {
+        val client = Client.builder().apiKey(apiKey).build()
+        val prompt = """
+            You are an expert summarizer.
+            Provide a concise, easy-to-read summary of the following text, in the same language.
+            Use bullet points (-) for key takeaways if appropriate. The output should be plain text,
+            no markdown.
+        """.trimIndent()
+
+        val content = Content.fromParts(
+            Part.fromText(prompt),
+            Part.fromText(text),
+        )
+        val response = withContext(ioDispatcher) {
+            val config = GenerateContentConfig.builder()
+                .responseMimeType("text/plain")
+                .build()
+            client.models.generateContent(modelName, content, config)
+        }
+        return response.text()?.trim().orEmpty().ifBlank { "No summary generated." }
+    }
+}

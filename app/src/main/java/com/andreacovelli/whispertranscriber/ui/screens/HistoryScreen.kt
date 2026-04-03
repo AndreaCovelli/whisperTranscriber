@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -66,19 +67,53 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = viewModel(), onNavigateBa
     val clipboardManager = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-
     val searchQuery by historyViewModel.searchQuery.collectAsStateWithLifecycle()
-    val (showDeleteAllDialog, setShowDeleteAllDialog) = remember { mutableStateOf(false) }
-
-    val expandedIdsSaver = listSaver<Set<Int>, Int>(
-        save = { it.toList() },
-        restore = { it.toSet() },
-    )
+    val expandedIdsSaver = listSaver<Set<Int>, Int>(save = { it.toList() }, restore = { it.toSet() })
     var expandedIds by rememberSaveable(stateSaver = expandedIdsSaver) { mutableStateOf(emptySet()) }
-
-    val shareTitle = stringResource(R.string.share_transcription_title)
+    var showDeleteAllDialog by remember { mutableStateOf(false) }
     val searchTokens = remember(searchQuery) { extractHistorySearchTokens(searchQuery) }
+
+    ObserveShareEvents(
+        historyViewModel = historyViewModel,
+        shareTitle = stringResource(R.string.share_transcription_title),
+    )
+    DeleteAllHistoryDialog(
+        visible = showDeleteAllDialog,
+        onDismiss = { showDeleteAllDialog = false },
+        onConfirm = {
+            historyViewModel.deleteAllHistory()
+            showDeleteAllDialog = false
+        },
+    )
+
+    Scaffold(
+        topBar = {
+            HistoryTopBar(
+                canDeleteAll = pagedItems.itemCount > 0 || searchQuery.isNotEmpty(),
+                onNavigateBack = onNavigateBack,
+                onDeleteAll = { showDeleteAllDialog = true },
+            )
+        },
+    ) { paddingValues ->
+        HistoryScreenContent(
+            historyViewModel = historyViewModel,
+            pagedItems = pagedItems,
+            searchQuery = searchQuery,
+            searchTokens = searchTokens,
+            expandedIds = expandedIds,
+            onExpandedIdsChange = { expandedIds = it },
+            paddingValues = paddingValues,
+            clipboardManager = clipboardManager,
+            scope = scope,
+            context = context,
+        )
+    }
+}
+
+@Composable
+private fun ObserveShareEvents(historyViewModel: HistoryViewModel, shareTitle: String) {
     val lifecycleOwner = LocalLifecycleOwner.current
+    val context = LocalContext.current
     LaunchedEffect(historyViewModel, lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             historyViewModel.shareEvent.collect { content ->
@@ -90,138 +125,205 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = viewModel(), onNavigateBa
             }
         }
     }
+}
 
-    if (showDeleteAllDialog) {
-        AlertDialog(
-            onDismissRequest = { setShowDeleteAllDialog(false) },
-            title = { Text("Delete all history?") },
-            text = { Text("This will permanently remove all transcription history.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    historyViewModel.deleteAllHistory()
-                    setShowDeleteAllDialog(false)
-                }) { Text("Delete all", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = {
-                TextButton(onClick = { setShowDeleteAllDialog(false) }) { Text("Cancel") }
-            },
+@Composable
+private fun DeleteAllHistoryDialog(visible: Boolean, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    if (!visible) return
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete all history?") },
+        text = { Text("This will permanently remove all transcription history.") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Delete all", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HistoryTopBar(canDeleteAll: Boolean, onNavigateBack: () -> Unit, onDeleteAll: () -> Unit) {
+    TopAppBar(
+        title = { Text("Transcription History") },
+        navigationIcon = {
+            IconButton(onClick = onNavigateBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+            }
+        },
+        actions = {
+            if (canDeleteAll) {
+                IconButton(onClick = onDeleteAll) {
+                    Icon(Icons.Default.DeleteSweep, "Delete all history")
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun HistoryScreenContent(
+    historyViewModel: HistoryViewModel,
+    pagedItems: LazyPagingItems<com.andreacovelli.whispertranscriber.data.TranscriptionHistory>,
+    searchQuery: String,
+    searchTokens: List<String>,
+    expandedIds: Set<Int>,
+    onExpandedIdsChange: (Set<Int>) -> Unit,
+    paddingValues: PaddingValues,
+    clipboardManager: androidx.compose.ui.platform.Clipboard,
+    scope: kotlinx.coroutines.CoroutineScope,
+    context: android.content.Context,
+) {
+    val focusManager = LocalFocusManager.current
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(paddingValues)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { focusManager.clearFocus() },
+    ) {
+        HistorySearchField(
+            visible = pagedItems.itemCount > 0 || searchQuery.isNotEmpty(),
+            searchQuery = searchQuery,
+            onSearchChange = historyViewModel::setSearchQuery,
+        )
+        HistoryContent(
+            pagedItems = pagedItems,
+            searchQuery = searchQuery,
+            searchTokens = searchTokens,
+            expandedIds = expandedIds,
+            onExpandedIdsChange = onExpandedIdsChange,
+            historyViewModel = historyViewModel,
+            clipboardManager = clipboardManager,
+            scope = scope,
+            context = context,
         )
     }
+}
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Transcription History") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
-                    }
-                },
-                actions = {
-                    if (pagedItems.itemCount > 0 || searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { setShowDeleteAllDialog(true) }) {
-                            Icon(Icons.Default.DeleteSweep, "Delete all history")
-                        }
-                    }
-                },
-            )
+@Composable
+private fun HistorySearchField(visible: Boolean, searchQuery: String, onSearchChange: (String) -> Unit) {
+    if (!visible) return
+    OutlinedTextField(
+        value = searchQuery,
+        onValueChange = onSearchChange,
+        placeholder = { Text("Search transcriptions…") },
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        singleLine = true,
+        trailingIcon = if (searchQuery.isNotEmpty()) {
+            {
+                IconButton(onClick = { onSearchChange("") }) {
+                    Icon(Icons.Default.Delete, "Clear search")
+                }
+            }
+        } else {
+            null
         },
-    ) { paddingValues ->
-        val focusManager = LocalFocusManager.current
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                ) { focusManager.clearFocus() },
-        ) {
-            if (pagedItems.itemCount > 0 || searchQuery.isNotEmpty()) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { historyViewModel.setSearchQuery(it) },
-                    placeholder = { Text("Search transcriptions…") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    singleLine = true,
-                    trailingIcon = if (searchQuery.isNotEmpty()) {
-                        {
-                            IconButton(onClick = { historyViewModel.setSearchQuery("") }) {
-                                Icon(Icons.Default.Delete, "Clear search")
-                            }
-                        }
-                    } else {
-                        null
-                    },
-                )
-            }
-            if (pagedItems.isInitialLoad()) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator()
-                }
-            } else if (pagedItems.itemCount == 0) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        if (searchQuery.isEmpty()) {
-                            "No history yet."
-                        } else {
-                            "No results for \"$searchQuery\""
-                        },
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 8.dp),
-                ) {
-                    items(
-                        count = pagedItems.itemCount,
-                        key = pagedItems.itemKey { it.id },
-                    ) { index ->
-                        val item = pagedItems[index]
-                        if (item != null) {
-                            HistoryItemCard(
-                                item = item,
-                                expanded = expandedIds.contains(item.id),
-                                onToggleExpand = {
-                                    @Suppress("UNUSED_VALUE")
-                                    expandedIds = if (expandedIds.contains(item.id)) {
-                                        expandedIds - item.id
-                                    } else {
-                                        expandedIds + item.id
-                                    }
-                                },
-                                onCopy = { text ->
-                                    scope.launch {
-                                        clipboardManager.setClipEntry(ClipEntry(ClipData.newPlainText("", text)))
-                                        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                onClearSummary = { historyViewModel.clearSummary(item) },
-                                onDelete = { historyViewModel.deleteHistoryItem(item) },
-                                onShare = { historyViewModel.prepareShareContent(item) },
-                                searchTokens = searchTokens,
-                            )
-                        }
+    )
+}
+
+@Composable
+private fun ColumnScope.HistoryContent(
+    pagedItems: LazyPagingItems<com.andreacovelli.whispertranscriber.data.TranscriptionHistory>,
+    searchQuery: String,
+    searchTokens: List<String>,
+    expandedIds: Set<Int>,
+    onExpandedIdsChange: (Set<Int>) -> Unit,
+    historyViewModel: HistoryViewModel,
+    clipboardManager: androidx.compose.ui.platform.Clipboard,
+    scope: kotlinx.coroutines.CoroutineScope,
+    context: android.content.Context,
+) {
+    when {
+        pagedItems.isInitialLoad() -> LoadingHistoryState()
+        pagedItems.itemCount == 0 -> EmptyHistoryState(searchQuery)
+        else -> HistoryList(
+            pagedItems = pagedItems,
+            searchTokens = searchTokens,
+            expandedIds = expandedIds,
+            onExpandedIdsChange = onExpandedIdsChange,
+            historyViewModel = historyViewModel,
+            clipboardManager = clipboardManager,
+            scope = scope,
+            context = context,
+        )
+    }
+}
+
+@Composable
+private fun ColumnScope.LoadingHistoryState() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .weight(1f),
+        contentAlignment = Alignment.Center,
+    ) {
+        CircularProgressIndicator()
+    }
+}
+
+@Composable
+private fun ColumnScope.EmptyHistoryState(searchQuery: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .weight(1f),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            if (searchQuery.isEmpty()) "No history yet." else "No results for \"$searchQuery\"",
+            style = MaterialTheme.typography.bodyLarge,
+        )
+    }
+}
+
+@Composable
+private fun ColumnScope.HistoryList(
+    pagedItems: LazyPagingItems<com.andreacovelli.whispertranscriber.data.TranscriptionHistory>,
+    searchTokens: List<String>,
+    expandedIds: Set<Int>,
+    onExpandedIdsChange: (Set<Int>) -> Unit,
+    historyViewModel: HistoryViewModel,
+    clipboardManager: androidx.compose.ui.platform.Clipboard,
+    scope: kotlinx.coroutines.CoroutineScope,
+    context: android.content.Context,
+) {
+    LazyColumn(
+        modifier = Modifier.weight(1f),
+        contentPadding = PaddingValues(vertical = 8.dp),
+    ) {
+        items(count = pagedItems.itemCount, key = pagedItems.itemKey { it.id }) { index ->
+            val item = pagedItems[index] ?: return@items
+            HistoryItemCard(
+                item = item,
+                expanded = expandedIds.contains(item.id),
+                onToggleExpand = { onExpandedIdsChange(expandedIds.toggle(item.id)) },
+                onCopy = { text ->
+                    scope.launch {
+                        clipboardManager.setClipEntry(ClipEntry(ClipData.newPlainText("", text)))
+                        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                     }
-                }
-            }
+                },
+                onClearSummary = { historyViewModel.clearSummary(item) },
+                onDelete = { historyViewModel.deleteHistoryItem(item) },
+                onShare = { historyViewModel.prepareShareContent(item) },
+                searchTokens = searchTokens,
+            )
         }
     }
 }
+
+private fun Set<Int>.toggle(id: Int): Set<Int> = if (contains(id)) this - id else this + id
 
 private fun <T : Any> LazyPagingItems<T>.isInitialLoad(): Boolean =
     loadState.refresh is LoadState.Loading && itemCount == 0
