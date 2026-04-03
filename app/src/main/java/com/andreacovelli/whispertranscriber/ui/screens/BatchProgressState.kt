@@ -2,11 +2,7 @@ package com.andreacovelli.whispertranscriber.ui.screens
 
 import com.andreacovelli.whispertranscriber.TranscriptionJobState
 
-data class BatchProgressState(
-    val currentFileNumber: Int,
-    val totalFiles: Int,
-    val completedFiles: Int,
-)
+data class BatchProgressState(val currentFileNumber: Int, val totalFiles: Int, val completedFiles: Int)
 
 internal fun buildBatchProgressState(jobs: List<TranscriptionJobState>): BatchProgressState? {
     val latestActiveBatch = jobs

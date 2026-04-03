@@ -60,12 +60,7 @@ class TranscriptionPresentationTest {
         assertEquals("", transcript)
     }
 
-    private fun testUiJob(
-        id: Int,
-        batchId: String,
-        status: String,
-        isRunning: Boolean = false,
-    ) = TranscriptionJobState(
+    private fun testUiJob(id: Int, batchId: String, status: String, isRunning: Boolean = false) = TranscriptionJobState(
         id = id,
         displayName = "file-$id.wav",
         batchId = batchId,

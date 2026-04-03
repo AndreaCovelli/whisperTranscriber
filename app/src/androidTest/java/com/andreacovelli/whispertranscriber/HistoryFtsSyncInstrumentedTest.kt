@@ -117,7 +117,9 @@ class HistoryFtsSyncInstrumentedTest {
             .build()
 
         try {
-            migratedDb.openHelper.readableDatabase.query("SELECT summaryModel FROM transcription_history").use { cursor ->
+            migratedDb.openHelper.readableDatabase.query(
+                "SELECT summaryModel FROM transcription_history",
+            ).use { cursor ->
                 assertEquals(1, cursor.columnCount)
             }
             migratedDb.openHelper.readableDatabase.query(
