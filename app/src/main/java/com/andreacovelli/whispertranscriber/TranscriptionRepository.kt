@@ -3,24 +3,45 @@ package com.andreacovelli.whispertranscriber
 import android.content.Context
 import androidx.room.withTransaction
 import com.andreacovelli.whispertranscriber.data.AppDatabase
+import com.andreacovelli.whispertranscriber.data.HistoryRepository
+import com.andreacovelli.whispertranscriber.data.RoomHistoryRepository
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.data.TranscriptionJobDao
 import kotlinx.coroutines.flow.Flow
 
-class TranscriptionRepository(context: Context) {
-    private val db = AppDatabase.getDatabase(context)
-    private val jobDao: TranscriptionJobDao = db.transcriptionJobDao()
-    private val historyDao = db.transcriptionHistoryDao()
+internal data class TranscriptionRepositoryDependencies(
+    val db: AppDatabase,
+    val jobDao: TranscriptionJobDao,
+    val historyRepository: HistoryRepository,
+) {
+    companion object {
+        fun from(context: Context): TranscriptionRepositoryDependencies {
+            val database = AppDatabase.getDatabase(context)
+            return TranscriptionRepositoryDependencies(
+                db = database,
+                jobDao = database.transcriptionJobDao(),
+                historyRepository = RoomHistoryRepository(database.transcriptionHistoryDao()),
+            )
+        }
+    }
+}
+
+class TranscriptionRepository internal constructor(dependencies: TranscriptionRepositoryDependencies) {
+    private val db = dependencies.db
+    private val jobDao = dependencies.jobDao
+    private val historyRepository = dependencies.historyRepository
+
+    constructor(context: Context) : this(TranscriptionRepositoryDependencies.from(context))
 
     val jobsState: Flow<List<TranscriptionJob>> = jobDao.getAllJobs()
 
     suspend fun addJob(job: TranscriptionJob): Long = jobDao.insert(job)
 
-    suspend fun insertHistory(historyItem: TranscriptionHistory): Int = historyDao.insert(historyItem).toInt()
+    suspend fun insertHistory(historyItem: TranscriptionHistory): Int = historyRepository.insert(historyItem)
 
     suspend fun updateHistorySummary(historyId: Int, summary: String) {
-        historyDao.updateSummary(historyId, summary)
+        historyRepository.updateSummary(historyId, summary)
     }
 
     suspend fun updateRunning(id: Int, isRunning: Boolean, status: String) {
@@ -82,7 +103,7 @@ class TranscriptionRepository(context: Context) {
             jobDao.updateSummaryError(jobId, null)
             val hid = job.historyId
             if (hid != null) {
-                historyDao.updateSummary(hid, "")
+                historyRepository.updateSummary(hid, "")
             }
         }
     }
@@ -93,7 +114,7 @@ class TranscriptionRepository(context: Context) {
             jobDao.clearTranscriptionResult(jobId)
             val hid = job.historyId
             if (hid != null) {
-                historyDao.updateText(hid, "")
+                historyRepository.updateText(hid, "")
             }
         }
     }
@@ -121,5 +142,5 @@ class TranscriptionRepository(context: Context) {
         return job?.stagedFilePath
     }
 
-    suspend fun findHistoryItem(historyId: Int): TranscriptionHistory? = historyDao.getById(historyId)
+    suspend fun findHistoryItem(historyId: Int): TranscriptionHistory? = historyRepository.getById(historyId)
 }

@@ -3,13 +3,12 @@ package com.andreacovelli.whispertranscriber
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.paging.Pager
-import androidx.paging.PagingConfig
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import com.andreacovelli.whispertranscriber.data.AppDatabase
+import com.andreacovelli.whispertranscriber.data.HistoryRepository
+import com.andreacovelli.whispertranscriber.data.RoomHistoryRepository
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
-import com.andreacovelli.whispertranscriber.data.TranscriptionHistoryDao
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
@@ -23,26 +22,12 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
-private val HISTORY_SEARCH_TOKEN_REGEX = Regex("[\\p{L}\\p{N}]+")
-
-internal fun extractHistorySearchTokens(rawQuery: String): List<String> = HISTORY_SEARCH_TOKEN_REGEX
-    .findAll(rawQuery)
-    .map { it.value }
-    .distinct()
-    .toList()
-
-internal fun buildHistorySearchQuery(rawQuery: String): String = extractHistorySearchTokens(rawQuery)
-    .map { "$it*" }
-    .joinToString(" ")
-
-class HistoryViewModel(application: Application) : AndroidViewModel(application) {
-
-    private val historyDao: TranscriptionHistoryDao
-
-    init {
-        val database = AppDatabase.getDatabase(application)
-        historyDao = database.transcriptionHistoryDao()
-    }
+class HistoryViewModel(application: Application, private val historyRepository: HistoryRepository) :
+    AndroidViewModel(application) {
+    constructor(application: Application) : this(
+        application = application,
+        historyRepository = RoomHistoryRepository(AppDatabase.getDatabase(application).transcriptionHistoryDao()),
+    )
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -72,36 +57,24 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
     val pagedHistoryItems: Flow<PagingData<TranscriptionHistory>> = _searchQuery
         .debounce(250)
         .distinctUntilChanged()
-        .flatMapLatest { query ->
-            Pager(
-                config = PagingConfig(pageSize = 20, enablePlaceholders = true),
-                pagingSourceFactory = {
-                    val ftsQuery = buildHistorySearchQuery(query)
-                    if (ftsQuery.isBlank()) {
-                        historyDao.getAllHistoryPaged()
-                    } else {
-                        historyDao.searchHistoryPaged(ftsQuery)
-                    }
-                },
-            ).flow
-        }
+        .flatMapLatest(historyRepository::getPagedHistory)
         .cachedIn(viewModelScope)
 
     fun clearSummary(item: TranscriptionHistory) {
         viewModelScope.launch {
-            historyDao.updateSummary(item.id, "")
+            historyRepository.updateSummary(item.id, "")
         }
     }
 
     fun deleteHistoryItem(item: TranscriptionHistory) {
         viewModelScope.launch {
-            historyDao.deleteById(item.id)
+            historyRepository.deleteById(item.id)
         }
     }
 
     fun deleteAllHistory() {
         viewModelScope.launch {
-            historyDao.deleteAllHistory()
+            historyRepository.deleteAll()
         }
     }
 }
