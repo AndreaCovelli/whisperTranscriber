@@ -20,6 +20,7 @@ import com.google.genai.types.Part
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.IOException
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -55,9 +56,11 @@ class TranscriptionQueueService @Inject constructor(
         uris: List<Uri>,
         provider: TranscriptionProvider,
         customModelName: String,
+        speakerDiarizationEnabled: Boolean,
     ): QueuedShareResult {
         if (uris.isEmpty()) return QueuedShareResult(0, "Waiting for audios...")
 
+        val batchId = UUID.randomUUID().toString()
         val requestedModel = when (provider) {
             TranscriptionProvider.ELEVEN_LABS -> null
             TranscriptionProvider.GEMINI_CUSTOM -> customModelName.ifBlank { null }
@@ -75,6 +78,8 @@ class TranscriptionQueueService @Inject constructor(
                     stagedFilePath = stagedFile.absolutePath,
                     providerName = provider.name,
                     requestedModel = requestedModel,
+                    batchId = batchId,
+                    speakerDiarizationEnabled = speakerDiarizationEnabled,
                     status = "Queued",
                     progress = 0f,
                     isRunning = false,
@@ -316,6 +321,8 @@ data class SummarizationResult(val statusMessage: String, val errorMessage: Stri
     val isSuccess: Boolean get() = errorMessage == null
 }
 
+data class SummaryData(val text: String, val model: String)
+
 @Singleton
 class SummarizationService @Inject constructor(
     private val settings: ApiKeyManager,
@@ -348,9 +355,9 @@ class SummarizationService @Inject constructor(
                 val modelName = resolveSummarizerModel(state)
                 val apiKey = requireGeminiApiKey()
                 val summary = requestSummary(text, apiKey, modelName)
-                repository.succeedSummarization(jobId, summary)
+                repository.succeedSummarization(jobId, summary.text, summary.model)
                 summarizingCleared = true
-                job.historyId?.let { repository.updateHistorySummary(it, summary) }
+                job.historyId?.let { repository.updateHistorySummary(it, summary.text, summary.model) }
                 SummarizationResult(statusMessage = "Summary generated.")
             }
         } catch (e: CancellationException) {
@@ -395,7 +402,7 @@ class SummarizationService @Inject constructor(
         else -> requireNotNull(TranscriptionProvider.GEMINI_FLASH.modelName)
     }
 
-    private suspend fun requestSummary(text: String, apiKey: String, modelName: String): String {
+    private suspend fun requestSummary(text: String, apiKey: String, modelName: String): SummaryData {
         val client = Client.builder().apiKey(apiKey).build()
         val prompt = """
             You are an expert summarizer.
@@ -414,6 +421,9 @@ class SummarizationService @Inject constructor(
                 .build()
             client.models.generateContent(modelName, content, config)
         }
-        return response.text()?.trim().orEmpty().ifBlank { "No summary generated." }
+        return SummaryData(
+            text = response.text()?.trim().orEmpty().ifBlank { "No summary generated." },
+            model = response.modelVersion().filter(String::isNotBlank).orElse(modelName),
+        )
     }
 }

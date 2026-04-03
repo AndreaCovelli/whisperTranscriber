@@ -71,64 +71,10 @@ fun SettingsScreen(viewModel: MainViewModel, onNavigateBack: () -> Unit) {
                 ) { focusManager.clearFocus() },
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text("Transcription Provider", style = MaterialTheme.typography.titleMedium)
-                    ProviderSelector(
-                        selected = uiState.provider,
-                        onSelect = actions.setProvider,
-                        customModelName = uiState.transcriptionCustomGeminiModelName,
-                        customModelValidation = uiState.transcriptionCustomModelValidation,
-                        onValidateCustomModel = actions.validateTranscriptionModel,
-                        onResetValidation = actions.resetTranscriptionModelValidation,
-                    )
-                }
-            }
-
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text("Summarizer Model", style = MaterialTheme.typography.titleMedium)
-                    ProviderSelector(
-                        selected = uiState.summarizerProvider,
-                        onSelect = actions.setSummarizerProvider,
-                        customModelName = uiState.summarizerCustomGeminiModelName,
-                        customModelValidation = uiState.summarizerCustomModelValidation,
-                        onValidateCustomModel = actions.validateSummarizerModel,
-                        onResetValidation = actions.resetSummarizerModelValidation,
-                        showElevenLabs = false,
-                    )
-                }
-            }
-
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text("Automatic Summarization", style = MaterialTheme.typography.titleMedium)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = "Summarize completed transcriptions automatically",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Switch(
-                            checked = uiState.automaticSummarizationEnabled,
-                            onCheckedChange = actions.setAutomaticSummarization,
-                        )
-                    }
-                }
-            }
+            TranscriptionProviderCard(uiState = uiState, actions = actions)
+            SpeakerDiarizationCard(uiState = uiState, actions = actions)
+            SummarizerProviderCard(uiState = uiState, actions = actions)
+            AutomaticSummarizationCard(uiState = uiState, actions = actions)
 
             ApiKeyCard(
                 title = "ElevenLabs API Key",
@@ -156,26 +102,131 @@ fun SettingsScreen(viewModel: MainViewModel, onNavigateBack: () -> Unit) {
                 snackbarHostState = snackbarHostState,
             )
 
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Text("App Info", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        text = stringResource(
-                            R.string.app_version_info,
-                            BuildConfig.VERSION_NAME,
-                            BuildConfig.VERSION_CODE,
-                        ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+            AppInfoCard()
+        }
+    }
+}
+
+@Composable
+private fun TranscriptionProviderCard(
+    uiState: com.andreacovelli.whispertranscriber.UiState,
+    actions: com.andreacovelli.whispertranscriber.SettingsScreenActions,
+) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("Transcription Provider", style = MaterialTheme.typography.titleMedium)
+            ProviderSelector(
+                selected = uiState.provider,
+                onSelect = actions.setProvider,
+                customModelName = uiState.transcriptionCustomGeminiModelName,
+                customModelValidation = uiState.transcriptionCustomModelValidation,
+                onValidateCustomModel = actions.validateTranscriptionModel,
+                onResetValidation = actions.resetTranscriptionModelValidation,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SpeakerDiarizationCard(
+    uiState: com.andreacovelli.whispertranscriber.UiState,
+    actions: com.andreacovelli.whispertranscriber.SettingsScreenActions,
+) {
+    SettingsToggleCard(
+        title = "Speaker Diarization",
+        body = "Label speakers in transcriptions when the provider can distinguish them",
+        checked = uiState.speakerDiarizationEnabled,
+        onCheckedChange = actions.setSpeakerDiarization,
+    )
+}
+
+@Composable
+private fun SummarizerProviderCard(
+    uiState: com.andreacovelli.whispertranscriber.UiState,
+    actions: com.andreacovelli.whispertranscriber.SettingsScreenActions,
+) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("Summarizer Model", style = MaterialTheme.typography.titleMedium)
+            ProviderSelector(
+                selected = uiState.summarizerProvider,
+                onSelect = actions.setSummarizerProvider,
+                customModelName = uiState.summarizerCustomGeminiModelName,
+                customModelValidation = uiState.summarizerCustomModelValidation,
+                onValidateCustomModel = actions.validateSummarizerModel,
+                onResetValidation = actions.resetSummarizerModelValidation,
+                showElevenLabs = false,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AutomaticSummarizationCard(
+    uiState: com.andreacovelli.whispertranscriber.UiState,
+    actions: com.andreacovelli.whispertranscriber.SettingsScreenActions,
+) {
+    SettingsToggleCard(
+        title = "Automatic Summarization",
+        body = "Summarize completed transcriptions automatically",
+        checked = uiState.automaticSummarizationEnabled,
+        onCheckedChange = actions.setAutomaticSummarization,
+    )
+}
+
+@Composable
+private fun SettingsToggleCard(title: String, body: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = body,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                Switch(
+                    checked = checked,
+                    onCheckedChange = onCheckedChange,
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun AppInfoCard() {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text("App Info", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = stringResource(
+                    R.string.app_version_info,
+                    BuildConfig.VERSION_NAME,
+                    BuildConfig.VERSION_CODE,
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

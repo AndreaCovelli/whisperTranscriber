@@ -43,6 +43,7 @@ data class UiState(
     val transcriptionCustomModelValidation: CustomModelValidation = CustomModelValidation.Idle,
     val summarizerCustomModelValidation: CustomModelValidation = CustomModelValidation.Idle,
     val automaticSummarizationEnabled: Boolean = false,
+    val speakerDiarizationEnabled: Boolean = false,
     val jobs: List<TranscriptionJobState> = emptyList(),
 )
 
@@ -58,6 +59,8 @@ data class TranscriptionJobState(
     val language: String = "",
     val model: String = "",
     val summary: String = "",
+    val summaryModel: String = "",
+    val batchId: String = "",
     val historyId: Int? = null,
     val error: String? = null,
     val summaryError: String? = null,
@@ -78,6 +81,8 @@ fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     language = language,
     model = model,
     summary = summary,
+    summaryModel = summaryModel,
+    batchId = batchId.orEmpty(),
     historyId = historyId,
     error = error,
     summaryError = summaryError,
@@ -195,6 +200,11 @@ class MainViewModel @Inject constructor(
                 }
             }
             launch {
+                settings.speakerDiarizationFlow.collect { enabled ->
+                    _uiState.update { it.copy(speakerDiarizationEnabled = enabled) }
+                }
+            }
+            launch {
                 repository.jobsState.collect { jobsList ->
                     _uiState.update { it.copy(jobs = jobsList.map { it.toUiState() }) }
 
@@ -271,6 +281,13 @@ class MainViewModel @Inject constructor(
         _uiState.update { it.copy(automaticSummarizationEnabled = enabled) }
         viewModelScope.launch {
             settings.saveAutomaticSummarization(enabled)
+        }
+    }
+
+    internal fun updateSpeakerDiarization(enabled: Boolean) {
+        _uiState.update { it.copy(speakerDiarizationEnabled = enabled) }
+        viewModelScope.launch {
+            settings.saveSpeakerDiarization(enabled)
         }
     }
 
@@ -358,6 +375,7 @@ class MainViewModel @Inject constructor(
                 uris = uris,
                 provider = _uiState.value.provider,
                 customModelName = _uiState.value.transcriptionCustomGeminiModelName,
+                speakerDiarizationEnabled = _uiState.value.speakerDiarizationEnabled,
             )
             _uiState.update { it.copy(status = result.statusMessage) }
         }

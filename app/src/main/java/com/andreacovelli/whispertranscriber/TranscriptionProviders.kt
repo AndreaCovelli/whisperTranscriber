@@ -32,6 +32,7 @@ internal class ElevenLabsTranscriber(
     private val source: Any,
     private val apiKey: CharArray,
     private val createRequestBodyFromUri: (Uri) -> okhttp3.RequestBody,
+    private val speakerDiarizationEnabled: Boolean,
 ) : ProviderTranscriber {
     companion object {
         private const val ELEVEN_LABS_MODEL_ID = "scribe_v2"
@@ -47,12 +48,22 @@ internal class ElevenLabsTranscriber(
             }
             val filePart = MultipartBody.Part.createFormData("file", "audio_file", requestFileBody)
             val modelIdPart = MultipartBody.Part.createFormData("model_id", ELEVEN_LABS_MODEL_ID)
-            val response = api.transcribe(String(apiKey), filePart, modelIdPart)
+            val diarizePart = if (speakerDiarizationEnabled) {
+                MultipartBody.Part.createFormData("diarize", "true")
+            } else {
+                null
+            }
+            val response = api.transcribe(String(apiKey), filePart, modelIdPart, diarizePart)
+            val transcriptText = if (speakerDiarizationEnabled) {
+                response.words?.let(::formatElevenLabsSpeakerTranscript).orEmpty().ifBlank { response.text }
+            } else {
+                response.text
+            }
             emit(TranscriptionResult.Loading("Success"))
             emit(
                 TranscriptionResult.Success(
                     TranscriptionData(
-                        text = response.text,
+                        text = transcriptText,
                         language = response.languageCode ?: "Unknown",
                         model = "ElevenLabs Scribe v2",
                     ),
@@ -82,6 +93,7 @@ internal class GeminiTranscriber(
     private val mimeType: String,
     private val apiKey: CharArray,
     private val modelName: String,
+    private val speakerDiarizationEnabled: Boolean,
 ) : ProviderTranscriber {
     companion object {
         private const val TYPE_OBJECT = "OBJECT"
@@ -110,7 +122,7 @@ internal class GeminiTranscriber(
                 .build()
             val content = Content.fromParts(
                 Part.fromText(
-                    "Transcribe the provided audio. Return only a compact JSON object with fields: language_code (BCP-47 like en-US) and text (full transcript). Do not include any extra commentary.",
+                    buildPrompt(),
                 ),
                 audioPart,
             )
@@ -127,7 +139,7 @@ internal class GeminiTranscriber(
             emit(
                 TranscriptionResult.Success(
                     TranscriptionData(
-                        text = obj.optString("text").ifBlank { "No text found." },
+                        text = parseTranscriptText(obj),
                         language = obj.optString("language_code", "und"),
                         model = response.modelVersion().filter(String::isNotBlank).orElse(modelName),
                     ),
@@ -173,6 +185,31 @@ internal class GeminiTranscriber(
         .required(listOf("language_code", "text"))
         .build()
 
+    private fun buildPrompt(): String = if (speakerDiarizationEnabled) {
+        """
+        Transcribe the provided audio and return only a compact JSON object with fields:
+        language_code (BCP-47 like en-US) and text.
+        When multiple speakers can be distinguished, format text with speaker labels on separate lines,
+        for example:
+        Speaker A: Hello
+        Speaker B: Hi
+        If speaker changes cannot be inferred reliably, return the plain transcript text without labels.
+        Do not include any extra commentary.
+        """.trimIndent()
+    } else {
+        "Transcribe the provided audio. Return only a compact JSON object with fields: language_code (BCP-47 like en-US) and text (full transcript). Do not include any extra commentary."
+    }
+
+    private fun parseTranscriptText(obj: JSONObject): String {
+        val transcriptText = obj.optString("text").ifBlank { "No text found." }
+        if (!speakerDiarizationEnabled) return transcriptText
+        return transcriptText.lineSequence()
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .joinToString(separator = "\n")
+            .ifBlank { transcriptText }
+    }
+
     private fun resolveGeminiErrorMessage(
         error: Throwable,
         httpCode: Int? = extractHttpStatusFromMessage(error),
@@ -199,3 +236,57 @@ private val HTTP_STATUS_PATTERNS = listOf(
     Regex("""\bstatus(?:\s+code)?\s*[:=]?\s*([45]\d{2})\b""", RegexOption.IGNORE_CASE),
     Regex("""\bcode\s*[:=]?\s*([45]\d{2})\b""", RegexOption.IGNORE_CASE),
 )
+
+internal fun formatElevenLabsSpeakerTranscript(words: List<ElevenLabsWord>): String {
+    if (words.none { !it.speakerId.isNullOrBlank() }) return ""
+
+    val speakerLabels = linkedMapOf<String, String>()
+    val sections = mutableListOf<Pair<String, StringBuilder>>()
+
+    words.forEach { word ->
+        val token = word.text.trim()
+        if (token.isEmpty()) return@forEach
+
+        val speakerId = word.speakerId?.takeIf(String::isNotBlank)
+        if (speakerId == null) {
+            sections.lastOrNull()?.second?.appendToken(token)
+            return@forEach
+        }
+
+        val label = speakerLabels.getOrPut(speakerId) {
+            "Speaker ${speakerLabelSuffix(speakerLabels.size)}"
+        }
+        val current = sections.lastOrNull()
+        if (current == null || current.first != label) {
+            sections += label to StringBuilder()
+        }
+        sections.last().second.appendToken(token)
+    }
+
+    return sections.joinToString(separator = "\n") { (speaker, text) ->
+        "$speaker: ${text.toString().trim()}"
+    }.trim()
+}
+
+private fun StringBuilder.appendToken(token: String) {
+    if (isEmpty()) {
+        append(token)
+        return
+    }
+
+    val punctuationOnly = token.all { !it.isLetterOrDigit() }
+    if (punctuationOnly) {
+        append(token)
+    } else {
+        append(' ').append(token)
+    }
+}
+
+private fun speakerLabelSuffix(index: Int): String {
+    val alphabet = ('A'..'Z').toList()
+    return if (index < alphabet.size) {
+        alphabet[index].toString()
+    } else {
+        "${alphabet[index % alphabet.size]}${index / alphabet.size}"
+    }
+}

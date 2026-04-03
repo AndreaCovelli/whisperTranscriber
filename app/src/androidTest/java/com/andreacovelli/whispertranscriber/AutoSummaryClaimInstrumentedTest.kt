@@ -81,7 +81,7 @@ class AutoSummaryClaimInstrumentedTest {
             ),
         ).toInt()
 
-        jobDao.updateSummary(jobId, "")
+        jobDao.updateSummary(jobId, "", "")
         jobDao.updateSummaryError(jobId, null)
 
         val storedJob = jobDao.getJobById(jobId)
