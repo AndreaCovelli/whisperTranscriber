@@ -52,7 +52,7 @@ internal object SharedAudioIntentHandler {
                     @Suppress("DEPRECATION")
                     intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
                 }
-                (clipUris + extraUris).distinctBy { it.toString() }
+                (clipUris + extraUris).distinct()
             }
             else -> emptyList()
         }
@@ -178,7 +178,7 @@ class MainActivity : ComponentActivity() {
         if (sharedUris.isNotEmpty()) {
             mainViewModel.handleAudioShareMultiple(sharedUris)
         }
-        if (replacementIntent != null && replacementIntent !== intent) {
+        if (replacementIntent !== intent) {
             setIntent(replacementIntent)
         }
     }
