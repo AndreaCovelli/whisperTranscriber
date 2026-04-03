@@ -311,7 +311,6 @@ class MainViewModel @Inject constructor(
     }
 
     internal fun updateSpeakerDiarization(enabled: Boolean) {
-        _uiState.update { it.copy(speakerDiarizationEnabled = enabled) }
         viewModelScope.launch {
             settings.saveSpeakerDiarization(enabled)
         }

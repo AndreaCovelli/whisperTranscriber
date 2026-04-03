@@ -15,6 +15,8 @@ interface HistoryRepository {
 
     suspend fun updateSummary(id: Int, summary: String, summaryModel: String)
 
+    suspend fun updateSummaryByJobId(jobId: Int, summary: String, summaryModel: String)
+
     suspend fun updateText(id: Int, text: String)
 
     suspend fun getById(id: Int): TranscriptionHistory?
@@ -44,6 +46,10 @@ class RoomHistoryRepository @Inject constructor(private val historyDao: Transcri
 
     override suspend fun updateSummary(id: Int, summary: String, summaryModel: String) {
         historyDao.updateSummary(id, summary, summaryModel)
+    }
+
+    override suspend fun updateSummaryByJobId(jobId: Int, summary: String, summaryModel: String) {
+        historyDao.updateSummaryByJobId(jobId, summary, summaryModel)
     }
 
     override suspend fun updateText(id: Int, text: String) {
