@@ -63,9 +63,11 @@ class ShareIntentAndQueuedAudioInstrumentedTest {
             putExtra(Intent.EXTRA_STREAM, sharedUri)
         }
 
-        val uris = SharedAudioIntentHandler.extractSharedUris(shareIntent.takeIf {
-            (it.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
-        })
+        val uris = SharedAudioIntentHandler.extractSharedUris(
+            shareIntent.takeIf {
+                (it.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
+            },
+        )
 
         assertTrue(uris.isEmpty())
     }
