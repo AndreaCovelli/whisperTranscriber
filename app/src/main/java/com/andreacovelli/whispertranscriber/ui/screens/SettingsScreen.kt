@@ -35,6 +35,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.andreacovelli.whispertranscriber.BuildConfig
 import com.andreacovelli.whispertranscriber.MainViewModel
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.SettingsScreenActions
+import com.andreacovelli.whispertranscriber.UiState
 import com.andreacovelli.whispertranscriber.ui.components.ApiKeyCard
 import com.andreacovelli.whispertranscriber.ui.components.ProviderSelector
 
@@ -108,10 +110,7 @@ fun SettingsScreen(viewModel: MainViewModel, onNavigateBack: () -> Unit) {
 }
 
 @Composable
-private fun TranscriptionProviderCard(
-    uiState: com.andreacovelli.whispertranscriber.UiState,
-    actions: com.andreacovelli.whispertranscriber.SettingsScreenActions,
-) {
+private fun TranscriptionProviderCard(uiState: UiState, actions: SettingsScreenActions) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -131,10 +130,7 @@ private fun TranscriptionProviderCard(
 }
 
 @Composable
-private fun SpeakerDiarizationCard(
-    uiState: com.andreacovelli.whispertranscriber.UiState,
-    actions: com.andreacovelli.whispertranscriber.SettingsScreenActions,
-) {
+private fun SpeakerDiarizationCard(uiState: UiState, actions: SettingsScreenActions) {
     SettingsToggleCard(
         title = "Speaker Diarization",
         body = "Label speakers in transcriptions when the provider can distinguish them",
@@ -144,10 +140,7 @@ private fun SpeakerDiarizationCard(
 }
 
 @Composable
-private fun SummarizerProviderCard(
-    uiState: com.andreacovelli.whispertranscriber.UiState,
-    actions: com.andreacovelli.whispertranscriber.SettingsScreenActions,
-) {
+private fun SummarizerProviderCard(uiState: UiState, actions: SettingsScreenActions) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -168,10 +161,7 @@ private fun SummarizerProviderCard(
 }
 
 @Composable
-private fun AutomaticSummarizationCard(
-    uiState: com.andreacovelli.whispertranscriber.UiState,
-    actions: com.andreacovelli.whispertranscriber.SettingsScreenActions,
-) {
+private fun AutomaticSummarizationCard(uiState: UiState, actions: SettingsScreenActions) {
     SettingsToggleCard(
         title = "Automatic Summarization",
         body = "Summarize completed transcriptions automatically",

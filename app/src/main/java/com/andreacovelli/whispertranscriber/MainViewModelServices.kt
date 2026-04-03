@@ -423,7 +423,7 @@ class SummarizationService @Inject constructor(
         }
         return SummaryData(
             text = response.text()?.trim().orEmpty().ifBlank { "No summary generated." },
-            model = response.modelVersion().filter(String::isNotBlank).orElse(modelName),
+            model = response.modelVersion().orElse(null)?.takeIf { it.isNotBlank() } ?: modelName,
         )
     }
 }

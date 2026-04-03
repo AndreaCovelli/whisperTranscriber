@@ -283,12 +283,10 @@ private fun StringBuilder.appendToken(token: String) {
 }
 
 private const val UNLABELED_SPEAKER_ID = "__unlabeled__"
+private val ALPHABET = ('A'..'Z').toList()
 
-private fun speakerLabelSuffix(index: Int): String {
-    val alphabet = ('A'..'Z').toList()
-    return if (index < alphabet.size) {
-        alphabet[index].toString()
-    } else {
-        "${alphabet[index % alphabet.size]}${index / alphabet.size}"
-    }
+private fun speakerLabelSuffix(index: Int): String = if (index < ALPHABET.size) {
+    ALPHABET[index].toString()
+} else {
+    "${ALPHABET[index % ALPHABET.size]}${index / ALPHABET.size}"
 }
