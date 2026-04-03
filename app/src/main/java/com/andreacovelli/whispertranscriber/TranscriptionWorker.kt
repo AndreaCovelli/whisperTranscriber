@@ -14,6 +14,7 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
+import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.media.HardwareAudioConverter
 import dagger.assisted.Assisted
@@ -38,7 +39,7 @@ internal sealed interface QueuedAudioInputResolution {
 }
 
 internal object QueuedAudioInputResolver {
-    fun resolve(job: com.andreacovelli.whispertranscriber.data.TranscriptionJob): QueuedAudioInputResolution {
+    fun resolve(job: TranscriptionJob): QueuedAudioInputResolution {
         val stagedPath = job.stagedFilePath?.takeIf { it.isNotBlank() }
         if (stagedPath == null) {
             return QueuedAudioInputResolution.Ready(job.uri.toUri())
@@ -143,7 +144,10 @@ class TranscriptionWorker @AssistedInject constructor(
 
             val stagedUri = when (val resolution = QueuedAudioInputResolver.resolve(job)) {
                 is QueuedAudioInputResolution.Ready -> resolution.uri
-                is QueuedAudioInputResolution.MissingStagedFile -> error(resolution.message)
+                is QueuedAudioInputResolution.MissingStagedFile -> {
+                    repository.updateError(jobId, resolution.message, false, "Error")
+                    return Result.failure()
+                }
             }
 
             processSingleJob(

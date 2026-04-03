@@ -75,7 +75,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         maybeRequestNotificationPermission()
-        consumeSharedAudioIntent(intent)
+        if (savedInstanceState == null) {
+            consumeSharedAudioIntent(intent)
+        }
 
         setContent {
             WhisperTranscriberTheme {
