@@ -20,6 +20,7 @@ import com.andreacovelli.whispertranscriber.ui.screens.HistoryScreen
 import com.andreacovelli.whispertranscriber.ui.screens.MainScreen
 import com.andreacovelli.whispertranscriber.ui.screens.SettingsScreen
 import com.andreacovelli.whispertranscriber.ui.theme.WhisperTranscriberTheme
+import dagger.hilt.android.AndroidEntryPoint
 
 object AppRoutes {
     const val MAIN = "main"
@@ -27,6 +28,7 @@ object AppRoutes {
     const val SETTINGS = "settings"
 }
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     private val mainViewModel: MainViewModel by viewModels()

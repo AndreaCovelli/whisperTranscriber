@@ -9,8 +9,11 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.andreacovelli.whispertranscriber.security.KeystoreCrypto
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
@@ -34,7 +37,8 @@ sealed class ApiKeyState {
     data class Error(val message: String) : ApiKeyState()
 }
 
-class ApiKeyManager(private val context: Context) {
+@Singleton
+class ApiKeyManager @Inject constructor(@param:ApplicationContext private val context: Context) {
     companion object {
         private val ELEVEN_LABS_API_KEY_ENC = stringPreferencesKey("eleven_labs_api_key_enc")
         private val GEMINI_API_KEY_ENC = stringPreferencesKey("gemini_api_key_enc")

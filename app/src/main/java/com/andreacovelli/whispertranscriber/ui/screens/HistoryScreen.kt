@@ -45,11 +45,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
@@ -62,7 +62,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HistoryScreen(historyViewModel: HistoryViewModel = viewModel(), onNavigateBack: () -> Unit) {
+fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNavigateBack: () -> Unit) {
     val pagedItems = historyViewModel.pagedHistoryItems.collectAsLazyPagingItems()
     val clipboardManager = LocalClipboard.current
     val scope = rememberCoroutineScope()
