@@ -94,8 +94,12 @@ class TranscriptionQueueService @Inject constructor(
     }
 
     suspend fun cancelJob(jobId: Int) {
+        val job = repository.getJob(jobId)
         repository.updateError(jobId, "Cancelled", false, "Cancelled")
         workManager.cancelAllWorkByTag(jobTag(jobId))
+        if (job?.isRunning == true) {
+            restartQueuedJobs()
+        }
     }
 
     suspend fun clearCompletedJobs() {
@@ -103,12 +107,26 @@ class TranscriptionQueueService @Inject constructor(
     }
 
     suspend fun deleteJob(jobId: Int) {
+        val job = repository.getJob(jobId)
+        if (job?.isRunning == true || job?.status == "Queued") {
+            workManager.cancelAllWorkByTag(jobTag(jobId))
+        }
         deleteStagedFile(repository.deleteJob(jobId))
+        if (job?.isRunning == true) {
+            restartQueuedJobs()
+        }
     }
 
     suspend fun retryJob(jobId: Int) {
         if (repository.retryJob(jobId)) {
             enqueueWorker(jobId, context.getString(R.string.speaker_label_prefix))
+        }
+    }
+
+    private suspend fun restartQueuedJobs() {
+        val speakerLabelPrefix = context.getString(R.string.speaker_label_prefix)
+        repository.getQueuedJobs().forEach { queuedJob ->
+            enqueueWorker(queuedJob.id, speakerLabelPrefix)
         }
     }
 

@@ -106,6 +106,8 @@ class TranscriptionRepository @Inject constructor(
 
     suspend fun getJob(jobId: Int): TranscriptionJob? = jobDao.getJobById(jobId)
 
+    suspend fun getQueuedJobs(): List<TranscriptionJob> = jobDao.getQueuedJobs()
+
     suspend fun retryJob(jobId: Int): Boolean = jobDao.retryById(jobId) > 0
 
     suspend fun clearCompletedJobs(): List<String> {

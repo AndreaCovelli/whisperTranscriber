@@ -227,6 +227,9 @@ interface TranscriptionJobDao {
     @Query("SELECT * FROM active_jobs WHERE id = :id")
     suspend fun getJobById(id: Int): TranscriptionJob?
 
+    @Query("SELECT * FROM active_jobs WHERE status = 'Queued' ORDER BY timestamp ASC")
+    suspend fun getQueuedJobs(): List<TranscriptionJob>
+
     @Query("SELECT historyId FROM active_jobs WHERE id = :id")
     suspend fun getHistoryIdByJobId(id: Int): Int?
 
