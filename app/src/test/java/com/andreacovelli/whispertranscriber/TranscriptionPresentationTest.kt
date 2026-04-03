@@ -41,6 +41,8 @@ class TranscriptionPresentationTest {
                 ElevenLabsWord(text = "!", start = 0.8, end = 0.9, type = "punctuation", speakerId = "speaker_1"),
                 ElevenLabsWord(text = "Hi", start = 1.0, end = 1.2, type = "word", speakerId = "speaker_2"),
             ),
+            languageCode = "en-US",
+            speakerLabelPrefix = "Speaker",
         )
 
         assertEquals(
@@ -58,6 +60,8 @@ class TranscriptionPresentationTest {
                 ElevenLabsWord(text = "world", start = 0.5, end = 0.8, type = "word", speakerId = "speaker_1"),
                 ElevenLabsWord(text = ")", start = 0.8, end = 0.9, type = "punctuation", speakerId = "speaker_1"),
             ),
+            languageCode = "en-US",
+            speakerLabelPrefix = "Speaker",
         )
 
         assertEquals("Speaker A: Hello (world)", transcript)
@@ -71,6 +75,8 @@ class TranscriptionPresentationTest {
                 ElevenLabsWord(text = "Hello", start = 0.5, end = 0.8, type = "word", speakerId = "speaker_1"),
                 ElevenLabsWord(text = "Hi", start = 0.9, end = 1.2, type = "word", speakerId = "speaker_2"),
             ),
+            languageCode = "en-US",
+            speakerLabelPrefix = "Speaker",
         )
 
         assertEquals(
@@ -88,6 +94,34 @@ class TranscriptionPresentationTest {
         )
 
         assertEquals("", transcript)
+    }
+
+    @Test
+    fun formatElevenLabsSpeakerTranscript_usesLocalizedSpeakerPrefix() {
+        val transcript = formatElevenLabsSpeakerTranscript(
+            listOf(
+                ElevenLabsWord(text = "Ciao", start = 0.0, end = 0.4, type = "word", speakerId = "speaker_1"),
+            ),
+            languageCode = "it-IT",
+            speakerLabelPrefix = "Voce",
+        )
+
+        assertEquals("Voce A: Ciao", transcript)
+    }
+
+    @Test
+    fun formatElevenLabsSpeakerTranscript_avoidsWordSpacingForJapanese() {
+        val transcript = formatElevenLabsSpeakerTranscript(
+            listOf(
+                ElevenLabsWord(text = "こんにちは", start = 0.0, end = 0.4, type = "word", speakerId = "speaker_1"),
+                ElevenLabsWord(text = "世界", start = 0.5, end = 0.8, type = "word", speakerId = "speaker_1"),
+                ElevenLabsWord(text = "。", start = 0.8, end = 0.9, type = "punctuation", speakerId = "speaker_1"),
+            ),
+            languageCode = "ja-JP",
+            speakerLabelPrefix = "Speaker",
+        )
+
+        assertEquals("Speaker A: こんにちは世界。", transcript)
     }
 
     private fun testUiJob(id: Int, batchId: String, status: String, isRunning: Boolean = false) = TranscriptionJobState(

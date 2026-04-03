@@ -33,6 +33,7 @@ internal class ElevenLabsTranscriber(
     private val apiKey: CharArray,
     private val createRequestBodyFromUri: (Uri) -> okhttp3.RequestBody,
     private val speakerDiarizationEnabled: Boolean,
+    private val speakerLabelPrefix: String,
 ) : ProviderTranscriber {
     companion object {
         private const val ELEVEN_LABS_MODEL_ID = "scribe_v2"
@@ -55,7 +56,10 @@ internal class ElevenLabsTranscriber(
             }
             val response = api.transcribe(String(apiKey), filePart, modelIdPart, diarizePart)
             val transcriptText = if (speakerDiarizationEnabled) {
-                response.words?.let(::formatElevenLabsSpeakerTranscript).orEmpty().ifBlank { response.text }
+                response.words
+                    ?.let { formatElevenLabsSpeakerTranscript(it, response.languageCode, speakerLabelPrefix) }
+                    .orEmpty()
+                    .ifBlank { response.text }
             } else {
                 response.text
             }
@@ -237,11 +241,16 @@ private val HTTP_STATUS_PATTERNS = listOf(
     Regex("""\bcode\s*[:=]?\s*([45]\d{2})\b""", RegexOption.IGNORE_CASE),
 )
 
-internal fun formatElevenLabsSpeakerTranscript(words: List<ElevenLabsWord>): String {
+internal fun formatElevenLabsSpeakerTranscript(
+    words: List<ElevenLabsWord>,
+    languageCode: String? = null,
+    speakerLabelPrefix: String = "Speaker",
+): String {
     if (words.none { !it.speakerId.isNullOrBlank() }) return ""
 
     val speakerLabels = linkedMapOf<String, String>()
     val sections = mutableListOf<Pair<String, StringBuilder>>()
+    val shouldInsertSpaces = languageCode.shouldInsertWordSpaces()
 
     words.forEach { word ->
         val token = word.text.trim()
@@ -250,13 +259,13 @@ internal fun formatElevenLabsSpeakerTranscript(words: List<ElevenLabsWord>): Str
         val speakerId = word.speakerId?.takeIf(String::isNotBlank)
         val effectiveSpeakerId = speakerId ?: UNLABELED_SPEAKER_ID
         val label = speakerLabels.getOrPut(effectiveSpeakerId) {
-            "Speaker ${speakerLabelSuffix(speakerLabels.size)}"
+            "$speakerLabelPrefix ${speakerLabelSuffix(speakerLabels.size)}"
         }
         val current = sections.lastOrNull()
         if (current == null || current.first != label) {
             sections += label to StringBuilder()
         }
-        sections.last().second.appendToken(token)
+        sections.last().second.appendToken(token, shouldInsertSpaces)
     }
 
     return sections.joinToString(separator = "\n") { (speaker, text) ->
@@ -264,8 +273,13 @@ internal fun formatElevenLabsSpeakerTranscript(words: List<ElevenLabsWord>): Str
     }.trim()
 }
 
-private fun StringBuilder.appendToken(token: String) {
+private fun StringBuilder.appendToken(token: String, shouldInsertSpaces: Boolean) {
     if (isEmpty()) {
+        append(token)
+        return
+    }
+
+    if (!shouldInsertSpaces) {
         append(token)
         return
     }
@@ -284,9 +298,18 @@ private fun StringBuilder.appendToken(token: String) {
 
 private const val UNLABELED_SPEAKER_ID = "__unlabeled__"
 private val ALPHABET = ('A'..'Z').toList()
+private val NON_SPACING_LANGUAGES = setOf("ja", "zh", "th")
 
 private fun speakerLabelSuffix(index: Int): String = if (index < ALPHABET.size) {
     ALPHABET[index].toString()
 } else {
     "${ALPHABET[index % ALPHABET.size]}${index / ALPHABET.size}"
+}
+
+private fun String?.shouldInsertWordSpaces(): Boolean {
+    val primaryLanguage = this
+        ?.substringBefore('-')
+        ?.lowercase()
+        .orEmpty()
+    return primaryLanguage !in NON_SPACING_LANGUAGES
 }

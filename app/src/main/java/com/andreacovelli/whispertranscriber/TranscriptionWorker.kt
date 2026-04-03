@@ -341,6 +341,7 @@ class TranscriptionWorker @AssistedInject constructor(
             apiKey = keyChars,
             createRequestBodyFromUri = ::createRequestBodyFromUri,
             speakerDiarizationEnabled = speakerDiarizationEnabled,
+            speakerLabelPrefix = applicationContext.getString(R.string.speaker_label_prefix),
         )
     } else {
         val geminiInput = checkNotNull(preparedInput as? PreparedAudioInput.Gemini) {
