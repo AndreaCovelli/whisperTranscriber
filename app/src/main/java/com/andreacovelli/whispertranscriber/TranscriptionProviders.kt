@@ -248,15 +248,8 @@ internal fun formatElevenLabsSpeakerTranscript(words: List<ElevenLabsWord>): Str
         if (token.isEmpty()) return@forEach
 
         val speakerId = word.speakerId?.takeIf(String::isNotBlank)
-        if (speakerId == null) {
-            if (sections.isEmpty()) {
-                sections += "Speaker A" to StringBuilder()
-            }
-            sections.last().second.appendToken(token)
-            return@forEach
-        }
-
-        val label = speakerLabels.getOrPut(speakerId) {
+        val effectiveSpeakerId = speakerId ?: UNLABELED_SPEAKER_ID
+        val label = speakerLabels.getOrPut(effectiveSpeakerId) {
             "Speaker ${speakerLabelSuffix(speakerLabels.size)}"
         }
         val current = sections.lastOrNull()
@@ -288,6 +281,8 @@ private fun StringBuilder.appendToken(token: String) {
         append(' ').append(token)
     }
 }
+
+private const val UNLABELED_SPEAKER_ID = "__unlabeled__"
 
 private fun speakerLabelSuffix(index: Int): String {
     val alphabet = ('A'..'Z').toList()

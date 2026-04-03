@@ -5,14 +5,15 @@ import com.andreacovelli.whispertranscriber.TranscriptionJobState
 data class BatchProgressState(val currentFileNumber: Int, val totalFiles: Int, val completedFiles: Int)
 
 internal fun buildBatchProgressState(jobs: List<TranscriptionJobState>): BatchProgressState? {
-    val latestActiveBatch = jobs
+    val latestActiveJob = jobs
         .asSequence()
         .filter { it.batchId.isNotBlank() }
-        .groupBy { it.batchId }
-        .values
-        .filter { group -> group.size > 1 && group.any { it.isRunning || it.status == "Queued" } }
-        .maxByOrNull { group -> group.maxOf(TranscriptionJobState::id) }
+        .filter { it.isRunning || it.status == "Queued" }
+        .maxByOrNull(TranscriptionJobState::id)
         ?: return null
+
+    val latestActiveBatch = jobs.filter { it.batchId == latestActiveJob.batchId }
+    if (latestActiveBatch.size <= 1) return null
 
     val totalFiles = latestActiveBatch.size
     val completedFiles = latestActiveBatch.count { !it.isRunning && it.status != "Queued" }

@@ -98,7 +98,6 @@ class TranscriptionRepository @Inject constructor(
             val hid = job.historyId
             if (hid != null) {
                 historyRepository.updateText(hid, "")
-                historyRepository.updateSummary(hid, "", "")
             }
         }
     }
