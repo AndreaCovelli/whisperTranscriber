@@ -13,13 +13,14 @@ import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
-import com.google.genai.Client
+import com.andreacovelli.whispertranscriber.security.useGenAiClient
 import com.google.genai.types.Content
 import com.google.genai.types.GenerateContentConfig
 import com.google.genai.types.Part
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.IOException
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -45,6 +46,7 @@ class TranscriptionQueueService @Inject constructor(
 ) {
     companion object {
         private const val TRANSCRIPTION_QUEUE = "TranscriptionQueue"
+        private const val SPEAKER_LABEL_PREFIX_INPUT = "speakerLabelPrefix"
         private const val STAGED_FILE_PREFIX = "staged_"
         private const val STAGED_AUDIO_DIR = "queued_audio"
         private const val CONVERTED_FILE_PREFIX = "converted_"
@@ -55,9 +57,12 @@ class TranscriptionQueueService @Inject constructor(
         uris: List<Uri>,
         provider: TranscriptionProvider,
         customModelName: String,
+        speakerDiarizationEnabled: Boolean,
     ): QueuedShareResult {
         if (uris.isEmpty()) return QueuedShareResult(0, "Waiting for audios...")
 
+        val batchId = UUID.randomUUID().toString()
+        val speakerLabelPrefix = context.getString(R.string.speaker_label_prefix)
         val requestedModel = when (provider) {
             TranscriptionProvider.ELEVEN_LABS -> null
             TranscriptionProvider.GEMINI_CUSTOM -> customModelName.ifBlank { null }
@@ -75,12 +80,14 @@ class TranscriptionQueueService @Inject constructor(
                     stagedFilePath = stagedFile.absolutePath,
                     providerName = provider.name,
                     requestedModel = requestedModel,
+                    batchId = batchId,
+                    speakerDiarizationEnabled = speakerDiarizationEnabled,
                     status = "Queued",
                     progress = 0f,
                     isRunning = false,
                 ),
             ).toInt()
-            enqueueWorker(jobId)
+            enqueueWorker(jobId, speakerLabelPrefix)
         }
 
         return QueuedShareResult(uris.size, "Queued ${uris.size} file(s).")
@@ -101,7 +108,7 @@ class TranscriptionQueueService @Inject constructor(
 
     suspend fun retryJob(jobId: Int) {
         if (repository.retryJob(jobId)) {
-            enqueueWorker(jobId)
+            enqueueWorker(jobId, context.getString(R.string.speaker_label_prefix))
         }
     }
 
@@ -128,9 +135,14 @@ class TranscriptionQueueService @Inject constructor(
             .forEach(::deleteQuietly)
     }
 
-    private fun enqueueWorker(jobId: Int) {
+    private fun enqueueWorker(jobId: Int, speakerLabelPrefix: String) {
         val workRequest = OneTimeWorkRequestBuilder<TranscriptionWorker>()
-            .setInputData(workDataOf("jobId" to jobId))
+            .setInputData(
+                workDataOf(
+                    "jobId" to jobId,
+                    SPEAKER_LABEL_PREFIX_INPUT to speakerLabelPrefix,
+                ),
+            )
             .setConstraints(
                 Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -316,6 +328,8 @@ data class SummarizationResult(val statusMessage: String, val errorMessage: Stri
     val isSuccess: Boolean get() = errorMessage == null
 }
 
+data class SummaryData(val text: String, val model: String)
+
 @Singleton
 class SummarizationService @Inject constructor(
     private val settings: ApiKeyManager,
@@ -347,10 +361,14 @@ class SummarizationService @Inject constructor(
             } else {
                 val modelName = resolveSummarizerModel(state)
                 val apiKey = requireGeminiApiKey()
-                val summary = requestSummary(text, apiKey, modelName)
-                repository.succeedSummarization(jobId, summary)
+                val summary = try {
+                    requestSummary(text, apiKey, modelName)
+                } finally {
+                    apiKey.fill('\u0000')
+                }
+                repository.succeedSummarization(jobId, summary.text, summary.model)
                 summarizingCleared = true
-                job.historyId?.let { repository.updateHistorySummary(it, summary) }
+                job.historyId?.let { repository.updateHistorySummary(it, summary.text, summary.model) }
                 SummarizationResult(statusMessage = "Summary generated.")
             }
         } catch (e: CancellationException) {
@@ -373,16 +391,12 @@ class SummarizationService @Inject constructor(
         }
     }
 
-    private suspend fun requireGeminiApiKey(): String {
+    private suspend fun requireGeminiApiKey(): CharArray {
         val keyChars = settings.getGeminiApiKey()
         if (keyChars == null || keyChars.isEmpty()) {
             error("Gemini API Key is not set (Settings) or Keystore error.")
         }
-        return try {
-            String(keyChars)
-        } finally {
-            keyChars.fill('\u0000')
-        }
+        return keyChars
     }
 
     private fun resolveSummarizerModel(state: UiState): String = when {
@@ -395,25 +409,28 @@ class SummarizationService @Inject constructor(
         else -> requireNotNull(TranscriptionProvider.GEMINI_FLASH.modelName)
     }
 
-    private suspend fun requestSummary(text: String, apiKey: String, modelName: String): String {
-        val client = Client.builder().apiKey(apiKey).build()
-        val prompt = """
-            You are an expert summarizer.
-            Provide a concise, easy-to-read summary of the following text, in the same language.
-            Use bullet points (-) for key takeaways if appropriate. The output should be plain text,
-            no markdown.
-        """.trimIndent()
+    private suspend fun requestSummary(text: String, apiKey: CharArray, modelName: String): SummaryData =
+        apiKey.useGenAiClient { client ->
+            val prompt = """
+                You are an expert summarizer.
+                Provide a concise, easy-to-read summary of the following text, in the same language.
+                Use bullet points (-) for key takeaways if appropriate. The output should be plain text,
+                no markdown.
+            """.trimIndent()
 
-        val content = Content.fromParts(
-            Part.fromText(prompt),
-            Part.fromText(text),
-        )
-        val response = withContext(ioDispatcher) {
-            val config = GenerateContentConfig.builder()
-                .responseMimeType("text/plain")
-                .build()
-            client.models.generateContent(modelName, content, config)
+            val content = Content.fromParts(
+                Part.fromText(prompt),
+                Part.fromText(text),
+            )
+            val response = withContext(ioDispatcher) {
+                val config = GenerateContentConfig.builder()
+                    .responseMimeType("text/plain")
+                    .build()
+                client.models.generateContent(modelName, content, config)
+            }
+            SummaryData(
+                text = response.text()?.trim().orEmpty().ifBlank { "No summary generated." },
+                model = response.modelVersion().orElse(null)?.takeIf { it.isNotBlank() } ?: modelName,
+            )
         }
-        return response.text()?.trim().orEmpty().ifBlank { "No summary generated." }
-    }
 }

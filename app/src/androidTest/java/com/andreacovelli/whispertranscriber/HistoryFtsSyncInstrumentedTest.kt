@@ -10,6 +10,7 @@ import com.andreacovelli.whispertranscriber.data.AppDatabase
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -56,7 +57,7 @@ class HistoryFtsSyncInstrumentedTest {
         assertTrue(ftsMatches("meeting*"))
 
         historyDao.updateText(historyId, "Updated transcript body")
-        historyDao.updateSummary(historyId, "Refined summary")
+        historyDao.updateSummary(historyId, "Refined summary", "gemini-2.5-flash")
 
         assertFalse(ftsMatches("Original*"))
         assertTrue(ftsMatches("Updated*"))
@@ -71,7 +72,7 @@ class HistoryFtsSyncInstrumentedTest {
     @Test
     fun migratedDatabaseKeepsFtsIndexInSyncWithHistoryWrites() = runBlocking {
         val databaseName = "history-fts-migration-test.db"
-        migrationHelper.createDatabase(databaseName, 7).close()
+        migrationHelper.createDatabase(databaseName, 8).close()
 
         val migratedDb = Room.databaseBuilder(context, AppDatabase::class.java, databaseName)
             .addMigrations(*AppDatabase.MIGRATIONS)
@@ -92,7 +93,7 @@ class HistoryFtsSyncInstrumentedTest {
             assertTrue(ftsMatches(migratedDb, "sprint*"))
 
             historyDao.updateText(historyId, "Retrospective notes")
-            historyDao.updateSummary(historyId, "Retrospective summary")
+            historyDao.updateSummary(historyId, "Retrospective summary", "gemini-2.5-pro")
 
             assertFalse(ftsMatches(migratedDb, "sprint*"))
             assertTrue(ftsMatches(migratedDb, "Retrospective*"))
@@ -100,6 +101,32 @@ class HistoryFtsSyncInstrumentedTest {
             historyDao.deleteById(historyId)
 
             assertFalse(ftsMatches(migratedDb, "Retrospective*"))
+        } finally {
+            migratedDb.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun migrationToVersion9_addsSummaryModelAndJobBatchColumnsWithDefaults() {
+        val databaseName = "history-summary-model-migration-test.db"
+        migrationHelper.createDatabase(databaseName, 8).close()
+
+        val migratedDb = Room.databaseBuilder(context, AppDatabase::class.java, databaseName)
+            .addMigrations(*AppDatabase.MIGRATIONS)
+            .build()
+
+        try {
+            migratedDb.openHelper.readableDatabase.query(
+                "SELECT summaryModel FROM transcription_history",
+            ).use { cursor ->
+                assertEquals(1, cursor.columnCount)
+            }
+            migratedDb.openHelper.readableDatabase.query(
+                "SELECT summaryModel, batchId, speakerDiarizationEnabled FROM active_jobs",
+            ).use { cursor ->
+                assertEquals(3, cursor.columnCount)
+            }
         } finally {
             migratedDb.close()
             context.deleteDatabase(databaseName)

@@ -78,6 +78,7 @@ class TranscriptionWorker @AssistedInject constructor(
     companion object {
         const val NOTIFICATION_ID = 1001
         const val CHANNEL_ID = "transcription_channel"
+        const val SPEAKER_LABEL_PREFIX_INPUT = "speakerLabelPrefix"
 
         private const val CONVERTED_FILE_PREFIX = "converted_"
         private const val DIRECT_FILE_PREFIX = "direct_"
@@ -157,6 +158,7 @@ class TranscriptionWorker @AssistedInject constructor(
                 inputMimeType = job.sourceMimeType?.lowercase(),
                 usingElevenLabs = usingElevenLabs,
                 geminiModel = geminiModelName,
+                speakerDiarizationEnabled = job.speakerDiarizationEnabled,
             )
             return Result.success()
         } catch (e: CancellationException) {
@@ -183,10 +185,17 @@ class TranscriptionWorker @AssistedInject constructor(
         inputMimeType: String?,
         usingElevenLabs: Boolean,
         geminiModel: String?,
+        speakerDiarizationEnabled: Boolean,
     ) {
         val preparedInput = prepareAudioInput(jobId, uri, inputMimeType, usingElevenLabs)
         try {
-            val result = runProviderTranscription(jobId, preparedInput, usingElevenLabs, geminiModel)
+            val result = runProviderTranscription(
+                jobId = jobId,
+                preparedInput = preparedInput,
+                usingElevenLabs = usingElevenLabs,
+                geminiModel = geminiModel,
+                speakerDiarizationEnabled = speakerDiarizationEnabled,
+            )
             persistCompletedTranscription(jobId, displayName, result)
         } finally {
             preparedInput.tempFileToClean?.let { file ->
@@ -298,8 +307,9 @@ class TranscriptionWorker @AssistedInject constructor(
         preparedInput: PreparedAudioInput,
         usingElevenLabs: Boolean,
         geminiModel: String?,
+        speakerDiarizationEnabled: Boolean,
     ): TranscriptionData {
-        val transcriber = buildTranscriber(preparedInput, usingElevenLabs, geminiModel)
+        val transcriber = buildTranscriber(preparedInput, usingElevenLabs, geminiModel, speakerDiarizationEnabled)
         var resultData: TranscriptionData? = null
         transcriber.transcribe().collect { result ->
             when (result) {
@@ -320,19 +330,33 @@ class TranscriptionWorker @AssistedInject constructor(
         preparedInput: PreparedAudioInput,
         usingElevenLabs: Boolean,
         geminiModel: String?,
+        speakerDiarizationEnabled: Boolean,
     ): ProviderTranscriber = if (usingElevenLabs) {
         val source = checkNotNull((preparedInput as? PreparedAudioInput.ElevenLabs)?.source) {
             "Internal error: ElevenLabs source is missing."
         }
         val keyChars = requireNotNull(settings.getElevenLabsApiKey()) { "API key missing or corrupted" }
-        ElevenLabsTranscriber(elevenLabsApi, source, keyChars, ::createRequestBodyFromUri)
+        ElevenLabsTranscriber(
+            api = elevenLabsApi,
+            source = source,
+            apiKey = keyChars,
+            createRequestBodyFromUri = ::createRequestBodyFromUri,
+            speakerDiarizationEnabled = speakerDiarizationEnabled,
+            speakerLabelPrefix = inputData.getString(SPEAKER_LABEL_PREFIX_INPUT).orEmpty().ifBlank { "Speaker" },
+        )
     } else {
         val geminiInput = checkNotNull(preparedInput as? PreparedAudioInput.Gemini) {
             "Internal error: Gemini audio data missing."
         }
         val modelName = requireNotNull(geminiModel) { "Gemini model not specified." }
         val keyChars = requireNotNull(settings.getGeminiApiKey()) { "API key missing or corrupted" }
-        GeminiTranscriber(geminiInput.file, geminiInput.mimeType, keyChars, modelName)
+        GeminiTranscriber(
+            audioFile = geminiInput.file,
+            mimeType = geminiInput.mimeType,
+            apiKey = keyChars,
+            modelName = modelName,
+            speakerDiarizationEnabled = speakerDiarizationEnabled,
+        )
     }
 
     private suspend fun persistCompletedTranscription(jobId: Int, displayName: String, data: TranscriptionData) {

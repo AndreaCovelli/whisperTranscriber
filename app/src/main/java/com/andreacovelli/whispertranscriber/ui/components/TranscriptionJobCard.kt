@@ -233,6 +233,14 @@ private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJob
         onClear = actions.clearSummary,
         clearDescription = stringResource(R.string.clear_summary),
     )
+    if (job.summaryModel.isNotBlank()) {
+        Text(
+            text = "Summary model: ${job.summaryModel}",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 4.dp),
+        )
+    }
     SelectionContainer {
         Text(job.summary)
     }

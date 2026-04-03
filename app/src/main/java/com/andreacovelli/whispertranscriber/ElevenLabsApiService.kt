@@ -29,6 +29,7 @@ interface ElevenLabsApi {
         @Header("xi-api-key") apiKey: String,
         @Part file: MultipartBody.Part,
         @Part modelId: MultipartBody.Part,
+        @Part diarize: MultipartBody.Part? = null,
     ): ElevenLabsResponse
 
     @retrofit2.http.GET("v1/user")

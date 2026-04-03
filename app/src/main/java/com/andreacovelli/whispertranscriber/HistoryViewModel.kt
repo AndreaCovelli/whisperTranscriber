@@ -61,7 +61,7 @@ class HistoryViewModel @Inject constructor(
 
     fun clearSummary(item: TranscriptionHistory) {
         viewModelScope.launch {
-            historyRepository.updateSummary(item.id, "")
+            historyRepository.updateSummary(item.id, "", "")
         }
     }
 

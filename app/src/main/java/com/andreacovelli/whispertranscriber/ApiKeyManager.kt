@@ -48,14 +48,23 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
         private val SELECTED_PROVIDER = stringPreferencesKey("transcription_provider")
         private val SELECTED_SUMMARIZER_PROVIDER = stringPreferencesKey("summarizer_provider")
         private val AUTOMATIC_SUMMARIZATION_ENABLED = booleanPreferencesKey("automatic_summarization_enabled")
+        private val SPEAKER_DIARIZATION_ENABLED = booleanPreferencesKey("speaker_diarization_enabled")
     }
 
     val automaticSummarizationFlow: Flow<Boolean> = context.dataStore.data.map { p ->
         p[AUTOMATIC_SUMMARIZATION_ENABLED] ?: false
     }
 
+    val speakerDiarizationFlow: Flow<Boolean> = context.dataStore.data.map { p ->
+        p[SPEAKER_DIARIZATION_ENABLED] ?: false
+    }
+
     suspend fun saveAutomaticSummarization(enabled: Boolean) {
         context.dataStore.edit { it[AUTOMATIC_SUMMARIZATION_ENABLED] = enabled }
+    }
+
+    suspend fun saveSpeakerDiarization(enabled: Boolean) {
+        context.dataStore.edit { it[SPEAKER_DIARIZATION_ENABLED] = enabled }
     }
 
     // Save (encrypt before persisting)

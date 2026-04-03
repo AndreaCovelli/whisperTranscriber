@@ -23,8 +23,8 @@ class TranscriptionRepository @Inject constructor(
 
     suspend fun insertHistory(historyItem: TranscriptionHistory): Int = historyRepository.insert(historyItem)
 
-    suspend fun updateHistorySummary(historyId: Int, summary: String) {
-        historyRepository.updateSummary(historyId, summary)
+    suspend fun updateHistorySummary(historyId: Int, summary: String, summaryModel: String) {
+        historyRepository.updateSummary(historyId, summary, summaryModel)
     }
 
     suspend fun updateRunning(id: Int, isRunning: Boolean, status: String) {
@@ -65,8 +65,8 @@ class TranscriptionRepository @Inject constructor(
         jobDao.updateSummaryError(id, error)
     }
 
-    suspend fun succeedSummarization(id: Int, summary: String) {
-        jobDao.succeedSummarization(id, summary)
+    suspend fun succeedSummarization(id: Int, summary: String, summaryModel: String) {
+        jobDao.succeedSummarization(id, summary, summaryModel)
     }
 
     suspend fun failSummarization(id: Int, error: String?) {
@@ -81,23 +81,18 @@ class TranscriptionRepository @Inject constructor(
 
     suspend fun clearJobSummary(jobId: Int) {
         db.withTransaction {
-            val job = jobDao.getJobById(jobId) ?: return@withTransaction
-            jobDao.updateSummary(jobId, "")
+            jobDao.updateSummary(jobId, "", "")
             jobDao.updateSummaryError(jobId, null)
-            val hid = job.historyId
-            if (hid != null) {
-                historyRepository.updateSummary(hid, "")
-            }
+            historyRepository.updateSummaryByJobId(jobId, "", "")
         }
     }
 
     suspend fun clearJobTranscription(jobId: Int) {
         db.withTransaction {
-            val job = jobDao.getJobById(jobId) ?: return@withTransaction
+            val historyId = jobDao.getHistoryIdByJobId(jobId)
             jobDao.clearTranscriptionResult(jobId)
-            val hid = job.historyId
-            if (hid != null) {
-                historyRepository.updateText(hid, "")
+            if (historyId != null) {
+                historyRepository.updateText(historyId, "")
             }
         }
     }

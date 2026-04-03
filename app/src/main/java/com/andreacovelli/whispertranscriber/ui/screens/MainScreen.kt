@@ -28,6 +28,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -127,6 +128,9 @@ private fun MainScreenContent(
             )
         }
         item { StatusCard(uiState.status) }
+        if (uiState.batchProgressState != null) {
+            item { BatchProgressCard(uiState.batchProgressState) }
+        }
         if (uiState.jobs.isEmpty()) {
             item { EmptyJobsState() }
         } else {
@@ -225,6 +229,29 @@ private fun StatusCard(status: String) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(status, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+@Composable
+private fun BatchProgressCard(state: BatchProgressState) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "Processing ${state.currentFileNumber} of ${state.totalFiles} files...",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            LinearProgressIndicator(
+                progress = { state.completedFiles.toFloat() / state.totalFiles.coerceAtLeast(1) },
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }

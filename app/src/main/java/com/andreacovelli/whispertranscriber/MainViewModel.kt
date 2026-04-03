@@ -6,6 +6,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
+import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
+import com.andreacovelli.whispertranscriber.ui.screens.buildBatchProgressState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -43,11 +45,14 @@ data class UiState(
     val transcriptionCustomModelValidation: CustomModelValidation = CustomModelValidation.Idle,
     val summarizerCustomModelValidation: CustomModelValidation = CustomModelValidation.Idle,
     val automaticSummarizationEnabled: Boolean = false,
+    val speakerDiarizationEnabled: Boolean = false,
     val jobs: List<TranscriptionJobState> = emptyList(),
+    val batchProgressState: BatchProgressState? = null,
 )
 
 data class TranscriptionJobState(
     val id: Int = 0,
+    val timestamp: Long = 0L,
     val uri: Uri? = null,
     val displayName: String = "",
     val provider: TranscriptionProvider = TranscriptionProvider.ELEVEN_LABS,
@@ -58,6 +63,8 @@ data class TranscriptionJobState(
     val language: String = "",
     val model: String = "",
     val summary: String = "",
+    val summaryModel: String = "",
+    val batchId: String = "",
     val historyId: Int? = null,
     val error: String? = null,
     val summaryError: String? = null,
@@ -67,6 +74,7 @@ data class TranscriptionJobState(
 
 fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     id = id,
+    timestamp = timestamp,
     uri = uri.toUri(),
     displayName = displayName,
     provider = runCatching { TranscriptionProvider.valueOf(providerName) }
@@ -78,12 +86,27 @@ fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     language = language,
     model = model,
     summary = summary,
+    summaryModel = summaryModel,
+    batchId = batchId.orEmpty(),
     historyId = historyId,
     error = error,
     summaryError = summaryError,
     isRunning = isRunning,
     isSummarizing = isSummarizing,
 )
+
+internal data class JobPresentationState(
+    val jobs: List<TranscriptionJobState>,
+    val batchProgressState: BatchProgressState?,
+)
+
+internal fun buildJobPresentationState(jobs: List<TranscriptionJob>): JobPresentationState {
+    val jobStates = jobs.map(TranscriptionJob::toUiState)
+    return JobPresentationState(
+        jobs = jobStates,
+        batchProgressState = buildBatchProgressState(jobStates),
+    )
+}
 
 private val TranscriptionJob.hasSummaryBlockingState: Boolean
     get() = isRunning || isSummarizing || error != null || summaryError != null
@@ -195,8 +218,21 @@ class MainViewModel @Inject constructor(
                 }
             }
             launch {
+                settings.speakerDiarizationFlow.collect { enabled ->
+                    _uiState.update { it.copy(speakerDiarizationEnabled = enabled) }
+                }
+            }
+            launch {
                 repository.jobsState.collect { jobsList ->
-                    _uiState.update { it.copy(jobs = jobsList.map { it.toUiState() }) }
+                    val presentationState = withContext(ioDispatcher) {
+                        buildJobPresentationState(jobsList)
+                    }
+                    _uiState.update {
+                        it.copy(
+                            jobs = presentationState.jobs,
+                            batchProgressState = presentationState.batchProgressState,
+                        )
+                    }
 
                     // Auto-summarization logic
                     if (_uiState.value.automaticSummarizationEnabled &&
@@ -271,6 +307,12 @@ class MainViewModel @Inject constructor(
         _uiState.update { it.copy(automaticSummarizationEnabled = enabled) }
         viewModelScope.launch {
             settings.saveAutomaticSummarization(enabled)
+        }
+    }
+
+    internal fun updateSpeakerDiarization(enabled: Boolean) {
+        viewModelScope.launch {
+            settings.saveSpeakerDiarization(enabled)
         }
     }
 
@@ -358,6 +400,7 @@ class MainViewModel @Inject constructor(
                 uris = uris,
                 provider = _uiState.value.provider,
                 customModelName = _uiState.value.transcriptionCustomGeminiModelName,
+                speakerDiarizationEnabled = _uiState.value.speakerDiarizationEnabled,
             )
             _uiState.update { it.copy(status = result.statusMessage) }
         }

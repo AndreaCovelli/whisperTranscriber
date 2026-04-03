@@ -119,6 +119,12 @@ fun HistoryItemCard(
             .format(Instant.ofEpochMilli(item.timestamp).atZone(ZoneId.systemDefault()))
     }
     val displayModel = remember(item.model) { item.model.ifBlank { "Unknown" } }
+    val normalizedSearchTokens = remember(searchTokens) {
+        searchTokens.filter(String::isNotBlank).distinct()
+    }
+    val highlightedText = rememberHighlightedText(item.text, normalizedSearchTokens)
+    val highlightedSummary = rememberHighlightedText(item.summary, normalizedSearchTokens)
+    val highlightedDisplayName = rememberHighlightedText(item.displayName, normalizedSearchTokens)
 
     Card(
         modifier = Modifier
@@ -137,10 +143,7 @@ fun HistoryItemCard(
                 ),
         ) {
             if (item.displayName.isNotBlank()) {
-                Text(
-                    rememberHighlightedText(item.displayName, searchTokens),
-                    style = MaterialTheme.typography.titleSmall,
-                )
+                Text(highlightedDisplayName, style = MaterialTheme.typography.titleSmall)
                 Spacer(Modifier.height(2.dp))
             }
             Text(
@@ -161,35 +164,12 @@ fun HistoryItemCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(8.dp))
-            if (expanded) {
-                Text(rememberHighlightedText(item.text, searchTokens), style = MaterialTheme.typography.bodyMedium)
-                if (item.summary.isNotBlank()) {
-                    Spacer(Modifier.height(12.dp))
-                    Text("Summary", style = MaterialTheme.typography.titleSmall)
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        rememberHighlightedText(item.summary, searchTokens),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-            } else {
-                Text(
-                    rememberHighlightedText(item.text, searchTokens),
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 4,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (item.summary.isNotBlank()) {
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        rememberHighlightedText(item.summary, searchTokens),
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+            HistoryItemBody(
+                item = item,
+                expanded = expanded,
+                highlightedText = highlightedText,
+                highlightedSummary = highlightedSummary,
+            )
             if (!expanded) {
                 Spacer(Modifier.height(4.dp))
                 Text(
@@ -199,45 +179,123 @@ fun HistoryItemCard(
                 )
             }
             Spacer(Modifier.height(8.dp))
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                val copyActions = buildList {
-                    add("text" to item.text)
-                    if (item.summary.isNotBlank()) add("summary" to item.summary)
-                }
-                copyActions.forEach { (type, content) ->
-                    TextButton(onClick = { onCopy(content) }) {
-                        Icon(
-                            Icons.Default.ContentCopy,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.copy_type, type), maxLines = 1, softWrap = false)
-                    }
-                }
-                IconButton(onClick = onShare) {
-                    Icon(Icons.Default.Share, stringResource(R.string.share_item_description))
-                }
-                if (item.summary.isNotBlank()) {
-                    IconButton(onClick = onClearSummary) {
-                        Icon(
-                            Icons.Default.DeleteSweep,
-                            contentDescription = stringResource(R.string.clear_summary),
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                }
-                IconButton(onClick = onDelete) {
-                    Icon(
-                        Icons.Default.Delete,
-                        stringResource(R.string.delete_item_description),
-                        tint = MaterialTheme.colorScheme.error,
-                    )
-                }
+            HistoryItemActions(
+                item = item,
+                onCopy = onCopy,
+                onShare = onShare,
+                onClearSummary = onClearSummary,
+                onDelete = onDelete,
+            )
+        }
+    }
+}
+
+@Composable
+private fun HistoryItemBody(
+    item: TranscriptionHistory,
+    expanded: Boolean,
+    highlightedText: AnnotatedString,
+    highlightedSummary: AnnotatedString,
+) {
+    if (expanded) {
+        Text(highlightedText, style = MaterialTheme.typography.bodyMedium)
+        if (item.summary.isNotBlank()) {
+            SummaryContent(
+                item = item,
+                summary = highlightedSummary,
+                expanded = true,
+            )
+        }
+        return
+    }
+
+    Text(
+        highlightedText,
+        style = MaterialTheme.typography.bodyMedium,
+        maxLines = 4,
+        overflow = TextOverflow.Ellipsis,
+    )
+    if (item.summary.isNotBlank()) {
+        SummaryContent(
+            item = item,
+            summary = highlightedSummary,
+            expanded = false,
+        )
+    }
+}
+
+@Composable
+private fun SummaryContent(item: TranscriptionHistory, summary: AnnotatedString, expanded: Boolean) {
+    Spacer(Modifier.height(if (expanded) 12.dp else 6.dp))
+    if (expanded) {
+        Text("Summary", style = MaterialTheme.typography.titleSmall)
+    }
+    if (item.summaryModel.isNotBlank()) {
+        Spacer(Modifier.height(2.dp))
+        Text(
+            "Summary model: ${item.summaryModel}",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    Spacer(Modifier.height(if (expanded) 4.dp else 2.dp))
+    Text(
+        summary,
+        style = MaterialTheme.typography.bodyMedium,
+        maxLines = if (expanded) Int.MAX_VALUE else 3,
+        overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis,
+        color = if (expanded) Color.Unspecified else MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun HistoryItemActions(
+    item: TranscriptionHistory,
+    onCopy: (String) -> Unit,
+    onShare: () -> Unit,
+    onClearSummary: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val copyActions = remember(item.text, item.summary) {
+        buildList {
+            add("text" to item.text)
+            if (item.summary.isNotBlank()) add("summary" to item.summary)
+        }
+    }
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+    ) {
+        copyActions.forEach { (type, content) ->
+            TextButton(onClick = { onCopy(content) }) {
+                Icon(
+                    Icons.Default.ContentCopy,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(stringResource(R.string.copy_type, type), maxLines = 1, softWrap = false)
             }
+        }
+        IconButton(onClick = onShare) {
+            Icon(Icons.Default.Share, stringResource(R.string.share_item_description))
+        }
+        if (item.summary.isNotBlank()) {
+            IconButton(onClick = onClearSummary) {
+                Icon(
+                    Icons.Default.DeleteSweep,
+                    contentDescription = stringResource(R.string.clear_summary),
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
+        IconButton(onClick = onDelete) {
+            Icon(
+                Icons.Default.Delete,
+                stringResource(R.string.delete_item_description),
+                tint = MaterialTheme.colorScheme.error,
+            )
         }
     }
 }

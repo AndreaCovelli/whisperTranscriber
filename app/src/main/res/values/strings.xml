@@ -9,4 +9,5 @@
     <string name="copy_type">Copy %1$s</string>
     <string name="share_item_description">Share item</string>
     <string name="delete_item_description">Delete item</string>
+    <string name="speaker_label_prefix">Speaker</string>
 </resources>
