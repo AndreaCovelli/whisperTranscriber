@@ -14,6 +14,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import java.util.concurrent.TimeUnit
 import javax.inject.Qualifier
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineDispatcher
@@ -56,9 +57,10 @@ object AppModule {
         }
 
         return OkHttpClient.Builder()
-            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(10, java.util.concurrent.TimeUnit.MINUTES)
-            .writeTimeout(10, java.util.concurrent.TimeUnit.MINUTES)
+            .connectTimeout(30, TimeUnit.SECONDS)
+            // Long-running uploads and transcriptions can keep the socket open for large files.
+            .readTimeout(10, TimeUnit.MINUTES)
+            .writeTimeout(10, TimeUnit.MINUTES)
             .addInterceptor(logging)
             .build()
     }

@@ -38,7 +38,7 @@ sealed class ApiKeyState {
 }
 
 @Singleton
-class ApiKeyManager @Inject constructor(@param:ApplicationContext private val context: Context) {
+class ApiKeyManager @Inject constructor(@ApplicationContext private val context: Context) {
     companion object {
         private val ELEVEN_LABS_API_KEY_ENC = stringPreferencesKey("eleven_labs_api_key_enc")
         private val GEMINI_API_KEY_ENC = stringPreferencesKey("gemini_api_key_enc")

@@ -100,13 +100,13 @@ sealed interface TranscriptionResult {
 }
 
 @HiltViewModel
-class MainViewModel @Inject constructor(
+class MainViewModel @Inject internal constructor(
     private val settings: ApiKeyManager,
     private val repository: TranscriptionRepository,
     private val queueService: TranscriptionQueueService,
     private val validationService: GeminiValidationService,
     private val summarizationService: SummarizationService,
-    @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
     companion object {
         private val staleSummariesRecovered = AtomicBoolean(false)

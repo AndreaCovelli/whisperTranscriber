@@ -25,7 +25,7 @@ import kotlinx.coroutines.launch
 
 @HiltViewModel
 class HistoryViewModel @Inject constructor(
-    @param:ApplicationContext private val appContext: Context,
+    @ApplicationContext private val appContext: Context,
     private val historyRepository: HistoryRepository,
 ) : ViewModel() {
 
