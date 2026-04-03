@@ -286,7 +286,7 @@ private fun StringBuilder.appendToken(token: String, shouldInsertSpaces: Boolean
 
     val isOpeningPunctuation = token.length == 1 && token[0] in "([{\"'«"
     val punctuationOnly = token.all { !it.isLetterOrDigit() }
-    val previousEndsWithOpeningPunctuation = lastOrNull()?.let { it in "([{\"'«" } == true
+    val previousEndsWithOpeningPunctuation = if (isNotEmpty()) this[length - 1] in "([{\"'«" else false
     if (punctuationOnly && !isOpeningPunctuation) {
         append(token)
     } else if (previousEndsWithOpeningPunctuation) {
