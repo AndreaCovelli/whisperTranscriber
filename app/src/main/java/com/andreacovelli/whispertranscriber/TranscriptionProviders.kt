@@ -12,6 +12,7 @@ import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
@@ -138,7 +139,7 @@ internal class GeminiTranscriber(
             apiKey.fill('\u0000')
             uploadedFile?.let { remoteFile ->
                 runCatching {
-                    withContext(Dispatchers.IO) {
+                    withContext(NonCancellable + Dispatchers.IO) {
                         remoteFile.name().orElse(null)?.let { remoteFileName ->
                             client.files.delete(remoteFileName, null)
                         }

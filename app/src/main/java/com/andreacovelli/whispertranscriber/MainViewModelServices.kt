@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -269,7 +270,11 @@ internal class GeminiValidationService(
                 .build()
             val (isSuccess, code, bodyText) = withContext(ioDispatcher) {
                 okHttpClient.newCall(request).execute().use { response ->
-                    Triple(response.isSuccessful, response.code, response.body.string())
+                    Triple(
+                        response.isSuccessful,
+                        response.code,
+                        runCatching { response.body.string() }.getOrDefault(""),
+                    )
                 }
             }
             if (!isSuccess) {
@@ -354,7 +359,7 @@ internal class SummarizationService(
             SummarizationResult("Error: $message", message)
         } finally {
             if (!summarizingCleared) {
-                withContext(ioDispatcher) {
+                withContext(NonCancellable + ioDispatcher) {
                     repository.setSummarizing(jobId, false)
                 }
             }
