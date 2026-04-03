@@ -2,7 +2,8 @@ package com.andreacovelli.whispertranscriber
 
 import android.net.Uri
 import com.andreacovelli.whispertranscriber.media.formatElevenLabsSpeakerTranscript
-import com.google.genai.Client
+import com.andreacovelli.whispertranscriber.security.useAsString
+import com.andreacovelli.whispertranscriber.security.useGenAiClient
 import com.google.genai.types.Content
 import com.google.genai.types.File as GenAiFile
 import com.google.genai.types.GenerateContentConfig
@@ -114,7 +115,7 @@ internal class GeminiTranscriber(
 
         try {
             emit(TranscriptionResult.Loading("Uploading audio ($mimeType) via File API..."))
-            apiKey.useClient { client ->
+            apiKey.useGenAiClient { client ->
                 uploadedFile = withContext(Dispatchers.IO) {
                     val uploadConfig = UploadFileConfig.builder().mimeType(mimeType).build()
                     client.files.upload(audioFile.absolutePath, uploadConfig)
@@ -166,7 +167,7 @@ internal class GeminiTranscriber(
         } finally {
             uploadedFile?.let { remoteFile ->
                 runCatching {
-                    apiKey.useClient { client ->
+                    apiKey.useGenAiClient { client ->
                         withContext(NonCancellable + Dispatchers.IO) {
                             remoteFile.name().orElse(null)?.let { remoteFileName ->
                                 client.files.delete(remoteFileName, null)
@@ -254,10 +255,4 @@ internal fun parseTranscriptTextValue(transcriptText: String, speakerDiarization
         .filter(String::isNotEmpty)
         .joinToString(separator = "\n")
         .ifBlank { NO_TEXT_FOUND }
-}
-
-private inline fun <T> CharArray.useAsString(block: (String) -> T): T = block(String(this))
-
-private inline fun <T> CharArray.useClient(block: (Client) -> T): T = useAsString { apiKeyString ->
-    block(Client.builder().apiKey(apiKeyString).build())
 }

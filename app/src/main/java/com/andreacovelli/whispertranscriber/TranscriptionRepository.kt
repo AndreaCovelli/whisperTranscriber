@@ -93,11 +93,10 @@ class TranscriptionRepository @Inject constructor(
 
     suspend fun clearJobTranscription(jobId: Int) {
         db.withTransaction {
-            val job = jobDao.getJobById(jobId) ?: return@withTransaction
+            val historyId = jobDao.getHistoryIdByJobId(jobId)
             jobDao.clearTranscriptionResult(jobId)
-            val hid = job.historyId
-            if (hid != null) {
-                historyRepository.updateText(hid, "")
+            if (historyId != null) {
+                historyRepository.updateText(historyId, "")
             }
         }
     }

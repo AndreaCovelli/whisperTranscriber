@@ -8,7 +8,9 @@ private val NON_SPACING_LANGUAGES = setOf("ja", "zh", "th")
 private const val ALWAYS_OPENING_PUNCTUATION = "([{«"
 private const val QUOTE_PUNCTUATION = "\"'"
 
-private data class SpeakerSection(val label: String, val text: StringBuilder = StringBuilder())
+private class SpeakerSection(val label: String) {
+    val text: StringBuilder = StringBuilder()
+}
 
 internal fun formatElevenLabsSpeakerTranscript(
     words: List<ElevenLabsWord>,

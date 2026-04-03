@@ -13,7 +13,7 @@ import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
-import com.google.genai.Client
+import com.andreacovelli.whispertranscriber.security.useGenAiClient
 import com.google.genai.types.Content
 import com.google.genai.types.GenerateContentConfig
 import com.google.genai.types.Part
@@ -403,7 +403,7 @@ class SummarizationService @Inject constructor(
     }
 
     private suspend fun requestSummary(text: String, apiKey: CharArray, modelName: String): SummaryData =
-        apiKey.useClient { client ->
+        apiKey.useGenAiClient { client ->
             val prompt = """
                 You are an expert summarizer.
                 Provide a concise, easy-to-read summary of the following text, in the same language.
@@ -427,6 +427,3 @@ class SummarizationService @Inject constructor(
             )
         }
 }
-
-private inline fun <T> CharArray.useClient(block: (Client) -> T): T =
-    block(Client.builder().apiKey(String(this)).build())

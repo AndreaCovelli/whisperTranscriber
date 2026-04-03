@@ -213,6 +213,9 @@ interface TranscriptionJobDao {
     @Query("SELECT * FROM active_jobs WHERE id = :id")
     suspend fun getJobById(id: Int): TranscriptionJob?
 
+    @Query("SELECT historyId FROM active_jobs WHERE id = :id")
+    suspend fun getHistoryIdByJobId(id: Int): Int?
+
     @Query(
         """
         UPDATE active_jobs
