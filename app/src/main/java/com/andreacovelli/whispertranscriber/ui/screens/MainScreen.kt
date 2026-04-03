@@ -35,6 +35,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -275,28 +276,40 @@ private fun rememberJobActions(
     val actions = viewModel.mainScreenActions
     val shareTranscriptTitle = stringResource(R.string.share_transcription_title)
     val shareSummaryTitle = stringResource(R.string.share_summary_title)
-    return TranscriptionJobCardActions(
-        summarize = { actions.summarizeJob(job.id) },
-        clearSummary = { actions.clearSummary(job.id) },
-        clearTranscript = { actions.clearTranscript(job.id) },
-        copyTranscript = {
-            scope.launch {
-                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", job.transcript)))
-                Toast.makeText(context, "Copied transcript", Toast.LENGTH_SHORT).show()
-            }
-        },
-        copySummary = {
-            scope.launch {
-                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", job.summary)))
-                Toast.makeText(context, "Copied summary", Toast.LENGTH_SHORT).show()
-            }
-        },
-        shareTranscript = { shareText(context, job.transcript, shareTranscriptTitle) },
-        shareSummary = { shareText(context, job.summary, shareSummaryTitle) },
-        retry = { actions.retryJob(job.id) },
-        cancel = { actions.cancelJob(job.id) },
-        delete = { actions.deleteJob(job.id) },
-    )
+    return remember(
+        job.id,
+        job.transcript,
+        job.summary,
+        actions,
+        clipboard,
+        scope,
+        context,
+        shareTranscriptTitle,
+        shareSummaryTitle,
+    ) {
+        TranscriptionJobCardActions(
+            summarize = { actions.summarizeJob(job.id) },
+            clearSummary = { actions.clearSummary(job.id) },
+            clearTranscript = { actions.clearTranscript(job.id) },
+            copyTranscript = {
+                scope.launch {
+                    clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", job.transcript)))
+                    Toast.makeText(context, "Copied transcript", Toast.LENGTH_SHORT).show()
+                }
+            },
+            copySummary = {
+                scope.launch {
+                    clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", job.summary)))
+                    Toast.makeText(context, "Copied summary", Toast.LENGTH_SHORT).show()
+                }
+            },
+            shareTranscript = { shareText(context, job.transcript, shareTranscriptTitle) },
+            shareSummary = { shareText(context, job.summary, shareSummaryTitle) },
+            retry = { actions.retryJob(job.id) },
+            cancel = { actions.cancelJob(job.id) },
+            delete = { actions.deleteJob(job.id) },
+        )
+    }
 }
 
 private fun shareText(context: Context, text: String, title: String? = null) {

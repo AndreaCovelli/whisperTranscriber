@@ -19,6 +19,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
+import org.json.JSONException
 import org.json.JSONObject
 import retrofit2.HttpException
 
@@ -116,7 +117,11 @@ internal class GeminiTranscriber(
                 client.models.generateContent(modelName, content, config)
             }
             val json = response.text() ?: "{}"
-            val obj = JSONObject(json)
+            val obj = try {
+                JSONObject(json)
+            } catch (e: JSONException) {
+                throw IllegalStateException("Failed to parse Gemini response: $json", e)
+            }
             emit(TranscriptionResult.Loading("Success"))
             emit(
                 TranscriptionResult.Success(
