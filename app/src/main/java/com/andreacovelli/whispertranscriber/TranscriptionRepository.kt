@@ -81,12 +81,11 @@ class TranscriptionRepository @Inject constructor(
 
     suspend fun clearJobSummary(jobId: Int) {
         db.withTransaction {
-            val job = jobDao.getJobById(jobId) ?: return@withTransaction
+            val historyId = jobDao.getHistoryIdByJobId(jobId)
             jobDao.updateSummary(jobId, "", "")
             jobDao.updateSummaryError(jobId, null)
-            val hid = job.historyId
-            if (hid != null) {
-                historyRepository.updateSummary(hid, "", "")
+            if (historyId != null) {
+                historyRepository.updateSummary(historyId, "", "")
             }
         }
     }
