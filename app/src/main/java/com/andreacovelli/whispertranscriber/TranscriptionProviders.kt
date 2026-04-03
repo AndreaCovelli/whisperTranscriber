@@ -251,9 +251,9 @@ internal fun formatElevenLabsSpeakerTranscript(
     val shouldInsertSpaces = languageCode.shouldInsertWordSpaces()
     var hasSpeakerIds = false
 
-    words.forEach { word ->
+    words.forEachIndexed { index, word ->
         val token = word.text.trim()
-        if (token.isEmpty()) return@forEach
+        if (token.isEmpty()) return@forEachIndexed
 
         val speakerId = word.speakerId?.takeIf(String::isNotBlank)
         hasSpeakerIds = hasSpeakerIds || speakerId != null
@@ -265,7 +265,11 @@ internal fun formatElevenLabsSpeakerTranscript(
         if (current == null || current.first != label) {
             sections += label to StringBuilder()
         }
-        sections.last().second.appendToken(token, shouldInsertSpaces)
+        sections.last().second.appendToken(
+            token = token,
+            nextToken = words.nextNonBlankTokenAfter(index),
+            shouldInsertSpaces = shouldInsertSpaces,
+        )
     }
 
     if (!hasSpeakerIds) return ""
@@ -275,7 +279,7 @@ internal fun formatElevenLabsSpeakerTranscript(
     }.trim()
 }
 
-private fun StringBuilder.appendToken(token: String, shouldInsertSpaces: Boolean) {
+private fun StringBuilder.appendToken(token: String, nextToken: String?, shouldInsertSpaces: Boolean) {
     if (isEmpty()) {
         append(token)
         return
@@ -286,12 +290,9 @@ private fun StringBuilder.appendToken(token: String, shouldInsertSpaces: Boolean
         return
     }
 
-    val isOpeningPunctuation = token.length == 1 && token[0] in "([{\"'«"
-    val punctuationOnly = token.all { !it.isLetterOrDigit() }
-    val previousEndsWithOpeningPunctuation = if (isNotEmpty()) this[length - 1] in "([{\"'«" else false
-    if (punctuationOnly && !isOpeningPunctuation) {
+    if (token.shouldAttachToPreviousToken(nextToken)) {
         append(token)
-    } else if (previousEndsWithOpeningPunctuation) {
+    } else if (endsWithOpeningPunctuationToken()) {
         append(token)
     } else {
         append(' ').append(token)
@@ -301,6 +302,8 @@ private fun StringBuilder.appendToken(token: String, shouldInsertSpaces: Boolean
 private const val UNLABELED_SPEAKER_ID = "__unlabeled__"
 private val ALPHABET = ('A'..'Z').toList()
 private val NON_SPACING_LANGUAGES = setOf("ja", "zh", "th")
+private const val ALWAYS_OPENING_PUNCTUATION = "([{«"
+private const val QUOTE_PUNCTUATION = "\"'"
 
 private fun speakerLabelSuffix(index: Int): String = if (index < ALPHABET.size) {
     ALPHABET[index].toString()
@@ -314,4 +317,30 @@ private fun String?.shouldInsertWordSpaces(): Boolean {
         ?.lowercase()
         .orEmpty()
     return primaryLanguage !in NON_SPACING_LANGUAGES
+}
+
+private fun String.shouldAttachToPreviousToken(nextToken: String?): Boolean =
+    all { !it.isLetterOrDigit() } && !isOpeningPunctuationToken(nextToken)
+
+private fun String.isOpeningPunctuationToken(nextToken: String?): Boolean = length == 1 && when (this[0]) {
+    in ALWAYS_OPENING_PUNCTUATION -> true
+    in QUOTE_PUNCTUATION -> nextToken?.firstOrNull()?.isLetterOrDigit() == true
+    else -> false
+}
+
+private fun StringBuilder.endsWithOpeningPunctuationToken(): Boolean {
+    val lastChar = this[length - 1]
+    return when (lastChar) {
+        in ALWAYS_OPENING_PUNCTUATION -> true
+        in QUOTE_PUNCTUATION -> length == 1 || !this[length - 2].isLetterOrDigit()
+        else -> false
+    }
+}
+
+private fun List<ElevenLabsWord>.nextNonBlankTokenAfter(index: Int): String? {
+    for (nextIndex in (index + 1) until size) {
+        val token = this[nextIndex].text.trim()
+        if (token.isNotEmpty()) return token
+    }
+    return null
 }

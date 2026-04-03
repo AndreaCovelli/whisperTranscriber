@@ -104,6 +104,23 @@ class TranscriptionPresentationTest {
     }
 
     @Test
+    fun formatElevenLabsSpeakerTranscript_preservesQuoteSpacingWithinSpeakerSection() {
+        val transcript = formatElevenLabsSpeakerTranscript(
+            listOf(
+                ElevenLabsWord(text = "He", start = 0.0, end = 0.2, type = "word", speakerId = "speaker_1"),
+                ElevenLabsWord(text = "said", start = 0.2, end = 0.4, type = "word", speakerId = "speaker_1"),
+                ElevenLabsWord(text = "\"", start = 0.4, end = 0.5, type = "punctuation", speakerId = "speaker_1"),
+                ElevenLabsWord(text = "hello", start = 0.5, end = 0.7, type = "word", speakerId = "speaker_1"),
+                ElevenLabsWord(text = "\"", start = 0.7, end = 0.8, type = "punctuation", speakerId = "speaker_1"),
+            ),
+            languageCode = "en-US",
+            speakerLabelPrefix = "Speaker",
+        )
+
+        assertEquals("Speaker A: He said \"hello\"", transcript)
+    }
+
+    @Test
     fun formatElevenLabsSpeakerTranscript_doesNotMergeUnlabeledPrefixWithFirstNamedSpeaker() {
         val transcript = formatElevenLabsSpeakerTranscript(
             listOf(

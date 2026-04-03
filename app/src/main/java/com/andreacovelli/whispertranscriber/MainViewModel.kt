@@ -6,6 +6,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
+import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
+import com.andreacovelli.whispertranscriber.ui.screens.buildBatchProgressState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -45,6 +47,7 @@ data class UiState(
     val automaticSummarizationEnabled: Boolean = false,
     val speakerDiarizationEnabled: Boolean = false,
     val jobs: List<TranscriptionJobState> = emptyList(),
+    val batchProgressState: BatchProgressState? = null,
 )
 
 data class TranscriptionJobState(
@@ -208,7 +211,13 @@ class MainViewModel @Inject constructor(
             }
             launch {
                 repository.jobsState.collect { jobsList ->
-                    _uiState.update { it.copy(jobs = jobsList.map { it.toUiState() }) }
+                    val jobStates = jobsList.map { it.toUiState() }
+                    _uiState.update {
+                        it.copy(
+                            jobs = jobStates,
+                            batchProgressState = buildBatchProgressState(jobStates),
+                        )
+                    }
 
                     // Auto-summarization logic
                     if (_uiState.value.automaticSummarizationEnabled &&

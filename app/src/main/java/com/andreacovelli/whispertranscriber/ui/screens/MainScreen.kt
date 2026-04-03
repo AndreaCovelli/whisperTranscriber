@@ -113,7 +113,6 @@ private fun MainScreenContent(
         provider = uiState.summarizerProvider,
         customModelName = uiState.summarizerCustomGeminiModelName,
     )
-    val batchProgressState = remember(uiState.jobs) { buildBatchProgressState(uiState.jobs) }
     LazyColumn(
         modifier = Modifier
             .padding(paddingValues)
@@ -129,8 +128,8 @@ private fun MainScreenContent(
             )
         }
         item { StatusCard(uiState.status) }
-        if (batchProgressState != null) {
-            item { BatchProgressCard(batchProgressState) }
+        if (uiState.batchProgressState != null) {
+            item { BatchProgressCard(uiState.batchProgressState) }
         }
         if (uiState.jobs.isEmpty()) {
             item { EmptyJobsState() }
