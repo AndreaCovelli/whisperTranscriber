@@ -177,6 +177,33 @@ class TranscriptionPresentationTest {
         assertEquals("Speaker A: こんにちは世界。", transcript)
     }
 
+    @Test
+    fun parseTranscriptTextValue_returnsFallbackForBlankPlainTranscript() {
+        assertEquals(
+            "No text found.",
+            parseTranscriptTextValue("   \n\t  ", speakerDiarizationEnabled = false),
+        )
+    }
+
+    @Test
+    fun parseTranscriptTextValue_returnsFallbackForBlankDiarizedTranscript() {
+        assertEquals(
+            "No text found.",
+            parseTranscriptTextValue("  \n   \n", speakerDiarizationEnabled = true),
+        )
+    }
+
+    @Test
+    fun parseTranscriptTextValue_trimsAndPreservesNonBlankDiarizedLines() {
+        assertEquals(
+            "Speaker A: Hello\nSpeaker B: Hi",
+            parseTranscriptTextValue(
+                "  Speaker A: Hello  \n\n   Speaker B: Hi   \n",
+                speakerDiarizationEnabled = true,
+            ),
+        )
+    }
+
     private fun testUiJob(
         id: Int,
         timestamp: Long = id.toLong(),

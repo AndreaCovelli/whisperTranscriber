@@ -27,6 +27,8 @@ internal interface ProviderTranscriber {
     fun transcribe(): Flow<TranscriptionResult>
 }
 
+private const val NO_TEXT_FOUND = "No text found."
+
 internal class ElevenLabsTranscriber(
     private val api: ElevenLabsApi,
     private val source: Any,
@@ -204,15 +206,10 @@ internal class GeminiTranscriber(
         "Transcribe the provided audio. Return only a compact JSON object with fields: language_code (BCP-47 like en-US) and text (full transcript). Do not include any extra commentary."
     }
 
-    private fun parseTranscriptText(obj: JSONObject): String {
-        val transcriptText = obj.optString("text").ifBlank { "No text found." }
-        if (!speakerDiarizationEnabled) return transcriptText
-        return transcriptText.lineSequence()
-            .map(String::trim)
-            .filter(String::isNotEmpty)
-            .joinToString(separator = "\n")
-            .ifBlank { transcriptText }
-    }
+    private fun parseTranscriptText(obj: JSONObject): String = parseTranscriptTextValue(
+        transcriptText = obj.optString("text"),
+        speakerDiarizationEnabled = speakerDiarizationEnabled,
+    )
 
     private fun resolveGeminiErrorMessage(
         error: Throwable,
@@ -240,6 +237,18 @@ private val HTTP_STATUS_PATTERNS = listOf(
     Regex("""\bstatus(?:\s+code)?\s*[:=]?\s*([45]\d{2})\b""", RegexOption.IGNORE_CASE),
     Regex("""\bcode\s*[:=]?\s*([45]\d{2})\b""", RegexOption.IGNORE_CASE),
 )
+
+internal fun parseTranscriptTextValue(transcriptText: String, speakerDiarizationEnabled: Boolean): String {
+    if (!speakerDiarizationEnabled) {
+        return transcriptText.trim().ifBlank { NO_TEXT_FOUND }
+    }
+
+    return transcriptText.lineSequence()
+        .map(String::trim)
+        .filter(String::isNotEmpty)
+        .joinToString(separator = "\n")
+        .ifBlank { NO_TEXT_FOUND }
+}
 
 internal fun formatElevenLabsSpeakerTranscript(
     words: List<ElevenLabsWord>,

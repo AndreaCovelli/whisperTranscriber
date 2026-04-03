@@ -354,7 +354,11 @@ class SummarizationService @Inject constructor(
             } else {
                 val modelName = resolveSummarizerModel(state)
                 val apiKey = requireGeminiApiKey()
-                val summary = requestSummary(text, apiKey, modelName)
+                val summary = try {
+                    requestSummary(text, apiKey, modelName)
+                } finally {
+                    apiKey.fill('\u0000')
+                }
                 repository.succeedSummarization(jobId, summary.text, summary.model)
                 summarizingCleared = true
                 job.historyId?.let { repository.updateHistorySummary(it, summary.text, summary.model) }
@@ -380,16 +384,12 @@ class SummarizationService @Inject constructor(
         }
     }
 
-    private suspend fun requireGeminiApiKey(): String {
+    private suspend fun requireGeminiApiKey(): CharArray {
         val keyChars = settings.getGeminiApiKey()
         if (keyChars == null || keyChars.isEmpty()) {
             error("Gemini API Key is not set (Settings) or Keystore error.")
         }
-        return try {
-            String(keyChars)
-        } finally {
-            keyChars.fill('\u0000')
-        }
+        return keyChars
     }
 
     private fun resolveSummarizerModel(state: UiState): String = when {
@@ -402,8 +402,8 @@ class SummarizationService @Inject constructor(
         else -> requireNotNull(TranscriptionProvider.GEMINI_FLASH.modelName)
     }
 
-    private suspend fun requestSummary(text: String, apiKey: String, modelName: String): SummaryData {
-        val client = Client.builder().apiKey(apiKey).build()
+    private suspend fun requestSummary(text: String, apiKey: CharArray, modelName: String): SummaryData {
+        val client = Client.builder().apiKey(String(apiKey)).build()
         val prompt = """
             You are an expert summarizer.
             Provide a concise, easy-to-read summary of the following text, in the same language.
