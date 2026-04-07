@@ -253,7 +253,7 @@ private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJob
     if (job.summaryModel.isNotBlank()) {
         Spacer(Modifier.height(4.dp))
         Text(
-            text = "Provider: ${job.summaryModel}",
+            text = "Model: ${job.summaryModel}",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
