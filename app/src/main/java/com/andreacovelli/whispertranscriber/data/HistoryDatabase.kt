@@ -283,7 +283,7 @@ interface TranscriptionJobDao {
             isRunning = 0,
             isSummarizing = 0,
             autoSummaryAttempted = 0,
-            historyId = NULL,
+            historyId = historyId,
             providerName = :providerName,
             requestedModel = :requestedModel
         WHERE id = :jobId
