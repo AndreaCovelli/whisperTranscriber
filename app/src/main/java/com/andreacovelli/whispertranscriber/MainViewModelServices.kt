@@ -420,7 +420,7 @@ class SummarizationService @Inject constructor(
     }
 
     suspend fun cancelSummary(jobId: Int): String {
-        val cancelled = repository.cancelSummarization(jobId, "Cancelled by user")
+        val cancelled = repository.cancelSummarization(jobId)
         return if (cancelled) "Summary cancelled." else "Nothing to stop."
     }
 

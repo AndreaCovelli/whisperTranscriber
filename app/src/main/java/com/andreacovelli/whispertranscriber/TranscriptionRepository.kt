@@ -73,7 +73,7 @@ class TranscriptionRepository @Inject constructor(
         jobDao.failSummarization(id, error)
     }
 
-    suspend fun cancelSummarization(id: Int, error: String): Boolean = jobDao.cancelSummarization(id, error) > 0
+    suspend fun cancelSummarization(id: Int): Boolean = jobDao.cancelSummarization(id) > 0
 
     suspend fun claimAutoSummary(id: Int, modelName: String): Boolean = jobDao.claimAutoSummary(id, modelName) > 0
 

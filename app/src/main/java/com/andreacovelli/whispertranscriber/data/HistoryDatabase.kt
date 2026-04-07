@@ -209,11 +209,11 @@ interface TranscriptionJobDao {
     @Query(
         """
         UPDATE active_jobs
-        SET isSummarizing = 0, summaryStatus = 'Cancelled', summaryError = :error
+        SET isSummarizing = 0, summaryStatus = 'Cancelled', summaryError = NULL
         WHERE id = :id AND isSummarizing = 1
         """,
     )
-    suspend fun cancelSummarization(id: Int, error: String): Int
+    suspend fun cancelSummarization(id: Int): Int
 
     @Query(
         """
@@ -243,7 +243,8 @@ interface TranscriptionJobDao {
             summary = '',
             summaryModel = :modelName,
             summaryStatus = 'Summarizing...',
-            summaryError = NULL
+            summaryError = NULL,
+            autoSummaryAttempted = 1
         WHERE id = :id
           AND isRunning = 0
           AND isSummarizing = 0
