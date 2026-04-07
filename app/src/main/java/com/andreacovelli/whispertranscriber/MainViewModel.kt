@@ -9,6 +9,7 @@ import com.andreacovelli.whispertranscriber.di.IoDispatcher
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 import com.andreacovelli.whispertranscriber.ui.screens.buildBatchProgressState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
@@ -138,7 +139,7 @@ class MainViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState = _uiState.asStateFlow()
-    private val summaryJobs = mutableMapOf<Int, Job>()
+    private val summaryJobs = ConcurrentHashMap<Int, Job>()
 
     val mainScreenActions = createMainScreenActions(
         clearCompletedJobs = {
@@ -159,6 +160,7 @@ class MainViewModel @Inject constructor(
         },
         retryJob = { jobId ->
             viewModelScope.launch {
+                summaryJobs.remove(jobId)?.cancel()
                 queueService.retryJob(
                     jobId,
                     _uiState.value.provider,
@@ -247,7 +249,7 @@ class MainViewModel @Inject constructor(
                     ) {
                         jobsList.forEach { job ->
                             if (job.isReadyForAutoSummary) {
-                                requestAutoSummary(job.id)
+                                runSummarization(job.id, allowResummarize = false)
                             }
                         }
                     }
@@ -411,10 +413,6 @@ class MainViewModel @Inject constructor(
             )
             _uiState.update { it.copy(status = result.statusMessage) }
         }
-    }
-
-    private fun requestAutoSummary(jobId: Int) {
-        runSummarization(jobId, allowResummarize = false)
     }
 
     private fun runSummarization(jobId: Int, allowResummarize: Boolean) {

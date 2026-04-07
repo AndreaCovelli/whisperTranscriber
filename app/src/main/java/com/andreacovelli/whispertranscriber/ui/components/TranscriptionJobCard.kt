@@ -190,7 +190,11 @@ private fun JobPrimaryActions(
     canSummarize: Boolean,
     actions: TranscriptionJobCardActions,
 ) {
-    if (job.isRunning || job.error != null || job.transcript.isBlank() || job.summary.isNotBlank()) return
+    if (job.isRunning || job.isSummarizing || job.error != null || job.transcript.isBlank() ||
+        job.summary.isNotBlank()
+    ) {
+        return
+    }
     Spacer(Modifier.height(12.dp))
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -198,9 +202,9 @@ private fun JobPrimaryActions(
     ) {
         Button(
             onClick = actions.summarize,
-            enabled = canSummarize && !job.isSummarizing,
+            enabled = canSummarize,
         ) {
-            Text(if (job.isSummarizing) "Summarizing..." else "Summarize with Gemini")
+            Text("Summarize with Gemini")
         }
     }
 }
@@ -220,7 +224,7 @@ private fun SummaryErrorSection(job: TranscriptionJobState) {
 
 @Composable
 private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJobCardActions) {
-    if (job.summary.isBlank()) return
+    if (job.summary.isBlank() && !job.isSummarizing) return
     Spacer(Modifier.height(12.dp))
     SectionHeader(
         title = "Summary",

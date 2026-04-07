@@ -61,10 +61,6 @@ class TranscriptionRepository @Inject constructor(
         jobDao.setSummarizing(id, isSummarizing)
     }
 
-    suspend fun updateSummaryError(id: Int, error: String?) {
-        jobDao.updateSummaryError(id, error)
-    }
-
     suspend fun succeedSummarization(id: Int, summary: String, summaryModel: String) {
         jobDao.succeedSummarization(id, summary, summaryModel)
     }
@@ -83,8 +79,7 @@ class TranscriptionRepository @Inject constructor(
 
     suspend fun clearJobSummary(jobId: Int) {
         db.withTransaction {
-            jobDao.updateSummary(jobId, "", "")
-            jobDao.updateSummaryError(jobId, null)
+            jobDao.clearJobSummaryFields(jobId)
             historyRepository.updateSummaryByJobId(jobId, "", "")
         }
     }

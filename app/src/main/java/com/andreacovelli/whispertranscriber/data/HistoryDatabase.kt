@@ -172,8 +172,17 @@ interface TranscriptionJobDao {
     @Query("UPDATE active_jobs SET isSummarizing = :isSummarizing WHERE id = :id")
     suspend fun setSummarizing(id: Int, isSummarizing: Boolean)
 
-    @Query("UPDATE active_jobs SET summaryError = :error WHERE id = :id")
-    suspend fun updateSummaryError(id: Int, error: String?)
+    @Query(
+        """
+        UPDATE active_jobs
+        SET summary = '',
+            summaryModel = '',
+            summaryError = NULL,
+            isSummarizing = 0
+        WHERE id = :id
+        """,
+    )
+    suspend fun clearJobSummaryFields(id: Int)
 
     @Query(
         """
@@ -236,17 +245,20 @@ interface TranscriptionJobDao {
     @Query("SELECT * FROM active_jobs WHERE id = :id")
     suspend fun getJobById(id: Int): TranscriptionJob?
 
+    @Query("SELECT historyId FROM active_jobs WHERE id = :jobId")
+    suspend fun getHistoryIdByJobId(jobId: Int): Int?
+
     @Query("SELECT * FROM active_jobs WHERE status = 'Queued' ORDER BY timestamp ASC")
     suspend fun getQueuedJobs(): List<TranscriptionJob>
-
-    @Query("SELECT historyId FROM active_jobs WHERE id = :id")
-    suspend fun getHistoryIdByJobId(id: Int): Int?
 
     @Query(
         """
         UPDATE active_jobs
         SET status = 'Queued',
             progress = 0,
+            transcript = '',
+            language = '',
+            model = '',
             summary = '',
             summaryModel = '',
             error = NULL,

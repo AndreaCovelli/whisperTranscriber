@@ -63,11 +63,7 @@ class TranscriptionQueueService @Inject constructor(
 
         val batchId = UUID.randomUUID().toString()
         val speakerLabelPrefix = context.getString(R.string.speaker_label_prefix)
-        val requestedModel = when (provider) {
-            TranscriptionProvider.ELEVEN_LABS -> null
-            TranscriptionProvider.GEMINI_CUSTOM -> customModelName.ifBlank { null }
-            else -> provider.modelName
-        }
+        val requestedModel = resolveRequestedModel(provider, customModelName)
 
         uris.forEachIndexed { index, uri ->
             val displayName = resolveDisplayName(uri).ifBlank { uri.lastPathSegment ?: "Audio ${index + 1}" }
@@ -118,15 +114,19 @@ class TranscriptionQueueService @Inject constructor(
     }
 
     suspend fun retryJob(jobId: Int, provider: TranscriptionProvider, customModelName: String) {
-        val requestedModel = when (provider) {
-            TranscriptionProvider.ELEVEN_LABS -> null
-            TranscriptionProvider.GEMINI_CUSTOM -> customModelName.ifBlank { null }
-            else -> provider.modelName
-        }
+        workManager.cancelAllWorkByTag(jobTag(jobId))
+        val requestedModel = resolveRequestedModel(provider, customModelName)
         if (repository.retryJob(jobId, provider.name, requestedModel)) {
             enqueueWorker(jobId, context.getString(R.string.speaker_label_prefix))
         }
     }
+
+    private fun resolveRequestedModel(provider: TranscriptionProvider, customModelName: String): String? =
+        when (provider) {
+            TranscriptionProvider.ELEVEN_LABS -> null
+            TranscriptionProvider.GEMINI_CUSTOM -> customModelName.ifBlank { null }
+            else -> provider.modelName
+        }
 
     private suspend fun restartQueuedJobs() {
         val speakerLabelPrefix = context.getString(R.string.speaker_label_prefix)
@@ -347,9 +347,7 @@ class GeminiValidationService @Inject constructor(
     }
 }
 
-data class SummarizationResult(val statusMessage: String, val errorMessage: String? = null) {
-    val isSuccess: Boolean get() = errorMessage == null
-}
+data class SummarizationResult(val statusMessage: String, val errorMessage: String? = null)
 
 data class SummaryData(val text: String, val model: String)
 
