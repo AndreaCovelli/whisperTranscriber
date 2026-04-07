@@ -61,6 +61,10 @@ class TranscriptionRepository @Inject constructor(
         jobDao.setSummarizing(id, isSummarizing)
     }
 
+    suspend fun updateSummaryStatus(id: Int, status: String) {
+        jobDao.updateSummaryStatus(id, status)
+    }
+
     suspend fun succeedSummarization(id: Int, summary: String, summaryModel: String) {
         jobDao.succeedSummarization(id, summary, summaryModel)
     }
@@ -71,9 +75,9 @@ class TranscriptionRepository @Inject constructor(
 
     suspend fun cancelSummarization(id: Int, error: String): Boolean = jobDao.cancelSummarization(id, error) > 0
 
-    suspend fun claimAutoSummary(id: Int): Boolean = jobDao.claimAutoSummary(id) > 0
+    suspend fun claimAutoSummary(id: Int, modelName: String): Boolean = jobDao.claimAutoSummary(id, modelName) > 0
 
-    suspend fun claimManualSummary(id: Int): Boolean = jobDao.claimManualSummary(id) > 0
+    suspend fun claimManualSummary(id: Int, modelName: String): Boolean = jobDao.claimManualSummary(id, modelName) > 0
 
     suspend fun resetStaleSummaries(): Int = jobDao.resetStaleSummaries()
 

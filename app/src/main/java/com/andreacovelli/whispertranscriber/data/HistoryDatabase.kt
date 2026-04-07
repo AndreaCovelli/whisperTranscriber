@@ -58,10 +58,12 @@ data class TranscriptionJob(
     val model: String = "",
     val summary: String = "",
     val summaryModel: String = "",
+    val summaryStatus: String = "",
     val error: String? = null,
     val summaryError: String? = null,
     val isRunning: Boolean = false,
     val isSummarizing: Boolean = false,
+    val autoSummaryAttempted: Boolean = false,
     val batchId: String? = null,
     val speakerDiarizationEnabled: Boolean = false,
     val historyId: Int? = null,
@@ -169,6 +171,9 @@ interface TranscriptionJobDao {
     @Query("UPDATE active_jobs SET summary = :summary, summaryModel = :summaryModel WHERE id = :id")
     suspend fun updateSummary(id: Int, summary: String, summaryModel: String)
 
+    @Query("UPDATE active_jobs SET summaryStatus = :status WHERE id = :id")
+    suspend fun updateSummaryStatus(id: Int, status: String)
+
     @Query("UPDATE active_jobs SET isSummarizing = :isSummarizing WHERE id = :id")
     suspend fun setSummarizing(id: Int, isSummarizing: Boolean)
 
@@ -177,6 +182,7 @@ interface TranscriptionJobDao {
         UPDATE active_jobs
         SET summary = '',
             summaryModel = '',
+            summaryStatus = '',
             summaryError = NULL,
             isSummarizing = 0
         WHERE id = :id
@@ -190,19 +196,20 @@ interface TranscriptionJobDao {
         SET isSummarizing = 0,
             summary = :summary,
             summaryModel = :summaryModel,
+            summaryStatus = 'Summary generated',
             summaryError = NULL
         WHERE id = :id
         """,
     )
     suspend fun succeedSummarization(id: Int, summary: String, summaryModel: String)
 
-    @Query("UPDATE active_jobs SET isSummarizing = 0, summaryError = :error WHERE id = :id")
+    @Query("UPDATE active_jobs SET isSummarizing = 0, summaryStatus = 'Error', summaryError = :error WHERE id = :id")
     suspend fun failSummarization(id: Int, error: String?)
 
     @Query(
         """
         UPDATE active_jobs
-        SET isSummarizing = 0, summaryError = :error
+        SET isSummarizing = 0, summaryStatus = 'Cancelled', summaryError = :error
         WHERE id = :id AND isSummarizing = 1
         """,
     )
@@ -211,22 +218,32 @@ interface TranscriptionJobDao {
     @Query(
         """
         UPDATE active_jobs
-        SET isSummarizing = 1, summaryError = NULL
+        SET isSummarizing = 1,
+            summary = '',
+            summaryModel = :modelName,
+            summaryStatus = 'Summarizing...',
+            summaryError = NULL,
+            autoSummaryAttempted = 1
         WHERE id = :id
           AND isRunning = 0
           AND isSummarizing = 0
+          AND autoSummaryAttempted = 0
           AND transcript != ''
           AND summary = ''
           AND error IS NULL
           AND summaryError IS NULL
         """,
     )
-    suspend fun claimAutoSummary(id: Int): Int
+    suspend fun claimAutoSummary(id: Int, modelName: String): Int
 
     @Query(
         """
         UPDATE active_jobs
-        SET isSummarizing = 1, summaryError = NULL
+        SET isSummarizing = 1,
+            summary = '',
+            summaryModel = :modelName,
+            summaryStatus = 'Summarizing...',
+            summaryError = NULL
         WHERE id = :id
           AND isRunning = 0
           AND isSummarizing = 0
@@ -234,8 +251,7 @@ interface TranscriptionJobDao {
           AND error IS NULL
         """,
     )
-    suspend fun claimManualSummary(id: Int): Int
-
+    suspend fun claimManualSummary(id: Int, modelName: String): Int
     @Query("UPDATE active_jobs SET isSummarizing = 0 WHERE isSummarizing = 1")
     suspend fun resetStaleSummaries(): Int
 
@@ -261,10 +277,12 @@ interface TranscriptionJobDao {
             model = '',
             summary = '',
             summaryModel = '',
+            summaryStatus = '',
             error = NULL,
             summaryError = NULL,
             isRunning = 0,
             isSummarizing = 0,
+            autoSummaryAttempted = 0,
             historyId = NULL,
             providerName = :providerName,
             requestedModel = :requestedModel
@@ -285,7 +303,7 @@ interface TranscriptionJobDao {
 
 @Database(
     entities = [TranscriptionHistory::class, TranscriptionHistoryFts::class, TranscriptionJob::class],
-    version = 9,
+    version = 11,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -388,6 +406,18 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE active_jobs ADD COLUMN summaryStatus TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE active_jobs ADD COLUMN autoSummaryAttempted INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         val MIGRATIONS = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -397,6 +427,8 @@ abstract class AppDatabase : RoomDatabase() {
             MIGRATION_6_7,
             MIGRATION_7_8,
             MIGRATION_8_9,
+            MIGRATION_9_10,
+            MIGRATION_10_11,
         )
 
         private fun createBuilder(context: Context) = Room.databaseBuilder(

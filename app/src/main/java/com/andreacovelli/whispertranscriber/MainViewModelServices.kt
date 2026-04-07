@@ -358,10 +358,16 @@ class SummarizationService @Inject constructor(
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
     suspend fun summarize(jobId: Int, state: UiState, allowResummarize: Boolean): SummarizationResult {
+        val modelName = try {
+            resolveSummarizerModel(state)
+        } catch (e: IllegalStateException) {
+            return SummarizationResult(statusMessage = "Error: ${e.message}", errorMessage = e.message)
+        }
+
         val claimed = if (allowResummarize) {
-            repository.claimManualSummary(jobId)
+            repository.claimManualSummary(jobId, modelName)
         } else {
-            repository.claimAutoSummary(jobId)
+            repository.claimAutoSummary(jobId, modelName)
         }
         if (!claimed) return SummarizationResult(statusMessage = state.status)
 
@@ -377,10 +383,11 @@ class SummarizationService @Inject constructor(
             val text = job.transcript
             if (text.isBlank()) {
                 repository.setSummarizing(jobId, false)
+                repository.updateSummaryStatus(jobId, "")
                 summarizingCleared = true
                 SummarizationResult(statusMessage = "Nothing to summarize for ${job.displayName}.")
             } else {
-                val modelName = resolveSummarizerModel(state)
+                repository.updateSummaryStatus(jobId, "Summarizing...")
                 val apiKey = requireGeminiApiKey()
                 val summary = try {
                     requestSummary(text, apiKey, modelName)

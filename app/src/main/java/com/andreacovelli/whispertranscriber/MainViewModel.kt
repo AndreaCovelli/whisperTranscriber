@@ -66,6 +66,8 @@ data class TranscriptionJobState(
     val model: String = "",
     val summary: String = "",
     val summaryModel: String = "",
+    val summaryStatus: String = "",
+    val autoSummaryAttempted: Boolean = false,
     val batchId: String = "",
     val historyId: Int? = null,
     val error: String? = null,
@@ -89,6 +91,8 @@ fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     model = model,
     summary = summary,
     summaryModel = summaryModel,
+    summaryStatus = summaryStatus,
+    autoSummaryAttempted = autoSummaryAttempted,
     batchId = batchId.orEmpty(),
     historyId = historyId,
     error = error,
@@ -114,7 +118,7 @@ private val TranscriptionJob.hasSummaryBlockingState: Boolean
     get() = isRunning || isSummarizing || error != null || summaryError != null
 
 private val TranscriptionJob.isReadyForAutoSummary: Boolean
-    get() = !hasSummaryBlockingState && transcript.isNotBlank() && summary.isBlank()
+    get() = !hasSummaryBlockingState && transcript.isNotBlank() && summary.isBlank() && !autoSummaryAttempted
 
 data class TranscriptionData(val text: String, val language: String, val model: String)
 

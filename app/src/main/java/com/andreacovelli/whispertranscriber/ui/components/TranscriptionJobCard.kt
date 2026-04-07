@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -172,15 +173,20 @@ private fun TranscriptSection(job: TranscriptionJobState, actions: Transcription
         minimizedMaxLines = 6,
     )
     Spacer(Modifier.height(8.dp))
-    OutlinedButton(
-        onClick = if (job.isRunning) actions.cancelTranscription else actions.retryTranscription,
+    val isRunning = job.isRunning
+    Button(
+        onClick = if (isRunning) actions.cancelTranscription else actions.retryTranscription,
         modifier = Modifier.fillMaxWidth(),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (isRunning) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
+            contentColor = if (isRunning) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
     ) {
-        if (!job.isRunning) {
+        if (!isRunning) {
             Icon(Icons.Default.Refresh, contentDescription = "Retranscribe", modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(4.dp))
         }
-        Text(if (job.isRunning) "Stop transcription" else "Retranscribe")
+        Text(if (isRunning) "Stop transcription" else "Retranscribe")
     }
 }
 
@@ -203,8 +209,12 @@ private fun JobPrimaryActions(
         Button(
             onClick = actions.summarize,
             enabled = canSummarize,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            ),
         ) {
-            Text("Summarize with Gemini")
+            Text("Summarize")
         }
     }
 }
@@ -232,28 +242,54 @@ private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJob
         onShare = actions.shareSummary,
         onClear = actions.clearSummary,
         clearDescription = stringResource(R.string.clear_summary),
+        trailing = if (job.isSummarizing) {
+            {
+                TextButton(onClick = actions.cancelSummary) {
+                    Text("Cancel", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        } else null,
     )
     if (job.summaryModel.isNotBlank()) {
+        Spacer(Modifier.height(4.dp))
         Text(
-            text = "Summary model: ${job.summaryModel}",
+            text = "Provider: ${job.summaryModel}",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 4.dp),
         )
     }
-    SelectionContainer {
-        Text(job.summary)
+    if (job.isSummarizing || job.summaryStatus.isNotBlank()) {
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = job.summaryStatus,
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
-    Spacer(Modifier.height(8.dp))
-    OutlinedButton(
-        onClick = if (job.isSummarizing) actions.cancelSummary else actions.retrySummary,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        if (!job.isSummarizing) {
+    if (job.isSummarizing) {
+        Spacer(Modifier.height(8.dp))
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        Spacer(Modifier.height(8.dp))
+    }
+    if (job.summary.isNotBlank()) {
+        Spacer(Modifier.height(8.dp))
+        SelectionContainer {
+            Text(job.summary)
+        }
+    }
+    if (!job.isSummarizing) {
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = actions.retrySummary,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            ),
+        ) {
             Icon(Icons.Default.Refresh, contentDescription = "Resummarize", modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(4.dp))
+            Text("Resummarize")
         }
-        Text(if (job.isSummarizing) "Stop summary" else "Resummarize")
     }
 }
 
@@ -264,6 +300,7 @@ private fun SectionHeader(
     onShare: () -> Unit,
     onClear: () -> Unit,
     clearDescription: String,
+    trailing: @Composable (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -271,19 +308,23 @@ private fun SectionHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(title, style = MaterialTheme.typography.titleSmall)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onCopy) {
-                Icon(Icons.Filled.ContentCopy, "Copy $title")
-            }
-            IconButton(onClick = onShare) {
-                Icon(Icons.Default.Share, "Share $title")
-            }
-            IconButton(onClick = onClear) {
-                Icon(
-                    Icons.Default.DeleteSweep,
-                    contentDescription = clearDescription,
-                    modifier = Modifier.size(24.dp),
-                )
+        if (trailing != null) {
+            trailing()
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onCopy) {
+                    Icon(Icons.Filled.ContentCopy, "Copy $title")
+                }
+                IconButton(onClick = onShare) {
+                    Icon(Icons.Default.Share, "Share $title")
+                }
+                IconButton(onClick = onClear) {
+                    Icon(
+                        Icons.Default.DeleteSweep,
+                        contentDescription = clearDescription,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
             }
         }
     }
