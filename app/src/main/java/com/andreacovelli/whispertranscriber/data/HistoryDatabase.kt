@@ -193,6 +193,15 @@ interface TranscriptionJobDao {
     @Query(
         """
         UPDATE active_jobs
+        SET isSummarizing = 0, summaryError = :error
+        WHERE id = :id AND isSummarizing = 1
+        """,
+    )
+    suspend fun cancelSummarization(id: Int, error: String): Int
+
+    @Query(
+        """
+        UPDATE active_jobs
         SET isSummarizing = 1, summaryError = NULL
         WHERE id = :id
           AND isRunning = 0
@@ -238,20 +247,19 @@ interface TranscriptionJobDao {
         UPDATE active_jobs
         SET status = 'Queued',
             progress = 0,
-            transcript = '',
-            language = '',
-            model = '',
             summary = '',
             summaryModel = '',
             error = NULL,
             summaryError = NULL,
             isRunning = 0,
             isSummarizing = 0,
-            historyId = NULL
+            historyId = NULL,
+            providerName = :providerName,
+            requestedModel = :requestedModel
         WHERE id = :jobId
         """,
     )
-    suspend fun retryById(jobId: Int): Int
+    suspend fun retryById(jobId: Int, providerName: String, requestedModel: String?): Int
 
     @Query("SELECT * FROM active_jobs WHERE isRunning = 0 AND status != 'Queued'")
     suspend fun getCompletedJobs(): List<TranscriptionJob>

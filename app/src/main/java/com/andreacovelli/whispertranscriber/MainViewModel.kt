@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -137,6 +138,7 @@ class MainViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState = _uiState.asStateFlow()
+    private val summaryJobs = mutableMapOf<Int, Job>()
 
     val mainScreenActions = createMainScreenActions(
         clearCompletedJobs = {
@@ -157,7 +159,11 @@ class MainViewModel @Inject constructor(
         },
         retryJob = { jobId ->
             viewModelScope.launch {
-                queueService.retryJob(jobId)
+                queueService.retryJob(
+                    jobId,
+                    _uiState.value.provider,
+                    _uiState.value.transcriptionCustomGeminiModelName,
+                )
             }
         },
         cancelJob = { jobId ->
@@ -165,6 +171,7 @@ class MainViewModel @Inject constructor(
                 queueService.cancelJob(jobId)
             }
         },
+        cancelSummary = ::cancelSummary,
         deleteJob = { jobId ->
             viewModelScope.launch {
                 queueService.deleteJob(jobId)
@@ -411,12 +418,33 @@ class MainViewModel @Inject constructor(
     }
 
     private fun runSummarization(jobId: Int, allowResummarize: Boolean) {
-        viewModelScope.launch {
+        summaryJobs[jobId]?.cancel()
+        summaryJobs[jobId] = viewModelScope.launch {
             val result = summarizationService.summarize(jobId, _uiState.value, allowResummarize)
             _uiState.update { state ->
                 state.copy(status = result.statusMessage)
             }
+        }.also { job ->
+            job.invokeOnCompletion {
+                summaryJobs.remove(jobId, job)
+            }
         }
+    }
+
+    private fun cancelSummary(jobId: Int) {
+        summaryJobs.remove(jobId)?.cancel()
+        viewModelScope.launch {
+            val statusMessage = summarizationService.cancelSummary(jobId)
+            _uiState.update { state ->
+                state.copy(status = statusMessage)
+            }
+        }
+    }
+
+    override fun onCleared() {
+        summaryJobs.values.forEach(Job::cancel)
+        summaryJobs.clear()
+        super.onCleared()
     }
 
     private fun updateModelValidationState(isSummarizer: Boolean, validation: CustomModelValidation) {

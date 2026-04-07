@@ -117,8 +117,13 @@ class TranscriptionQueueService @Inject constructor(
         }
     }
 
-    suspend fun retryJob(jobId: Int) {
-        if (repository.retryJob(jobId)) {
+    suspend fun retryJob(jobId: Int, provider: TranscriptionProvider, customModelName: String) {
+        val requestedModel = when (provider) {
+            TranscriptionProvider.ELEVEN_LABS -> null
+            TranscriptionProvider.GEMINI_CUSTOM -> customModelName.ifBlank { null }
+            else -> provider.modelName
+        }
+        if (repository.retryJob(jobId, provider.name, requestedModel)) {
             enqueueWorker(jobId, context.getString(R.string.speaker_label_prefix))
         }
     }
@@ -407,6 +412,11 @@ class SummarizationService @Inject constructor(
                 }
             }
         }
+    }
+
+    suspend fun cancelSummary(jobId: Int): String {
+        val cancelled = repository.cancelSummarization(jobId, "Cancelled by user")
+        return if (cancelled) "Summary cancelled." else "Nothing to stop."
     }
 
     private suspend fun requireGeminiApiKey(): CharArray {

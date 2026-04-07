@@ -332,8 +332,11 @@ private fun rememberJobActions(
             },
             shareTranscript = { shareText(context, job.transcript, shareTranscriptTitle) },
             shareSummary = { shareText(context, job.summary, shareSummaryTitle) },
-            retry = { actions.retryJob(job.id) },
+            retryTranscription = { actions.retryJob(job.id) },
+            retrySummary = { actions.summarizeJob(job.id) },
             cancel = { actions.cancelJob(job.id) },
+            cancelTranscription = { actions.cancelJob(job.id) },
+            cancelSummary = { actions.cancelSummary(job.id) },
             delete = { actions.deleteJob(job.id) },
         )
     }

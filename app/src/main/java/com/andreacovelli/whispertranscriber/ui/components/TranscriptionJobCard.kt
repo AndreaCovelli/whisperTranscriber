@@ -53,7 +53,7 @@ fun TranscriptionJobCard(job: TranscriptionJobState, canSummarize: Boolean, acti
             JobHeader(job = job, onCancel = actions.cancel, onDelete = actions.delete)
             JobSecondaryText(job = job, queuedProviderLabel = queuedProviderLabel)
             Text(job.status, style = MaterialTheme.typography.bodySmall)
-            JobErrorSection(job = job, onRetry = actions.retry)
+            JobErrorSection(job = job, onRetry = actions.retryTranscription)
             JobProgressSection(job = job)
             TranscriptSection(job = job, actions = actions)
             JobPrimaryActions(job = job, canSummarize = canSummarize, actions = actions)
@@ -65,6 +65,7 @@ fun TranscriptionJobCard(job: TranscriptionJobState, canSummarize: Boolean, acti
 
 @Composable
 private fun JobHeader(job: TranscriptionJobState, onCancel: () -> Unit, onDelete: () -> Unit) {
+    val showHeaderCancel = job.status == "Queued" || (job.isRunning && job.transcript.isBlank())
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -75,11 +76,11 @@ private fun JobHeader(job: TranscriptionJobState, onCancel: () -> Unit, onDelete
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.weight(1f),
         )
-        if (job.isRunning || job.status == "Queued") {
+        if (showHeaderCancel) {
             TextButton(onClick = onCancel) {
                 Text("Cancel", color = MaterialTheme.colorScheme.error)
             }
-        } else {
+        } else if (!job.isRunning) {
             IconButton(onClick = onDelete) {
                 Icon(
                     imageVector = Icons.Default.Delete,
@@ -170,6 +171,17 @@ private fun TranscriptSection(job: TranscriptionJobState, actions: Transcription
         modifier = Modifier.fillMaxWidth(),
         minimizedMaxLines = 6,
     )
+    Spacer(Modifier.height(8.dp))
+    OutlinedButton(
+        onClick = if (job.isRunning) actions.cancelTranscription else actions.retryTranscription,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        if (!job.isRunning) {
+            Icon(Icons.Default.Refresh, contentDescription = "Retranscribe", modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+        }
+        Text(if (job.isRunning) "Stop transcription" else "Retranscribe")
+    }
 }
 
 @Composable
@@ -178,33 +190,17 @@ private fun JobPrimaryActions(
     canSummarize: Boolean,
     actions: TranscriptionJobCardActions,
 ) {
-    if (job.isRunning || job.error != null) return
+    if (job.isRunning || job.error != null || job.transcript.isBlank() || job.summary.isNotBlank()) return
     Spacer(Modifier.height(12.dp))
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.End,
     ) {
-        OutlinedButton(
-            onClick = actions.retry,
-            modifier = if (job.transcript.isNotBlank()) Modifier.padding(end = 8.dp) else Modifier,
+        Button(
+            onClick = actions.summarize,
+            enabled = canSummarize && !job.isSummarizing,
         ) {
-            Icon(Icons.Default.Refresh, contentDescription = "Redo", modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(4.dp))
-            Text("Redo")
-        }
-        if (job.transcript.isNotBlank()) {
-            Button(
-                onClick = actions.summarize,
-                enabled = canSummarize && !job.isSummarizing,
-            ) {
-                Text(
-                    when {
-                        job.isSummarizing -> "Summarizing..."
-                        job.summary.isNotBlank() -> "Re-summarize"
-                        else -> "Summarize with Gemini"
-                    },
-                )
-            }
+            Text(if (job.isSummarizing) "Summarizing..." else "Summarize with Gemini")
         }
     }
 }
@@ -243,6 +239,17 @@ private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJob
     }
     SelectionContainer {
         Text(job.summary)
+    }
+    Spacer(Modifier.height(8.dp))
+    OutlinedButton(
+        onClick = if (job.isSummarizing) actions.cancelSummary else actions.retrySummary,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        if (!job.isSummarizing) {
+            Icon(Icons.Default.Refresh, contentDescription = "Resummarize", modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+        }
+        Text(if (job.isSummarizing) "Stop summary" else "Resummarize")
     }
 }
 

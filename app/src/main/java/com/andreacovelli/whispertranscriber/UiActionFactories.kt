@@ -7,6 +7,7 @@ data class MainScreenActions(
     val clearTranscript: (Int) -> Unit,
     val retryJob: (Int) -> Unit,
     val cancelJob: (Int) -> Unit,
+    val cancelSummary: (Int) -> Unit,
     val deleteJob: (Int) -> Unit,
 )
 
@@ -34,6 +35,7 @@ internal fun createMainScreenActions(
     clearTranscript: (Int) -> Unit,
     retryJob: (Int) -> Unit,
     cancelJob: (Int) -> Unit,
+    cancelSummary: (Int) -> Unit,
     deleteJob: (Int) -> Unit,
 ): MainScreenActions = MainScreenActions(
     clearCompletedJobs = clearCompletedJobs,
@@ -42,6 +44,7 @@ internal fun createMainScreenActions(
     clearTranscript = clearTranscript,
     retryJob = retryJob,
     cancelJob = cancelJob,
+    cancelSummary = cancelSummary,
     deleteJob = deleteJob,
 )
 
