@@ -9,10 +9,12 @@ import com.andreacovelli.whispertranscriber.di.IoDispatcher
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 import com.andreacovelli.whispertranscriber.ui.screens.buildBatchProgressState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -64,6 +66,8 @@ data class TranscriptionJobState(
     val model: String = "",
     val summary: String = "",
     val summaryModel: String = "",
+    val summaryStatus: String = "",
+    val autoSummaryAttempted: Boolean = false,
     val batchId: String = "",
     val historyId: Int? = null,
     val error: String? = null,
@@ -87,6 +91,8 @@ fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     model = model,
     summary = summary,
     summaryModel = summaryModel,
+    summaryStatus = summaryStatus,
+    autoSummaryAttempted = autoSummaryAttempted,
     batchId = batchId.orEmpty(),
     historyId = historyId,
     error = error,
@@ -112,7 +118,7 @@ private val TranscriptionJob.hasSummaryBlockingState: Boolean
     get() = isRunning || isSummarizing || error != null || summaryError != null
 
 private val TranscriptionJob.isReadyForAutoSummary: Boolean
-    get() = !hasSummaryBlockingState && transcript.isNotBlank() && summary.isBlank()
+    get() = !hasSummaryBlockingState && transcript.isNotBlank() && summary.isBlank() && !autoSummaryAttempted
 
 data class TranscriptionData(val text: String, val language: String, val model: String)
 
@@ -137,6 +143,7 @@ class MainViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState = _uiState.asStateFlow()
+    private val summaryJobs = ConcurrentHashMap<Int, Job>()
 
     val mainScreenActions = createMainScreenActions(
         clearCompletedJobs = {
@@ -157,7 +164,12 @@ class MainViewModel @Inject constructor(
         },
         retryJob = { jobId ->
             viewModelScope.launch {
-                queueService.retryJob(jobId)
+                summaryJobs.remove(jobId)?.cancel()
+                queueService.retryJob(
+                    jobId,
+                    _uiState.value.provider,
+                    _uiState.value.transcriptionCustomGeminiModelName,
+                )
             }
         },
         cancelJob = { jobId ->
@@ -165,6 +177,7 @@ class MainViewModel @Inject constructor(
                 queueService.cancelJob(jobId)
             }
         },
+        cancelSummary = ::cancelSummary,
         deleteJob = { jobId ->
             viewModelScope.launch {
                 queueService.deleteJob(jobId)
@@ -240,7 +253,7 @@ class MainViewModel @Inject constructor(
                     ) {
                         jobsList.forEach { job ->
                             if (job.isReadyForAutoSummary) {
-                                requestAutoSummary(job.id)
+                                runSummarization(job.id, allowResummarize = false)
                             }
                         }
                     }
@@ -406,17 +419,34 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    private fun requestAutoSummary(jobId: Int) {
-        runSummarization(jobId, allowResummarize = false)
-    }
-
     private fun runSummarization(jobId: Int, allowResummarize: Boolean) {
-        viewModelScope.launch {
+        summaryJobs[jobId]?.cancel()
+        summaryJobs[jobId] = viewModelScope.launch {
             val result = summarizationService.summarize(jobId, _uiState.value, allowResummarize)
             _uiState.update { state ->
                 state.copy(status = result.statusMessage)
             }
+        }.also { job ->
+            job.invokeOnCompletion {
+                summaryJobs.remove(jobId, job)
+            }
         }
+    }
+
+    private fun cancelSummary(jobId: Int) {
+        summaryJobs.remove(jobId)?.cancel()
+        viewModelScope.launch {
+            val statusMessage = summarizationService.cancelSummary(jobId)
+            _uiState.update { state ->
+                state.copy(status = statusMessage)
+            }
+        }
+    }
+
+    override fun onCleared() {
+        summaryJobs.values.forEach(Job::cancel)
+        summaryJobs.clear()
+        super.onCleared()
     }
 
     private fun updateModelValidationState(isSummarizer: Boolean, validation: CustomModelValidation) {

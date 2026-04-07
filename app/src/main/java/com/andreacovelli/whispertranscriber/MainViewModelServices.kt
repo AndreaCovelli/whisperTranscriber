@@ -63,11 +63,7 @@ class TranscriptionQueueService @Inject constructor(
 
         val batchId = UUID.randomUUID().toString()
         val speakerLabelPrefix = context.getString(R.string.speaker_label_prefix)
-        val requestedModel = when (provider) {
-            TranscriptionProvider.ELEVEN_LABS -> null
-            TranscriptionProvider.GEMINI_CUSTOM -> customModelName.ifBlank { null }
-            else -> provider.modelName
-        }
+        val requestedModel = resolveRequestedModel(provider, customModelName)
 
         uris.forEachIndexed { index, uri ->
             val displayName = resolveDisplayName(uri).ifBlank { uri.lastPathSegment ?: "Audio ${index + 1}" }
@@ -117,11 +113,20 @@ class TranscriptionQueueService @Inject constructor(
         }
     }
 
-    suspend fun retryJob(jobId: Int) {
-        if (repository.retryJob(jobId)) {
+    suspend fun retryJob(jobId: Int, provider: TranscriptionProvider, customModelName: String) {
+        workManager.cancelAllWorkByTag(jobTag(jobId))
+        val requestedModel = resolveRequestedModel(provider, customModelName)
+        if (repository.retryJob(jobId, provider.name, requestedModel)) {
             enqueueWorker(jobId, context.getString(R.string.speaker_label_prefix))
         }
     }
+
+    private fun resolveRequestedModel(provider: TranscriptionProvider, customModelName: String): String? =
+        when (provider) {
+            TranscriptionProvider.ELEVEN_LABS -> null
+            TranscriptionProvider.GEMINI_CUSTOM -> customModelName.ifBlank { null }
+            else -> provider.modelName
+        }
 
     private suspend fun restartQueuedJobs() {
         val speakerLabelPrefix = context.getString(R.string.speaker_label_prefix)
@@ -342,9 +347,7 @@ class GeminiValidationService @Inject constructor(
     }
 }
 
-data class SummarizationResult(val statusMessage: String, val errorMessage: String? = null) {
-    val isSuccess: Boolean get() = errorMessage == null
-}
+data class SummarizationResult(val statusMessage: String, val errorMessage: String? = null)
 
 data class SummaryData(val text: String, val model: String)
 
@@ -355,10 +358,16 @@ class SummarizationService @Inject constructor(
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
     suspend fun summarize(jobId: Int, state: UiState, allowResummarize: Boolean): SummarizationResult {
+        val modelName = try {
+            resolveSummarizerModel(state)
+        } catch (e: IllegalStateException) {
+            return SummarizationResult(statusMessage = "Error: ${e.message}", errorMessage = e.message)
+        }
+
         val claimed = if (allowResummarize) {
-            repository.claimManualSummary(jobId)
+            repository.claimManualSummary(jobId, modelName)
         } else {
-            repository.claimAutoSummary(jobId)
+            repository.claimAutoSummary(jobId, modelName)
         }
         if (!claimed) return SummarizationResult(statusMessage = state.status)
 
@@ -374,10 +383,11 @@ class SummarizationService @Inject constructor(
             val text = job.transcript
             if (text.isBlank()) {
                 repository.setSummarizing(jobId, false)
+                repository.updateSummaryStatus(jobId, "")
                 summarizingCleared = true
                 SummarizationResult(statusMessage = "Nothing to summarize for ${job.displayName}.")
             } else {
-                val modelName = resolveSummarizerModel(state)
+                repository.updateSummaryStatus(jobId, "Summarizing...")
                 val apiKey = requireGeminiApiKey()
                 val summary = try {
                     requestSummary(text, apiKey, modelName)
@@ -407,6 +417,11 @@ class SummarizationService @Inject constructor(
                 }
             }
         }
+    }
+
+    suspend fun cancelSummary(jobId: Int): String {
+        val cancelled = repository.cancelSummarization(jobId)
+        return if (cancelled) "Summary cancelled." else "Nothing to stop."
     }
 
     private suspend fun requireGeminiApiKey(): CharArray {

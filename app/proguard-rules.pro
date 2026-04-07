@@ -21,9 +21,6 @@
 #-renamesourcefileattribute SourceFile
 
 -keepattributes Annotation
--keep class com.andreacovelli.whispertranscriber.UploadResponse { <fields>; }
--keep class com.andreacovelli.whispertranscriber.TranscriptRequest { <fields>; }
--keep class com.andreacovelli.whispertranscriber.TranscriptResponse { <fields>; }
 -keep class com.andreacovelli.whispertranscriber.data.** { *; }
 -keep class androidx.room.* { *; }
 

@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,7 +54,7 @@ fun TranscriptionJobCard(job: TranscriptionJobState, canSummarize: Boolean, acti
             JobHeader(job = job, onCancel = actions.cancel, onDelete = actions.delete)
             JobSecondaryText(job = job, queuedProviderLabel = queuedProviderLabel)
             Text(job.status, style = MaterialTheme.typography.bodySmall)
-            JobErrorSection(job = job, onRetry = actions.retry)
+            JobErrorSection(job = job, onRetry = actions.retryTranscription)
             JobProgressSection(job = job)
             TranscriptSection(job = job, actions = actions)
             JobPrimaryActions(job = job, canSummarize = canSummarize, actions = actions)
@@ -65,6 +66,7 @@ fun TranscriptionJobCard(job: TranscriptionJobState, canSummarize: Boolean, acti
 
 @Composable
 private fun JobHeader(job: TranscriptionJobState, onCancel: () -> Unit, onDelete: () -> Unit) {
+    val showHeaderCancel = job.status == "Queued" || (job.isRunning && job.transcript.isBlank())
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -75,11 +77,11 @@ private fun JobHeader(job: TranscriptionJobState, onCancel: () -> Unit, onDelete
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.weight(1f),
         )
-        if (job.isRunning || job.status == "Queued") {
+        if (showHeaderCancel) {
             TextButton(onClick = onCancel) {
                 Text("Cancel", color = MaterialTheme.colorScheme.error)
             }
-        } else {
+        } else if (!job.isRunning) {
             IconButton(onClick = onDelete) {
                 Icon(
                     imageVector = Icons.Default.Delete,
@@ -170,6 +172,32 @@ private fun TranscriptSection(job: TranscriptionJobState, actions: Transcription
         modifier = Modifier.fillMaxWidth(),
         minimizedMaxLines = 6,
     )
+    Spacer(Modifier.height(8.dp))
+    val isRunning = job.isRunning
+    Button(
+        onClick = if (isRunning) actions.cancelTranscription else actions.retryTranscription,
+        modifier = Modifier.fillMaxWidth(),
+        colors = ButtonDefaults.buttonColors(
+            containerColor =
+            if (isRunning) {
+                MaterialTheme.colorScheme.errorContainer
+            } else {
+                MaterialTheme.colorScheme.primaryContainer
+            },
+            contentColor =
+            if (isRunning) {
+                MaterialTheme.colorScheme.onErrorContainer
+            } else {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            },
+        ),
+    ) {
+        if (!isRunning) {
+            Icon(Icons.Default.Refresh, contentDescription = "Retranscribe", modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+        }
+        Text(if (isRunning) "Stop transcription" else "Retranscribe")
+    }
 }
 
 @Composable
@@ -178,33 +206,25 @@ private fun JobPrimaryActions(
     canSummarize: Boolean,
     actions: TranscriptionJobCardActions,
 ) {
-    if (job.isRunning || job.error != null) return
+    if (job.isRunning || job.isSummarizing || job.error != null || job.transcript.isBlank() ||
+        job.summary.isNotBlank()
+    ) {
+        return
+    }
     Spacer(Modifier.height(12.dp))
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.End,
     ) {
-        OutlinedButton(
-            onClick = actions.retry,
-            modifier = if (job.transcript.isNotBlank()) Modifier.padding(end = 8.dp) else Modifier,
+        Button(
+            onClick = actions.summarize,
+            enabled = canSummarize,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            ),
         ) {
-            Icon(Icons.Default.Refresh, contentDescription = "Redo", modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(4.dp))
-            Text("Redo")
-        }
-        if (job.transcript.isNotBlank()) {
-            Button(
-                onClick = actions.summarize,
-                enabled = canSummarize && !job.isSummarizing,
-            ) {
-                Text(
-                    when {
-                        job.isSummarizing -> "Summarizing..."
-                        job.summary.isNotBlank() -> "Re-summarize"
-                        else -> "Summarize with Gemini"
-                    },
-                )
-            }
+            Text("Summarize")
         }
     }
 }
@@ -224,7 +244,7 @@ private fun SummaryErrorSection(job: TranscriptionJobState) {
 
 @Composable
 private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJobCardActions) {
-    if (job.summary.isBlank()) return
+    if (job.summary.isBlank() && !job.isSummarizing) return
     Spacer(Modifier.height(12.dp))
     SectionHeader(
         title = "Summary",
@@ -232,17 +252,56 @@ private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJob
         onShare = actions.shareSummary,
         onClear = actions.clearSummary,
         clearDescription = stringResource(R.string.clear_summary),
+        trailing = if (job.isSummarizing) {
+            {
+                TextButton(onClick = actions.cancelSummary) {
+                    Text("Cancel", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        } else {
+            null
+        },
     )
     if (job.summaryModel.isNotBlank()) {
+        Spacer(Modifier.height(4.dp))
         Text(
-            text = "Summary model: ${job.summaryModel}",
+            text = "Model: ${job.summaryModel}",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 4.dp),
         )
     }
-    SelectionContainer {
-        Text(job.summary)
+    if (job.isSummarizing || job.summaryStatus.isNotBlank()) {
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = job.summaryStatus,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+    if (job.isSummarizing) {
+        Spacer(Modifier.height(8.dp))
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        Spacer(Modifier.height(8.dp))
+    }
+    if (job.summary.isNotBlank()) {
+        Spacer(Modifier.height(8.dp))
+        SelectionContainer {
+            Text(job.summary)
+        }
+    }
+    if (!job.isSummarizing) {
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = actions.retrySummary,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            ),
+        ) {
+            Icon(Icons.Default.Refresh, contentDescription = "Resummarize", modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("Resummarize")
+        }
     }
 }
 
@@ -253,6 +312,7 @@ private fun SectionHeader(
     onShare: () -> Unit,
     onClear: () -> Unit,
     clearDescription: String,
+    trailing: @Composable (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -260,19 +320,23 @@ private fun SectionHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(title, style = MaterialTheme.typography.titleSmall)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onCopy) {
-                Icon(Icons.Filled.ContentCopy, "Copy $title")
-            }
-            IconButton(onClick = onShare) {
-                Icon(Icons.Default.Share, "Share $title")
-            }
-            IconButton(onClick = onClear) {
-                Icon(
-                    Icons.Default.DeleteSweep,
-                    contentDescription = clearDescription,
-                    modifier = Modifier.size(24.dp),
-                )
+        if (trailing != null) {
+            trailing()
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onCopy) {
+                    Icon(Icons.Filled.ContentCopy, "Copy $title")
+                }
+                IconButton(onClick = onShare) {
+                    Icon(Icons.Default.Share, "Share $title")
+                }
+                IconButton(onClick = onClear) {
+                    Icon(
+                        Icons.Default.DeleteSweep,
+                        contentDescription = clearDescription,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
             }
         }
     }

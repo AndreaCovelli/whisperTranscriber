@@ -61,8 +61,8 @@ class TranscriptionRepository @Inject constructor(
         jobDao.setSummarizing(id, isSummarizing)
     }
 
-    suspend fun updateSummaryError(id: Int, error: String?) {
-        jobDao.updateSummaryError(id, error)
+    suspend fun updateSummaryStatus(id: Int, status: String) {
+        jobDao.updateSummaryStatus(id, status)
     }
 
     suspend fun succeedSummarization(id: Int, summary: String, summaryModel: String) {
@@ -73,16 +73,17 @@ class TranscriptionRepository @Inject constructor(
         jobDao.failSummarization(id, error)
     }
 
-    suspend fun claimAutoSummary(id: Int): Boolean = jobDao.claimAutoSummary(id) > 0
+    suspend fun cancelSummarization(id: Int): Boolean = jobDao.cancelSummarization(id) > 0
 
-    suspend fun claimManualSummary(id: Int): Boolean = jobDao.claimManualSummary(id) > 0
+    suspend fun claimAutoSummary(id: Int, modelName: String): Boolean = jobDao.claimAutoSummary(id, modelName) > 0
+
+    suspend fun claimManualSummary(id: Int, modelName: String): Boolean = jobDao.claimManualSummary(id, modelName) > 0
 
     suspend fun resetStaleSummaries(): Int = jobDao.resetStaleSummaries()
 
     suspend fun clearJobSummary(jobId: Int) {
         db.withTransaction {
-            jobDao.updateSummary(jobId, "", "")
-            jobDao.updateSummaryError(jobId, null)
+            jobDao.clearJobSummaryFields(jobId)
             historyRepository.updateSummaryByJobId(jobId, "", "")
         }
     }
@@ -108,7 +109,8 @@ class TranscriptionRepository @Inject constructor(
 
     suspend fun getQueuedJobs(): List<TranscriptionJob> = jobDao.getQueuedJobs()
 
-    suspend fun retryJob(jobId: Int): Boolean = jobDao.retryById(jobId) > 0
+    suspend fun retryJob(jobId: Int, providerName: String, requestedModel: String?): Boolean =
+        jobDao.retryById(jobId, providerName, requestedModel) > 0
 
     suspend fun clearCompletedJobs(): List<String> {
         val completedJobs = jobDao.getCompletedJobs()
