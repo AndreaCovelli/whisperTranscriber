@@ -3,6 +3,8 @@ package com.andreacovelli.whispertranscriber.ui.screens
 import android.content.ClipData
 import android.content.Intent
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -54,9 +56,12 @@ import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
+import com.andreacovelli.whispertranscriber.HistoryExportFormat
+import com.andreacovelli.whispertranscriber.HistoryUiEvent
 import com.andreacovelli.whispertranscriber.HistoryViewModel
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.extractHistorySearchTokens
+import com.andreacovelli.whispertranscriber.suggestedHistoryExportFileName
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCard
 import kotlinx.coroutines.launch
 
@@ -71,11 +76,35 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
     val expandedIdsSaver = listSaver<Set<Int>, Int>(save = { it.toList() }, restore = { it.toSet() })
     var expandedIds by rememberSaveable(stateSaver = expandedIdsSaver) { mutableStateOf(emptySet()) }
     var showDeleteAllDialog by remember { mutableStateOf(false) }
+    var showExportDialog by remember { mutableStateOf(false) }
     val searchTokens = remember(searchQuery) { extractHistorySearchTokens(searchQuery) }
+    val txtExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument(HistoryExportFormat.TXT.mimeType),
+    ) { uri ->
+        uri?.let { historyViewModel.exportHistory(it, HistoryExportFormat.TXT) }
+    }
+    val csvExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument(HistoryExportFormat.CSV.mimeType),
+    ) { uri ->
+        uri?.let { historyViewModel.exportHistory(it, HistoryExportFormat.CSV) }
+    }
+    val jsonExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument(HistoryExportFormat.JSON.mimeType),
+    ) { uri ->
+        uri?.let { historyViewModel.exportHistory(it, HistoryExportFormat.JSON) }
+    }
 
-    ObserveShareEvents(
+    ObserveHistoryEvents(
         historyViewModel = historyViewModel,
         shareTitle = stringResource(R.string.share_transcription_title),
+        onLaunchExport = { format ->
+            val fileName = suggestedHistoryExportFileName(format)
+            when (format) {
+                HistoryExportFormat.TXT -> txtExportLauncher.launch(fileName)
+                HistoryExportFormat.CSV -> csvExportLauncher.launch(fileName)
+                HistoryExportFormat.JSON -> jsonExportLauncher.launch(fileName)
+            }
+        },
     )
     DeleteAllHistoryDialog(
         visible = showDeleteAllDialog,
@@ -85,12 +114,21 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
             showDeleteAllDialog = false
         },
     )
+    ExportHistoryDialog(
+        visible = showExportDialog,
+        onDismiss = { showExportDialog = false },
+        onExport = { format ->
+            showExportDialog = false
+            historyViewModel.prepareExport(format)
+        },
+    )
 
     Scaffold(
         topBar = {
             HistoryTopBar(
                 canDeleteAll = pagedItems.itemCount > 0 || searchQuery.isNotEmpty(),
                 onNavigateBack = onNavigateBack,
+                onExport = { showExportDialog = true },
                 onDeleteAll = { showDeleteAllDialog = true },
             )
         },
@@ -111,17 +149,29 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
 }
 
 @Composable
-private fun ObserveShareEvents(historyViewModel: HistoryViewModel, shareTitle: String) {
+private fun ObserveHistoryEvents(
+    historyViewModel: HistoryViewModel,
+    shareTitle: String,
+    onLaunchExport: (HistoryExportFormat) -> Unit,
+) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
     LaunchedEffect(historyViewModel, lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            historyViewModel.shareEvent.collect { content ->
-                val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, content)
+            historyViewModel.uiEvents.collect { event ->
+                when (event) {
+                    is HistoryUiEvent.LaunchExport -> onLaunchExport(event.format)
+                    is HistoryUiEvent.Share -> {
+                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, event.content)
+                        }
+                        context.startActivity(Intent.createChooser(sendIntent, shareTitle))
+                    }
+                    is HistoryUiEvent.Toast -> {
+                        Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
+                    }
                 }
-                context.startActivity(Intent.createChooser(sendIntent, shareTitle))
             }
         }
     }
@@ -149,7 +199,12 @@ private fun DeleteAllHistoryDialog(visible: Boolean, onDismiss: () -> Unit, onCo
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HistoryTopBar(canDeleteAll: Boolean, onNavigateBack: () -> Unit, onDeleteAll: () -> Unit) {
+private fun HistoryTopBar(
+    canDeleteAll: Boolean,
+    onNavigateBack: () -> Unit,
+    onExport: () -> Unit,
+    onDeleteAll: () -> Unit,
+) {
     TopAppBar(
         title = { Text("Transcription History") },
         navigationIcon = {
@@ -158,6 +213,9 @@ private fun HistoryTopBar(canDeleteAll: Boolean, onNavigateBack: () -> Unit, onD
             }
         },
         actions = {
+            TextButton(onClick = onExport) {
+                Text(stringResource(R.string.history_export_action))
+            }
             if (canDeleteAll) {
                 IconButton(onClick = onDeleteAll) {
                     Icon(Icons.Default.DeleteSweep, "Delete all history")
@@ -165,6 +223,47 @@ private fun HistoryTopBar(canDeleteAll: Boolean, onNavigateBack: () -> Unit, onD
             }
         },
     )
+}
+
+@Composable
+private fun ExportHistoryDialog(visible: Boolean, onDismiss: () -> Unit, onExport: (HistoryExportFormat) -> Unit) {
+    if (!visible) return
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.history_export_dialog_title)) },
+        text = {
+            Column {
+                ExportFormatButton(
+                    label = stringResource(R.string.history_export_format_txt),
+                    onClick = { onExport(HistoryExportFormat.TXT) },
+                )
+                ExportFormatButton(
+                    label = stringResource(R.string.history_export_format_csv),
+                    onClick = { onExport(HistoryExportFormat.CSV) },
+                )
+                ExportFormatButton(
+                    label = stringResource(R.string.history_export_format_json),
+                    onClick = { onExport(HistoryExportFormat.JSON) },
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.history_export_cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun ExportFormatButton(label: String, onClick: () -> Unit) {
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(label)
+    }
 }
 
 @Composable

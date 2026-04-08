@@ -10,4 +10,13 @@
     <string name="share_item_description">Share item</string>
     <string name="delete_item_description">Delete item</string>
     <string name="speaker_label_prefix">Speaker</string>
+    <string name="history_export_action">Export All</string>
+    <string name="history_export_dialog_title">Export history</string>
+    <string name="history_export_format_txt">Text (.txt)</string>
+    <string name="history_export_format_csv">CSV (.csv)</string>
+    <string name="history_export_format_json">JSON (.json)</string>
+    <string name="history_export_cancel">Cancel</string>
+    <string name="history_export_empty">No history to export.</string>
+    <string name="history_export_success">History exported.</string>
+    <string name="history_export_failed">Could not export history.</string>
 </resources>
