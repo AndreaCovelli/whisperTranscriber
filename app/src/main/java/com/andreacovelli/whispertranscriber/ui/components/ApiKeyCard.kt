@@ -30,12 +30,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.andreacovelli.whispertranscriber.ApiKeyState
 import com.andreacovelli.whispertranscriber.KeyValidationState
+import com.andreacovelli.whispertranscriber.R
 import kotlinx.coroutines.launch
 
 @Composable
@@ -72,7 +74,17 @@ fun ApiKeyCard(
                     }
                     onResetValidation()
                 },
-                label = { Text(if (apiKeyState is ApiKeyState.Present) "Replace saved key (optional)" else label) },
+                label = {
+                    Text(
+                        if (apiKeyState is ApiKeyState.Present) {
+                            stringResource(
+                                R.string.api_key_replace_saved_optional,
+                            )
+                        } else {
+                            label
+                        },
+                    )
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .onFocusChanged { focusState ->
@@ -97,79 +109,19 @@ fun ApiKeyCard(
                     }) {
                         Icon(
                             imageVector = if (showKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = if (showKey) "Hide API key" else "Show API key",
+                            contentDescription = if (showKey) {
+                                stringResource(
+                                    R.string.api_key_hide,
+                                )
+                            } else {
+                                stringResource(R.string.api_key_show)
+                            },
                         )
                     }
                 },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             )
-
-            when (keyValidationState) {
-                is KeyValidationState.Validating -> {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                        Text("Validating API key...", style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-                is KeyValidationState.Error -> {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Icon(
-                            Icons.Default.Error,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.error,
-                        )
-                        Text(
-                            keyValidationState.message,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                }
-                is KeyValidationState.Idle -> {
-                    if (apiKeyState is ApiKeyState.Present) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Icon(
-                                Icons.Default.Lock,
-                                contentDescription = null,
-                                modifier = Modifier.size(12.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Text(
-                                "Encrypted & saved",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    } else if (apiKeyState is ApiKeyState.Error) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Icon(
-                                Icons.Default.Error,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.error,
-                            )
-                            Text(
-                                "Keystore Error: ${apiKeyState.message}. Please re-enter your key.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                    }
-                }
-            }
+            ApiKeyStatus(keyValidationState = keyValidationState, apiKeyState = apiKeyState)
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -182,9 +134,92 @@ fun ApiKeyCard(
                     showKey = false
                     scope.launch { snackbarHostState.showSnackbar(forgetMessage) }
                 }) {
-                    Text("Forget key")
+                    Text(stringResource(R.string.api_key_forget))
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ApiKeyStatus(keyValidationState: KeyValidationState, apiKeyState: ApiKeyState) {
+    when (keyValidationState) {
+        is KeyValidationState.Validating -> ApiKeyValidatingState()
+        is KeyValidationState.Error -> ApiKeyErrorState(message = keyValidationState.message)
+        is KeyValidationState.Idle -> ApiKeyIdleState(apiKeyState = apiKeyState)
+    }
+}
+
+@Composable
+private fun ApiKeyValidatingState() {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+        Text(stringResource(R.string.api_key_validating), style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+@Composable
+private fun ApiKeyErrorState(message: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(
+            Icons.Default.Error,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = MaterialTheme.colorScheme.error,
+        )
+        Text(
+            message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+}
+
+@Composable
+private fun ApiKeyIdleState(apiKeyState: ApiKeyState) {
+    when (apiKeyState) {
+        is ApiKeyState.Present -> {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Icon(
+                    Icons.Default.Lock,
+                    contentDescription = null,
+                    modifier = Modifier.size(12.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    stringResource(R.string.api_key_encrypted_saved),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        is ApiKeyState.Error -> {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Icon(
+                    Icons.Default.Error,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.error,
+                )
+                Text(
+                    stringResource(R.string.api_key_keystore_error, apiKeyState.message),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+        else -> Unit
     }
 }

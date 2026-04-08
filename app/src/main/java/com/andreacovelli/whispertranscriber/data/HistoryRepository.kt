@@ -11,6 +11,10 @@ import kotlinx.coroutines.flow.Flow
 interface HistoryRepository {
     fun getPagedHistory(rawQuery: String): Flow<PagingData<TranscriptionHistory>>
 
+    suspend fun hasHistory(): Boolean
+
+    suspend fun getExportPage(limit: Int, offset: Int): List<TranscriptionHistory>
+
     suspend fun insert(historyItem: TranscriptionHistory): Int
 
     suspend fun updateSummary(id: Int, summary: String, summaryModel: String)
@@ -41,6 +45,11 @@ class RoomHistoryRepository @Inject constructor(private val historyDao: Transcri
             },
         ).flow
     }
+
+    override suspend fun hasHistory(): Boolean = historyDao.hasHistory()
+
+    override suspend fun getExportPage(limit: Int, offset: Int): List<TranscriptionHistory> =
+        historyDao.getHistoryExportPage(limit, offset)
 
     override suspend fun insert(historyItem: TranscriptionHistory): Int = historyDao.insert(historyItem).toInt()
 

@@ -118,7 +118,8 @@ fun HistoryItemCard(
         DateTimeFormatter.ofPattern("MMM dd, yyyy - HH:mm", Locale.getDefault())
             .format(Instant.ofEpochMilli(item.timestamp).atZone(ZoneId.systemDefault()))
     }
-    val displayModel = remember(item.model) { item.model.ifBlank { "Unknown" } }
+    val unknownModelLabel = stringResource(R.string.history_item_unknown_model)
+    val displayModel = remember(item.model, unknownModelLabel) { item.model.ifBlank { unknownModelLabel } }
     val normalizedSearchTokens = remember(searchTokens) {
         searchTokens.filter(String::isNotBlank).distinct()
     }
@@ -153,13 +154,13 @@ fun HistoryItemCard(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                "Language: ${item.language}",
+                stringResource(R.string.history_item_language, item.language),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                "Model: $displayModel",
+                stringResource(R.string.history_item_model, displayModel),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -173,7 +174,7 @@ fun HistoryItemCard(
             if (!expanded) {
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "Show more",
+                    text = stringResource(R.string.history_item_show_more),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -228,12 +229,12 @@ private fun HistoryItemBody(
 private fun SummaryContent(item: TranscriptionHistory, summary: AnnotatedString, expanded: Boolean) {
     Spacer(Modifier.height(if (expanded) 12.dp else 6.dp))
     if (expanded) {
-        Text("Summary", style = MaterialTheme.typography.titleSmall)
+        Text(stringResource(R.string.job_summary_title), style = MaterialTheme.typography.titleSmall)
     }
     if (item.summaryModel.isNotBlank()) {
         Spacer(Modifier.height(2.dp))
         Text(
-            "Summary model: ${item.summaryModel}",
+            stringResource(R.string.history_item_summary_model, item.summaryModel),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -259,15 +260,15 @@ private fun HistoryItemActions(
 ) {
     val copyActions = remember(item.text, item.summary) {
         buildList {
-            add("text" to item.text)
-            if (item.summary.isNotBlank()) add("summary" to item.summary)
+            add(R.string.copy_text_label to item.text)
+            if (item.summary.isNotBlank()) add(R.string.copy_summary_label to item.summary)
         }
     }
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.End,
     ) {
-        copyActions.forEach { (type, content) ->
+        copyActions.forEach { (typeRes, content) ->
             TextButton(onClick = { onCopy(content) }) {
                 Icon(
                     Icons.Default.ContentCopy,
@@ -275,7 +276,7 @@ private fun HistoryItemActions(
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(4.dp))
-                Text(stringResource(R.string.copy_type, type), maxLines = 1, softWrap = false)
+                Text(stringResource(R.string.copy_type, stringResource(typeRes)), maxLines = 1, softWrap = false)
             }
         }
         IconButton(onClick = onShare) {

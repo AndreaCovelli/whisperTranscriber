@@ -69,13 +69,13 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit, onNavi
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Whisper Transcriber") },
+                title = { Text(stringResource(R.string.main_title)) },
                 actions = {
                     IconButton(onClick = onNavigateToHistory) {
-                        Icon(Icons.Default.History, contentDescription = "View Transcription History")
+                        Icon(Icons.Default.History, contentDescription = stringResource(R.string.main_open_history))
                     }
                     IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.main_open_settings))
                     }
                 },
             )
@@ -190,12 +190,12 @@ private fun ProviderSummaryCard(
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Text(
-                    text = "Transcription: $transcriptionProviderLabel",
+                    text = stringResource(R.string.main_transcription_summary, transcriptionProviderLabel),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
                 Text(
-                    text = "Summarizer: $summarizerProviderLabel",
+                    text = stringResource(R.string.main_summarizer_summary, summarizerProviderLabel),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
@@ -203,7 +203,7 @@ private fun ProviderSummaryCard(
             Spacer(Modifier.width(8.dp))
             Icon(
                 Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = "Go to Settings",
+                contentDescription = stringResource(R.string.main_go_to_settings),
                 modifier = Modifier.size(16.dp),
                 tint = MaterialTheme.colorScheme.onSecondaryContainer,
             )
@@ -219,7 +219,7 @@ private fun StatusCard(status: String) {
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
-                "Status",
+                stringResource(R.string.main_status_title),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -239,7 +239,7 @@ private fun BatchProgressCard(state: BatchProgressState) {
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                text = "Processing ${state.currentFileNumber} of ${state.totalFiles} files...",
+                text = stringResource(R.string.main_batch_progress, state.currentFileNumber, state.totalFiles),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
@@ -270,7 +270,7 @@ private fun EmptyJobsState() {
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                "Share one or more audio files to start transcribing.",
+                stringResource(R.string.main_empty_jobs),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -282,7 +282,7 @@ private fun EmptyJobsState() {
 private fun ClearCompletedRow(onClick: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         TextButton(onClick = onClick) {
-            Text("Clear completed")
+            Text(stringResource(R.string.main_clear_completed))
         }
     }
 }
@@ -316,13 +316,17 @@ private fun rememberJobActions(
             copyTranscript = {
                 scope.launch {
                     clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", job.transcript)))
-                    Toast.makeText(context, "Copied transcript", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.main_copied_transcript),
+                        Toast.LENGTH_SHORT,
+                    ).show()
                 }
             },
             copySummary = {
                 scope.launch {
                     clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", job.summary)))
-                    Toast.makeText(context, "Copied summary", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.main_copied_summary), Toast.LENGTH_SHORT).show()
                 }
             },
             shareTranscript = { shareText(context, job.transcript, shareTranscriptTitle) },
