@@ -18,3 +18,8 @@ fun providerFamilyLabel(provider: TranscriptionProvider): String = when (provide
     TranscriptionProvider.GEMINI_PRO -> "Gemini Pro"
     TranscriptionProvider.GEMINI_CUSTOM -> "Gemini Custom"
 }
+
+fun providerFamilyLabelForModel(modelName: String): String = TranscriptionProvider.entries
+    .find { it.modelName == modelName }
+    ?.let(::providerFamilyLabel)
+    ?: "Gemini Custom"

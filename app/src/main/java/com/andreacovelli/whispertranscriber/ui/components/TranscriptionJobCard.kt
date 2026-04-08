@@ -269,12 +269,7 @@ private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJob
     )
     if (job.summaryModel.isNotBlank()) {
         Spacer(Modifier.height(4.dp))
-        val providerLabel = when (job.summaryModel) {
-            TranscriptionProvider.GEMINI_FLASH_LITE.modelName -> "Gemini Flash Lite"
-            TranscriptionProvider.GEMINI_FLASH.modelName -> "Gemini Flash"
-            TranscriptionProvider.GEMINI_PRO.modelName -> "Gemini Pro"
-            else -> "Gemini Custom"
-        }
+        val providerLabel = providerFamilyLabelForModel(job.summaryModel)
         Text(
             text = "Provider: $providerLabel • Model: ${job.summaryModel}",
             style = MaterialTheme.typography.labelMedium,
