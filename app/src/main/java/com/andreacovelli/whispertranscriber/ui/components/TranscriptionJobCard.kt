@@ -51,7 +51,7 @@ fun TranscriptionJobCard(job: TranscriptionJobState, canSummarize: Boolean, acti
                     ),
                 ),
         ) {
-            JobHeader(job = job, onCancel = actions.cancel, onDelete = actions.delete)
+            JobHeader(job = job, onDelete = actions.delete)
             JobSecondaryText(job = job, queuedProviderLabel = queuedProviderLabel)
             Text(job.status, style = MaterialTheme.typography.bodySmall)
             JobErrorSection(job = job, onRetry = actions.retryTranscription)
@@ -66,8 +66,7 @@ fun TranscriptionJobCard(job: TranscriptionJobState, canSummarize: Boolean, acti
 }
 
 @Composable
-private fun JobHeader(job: TranscriptionJobState, onCancel: () -> Unit, onDelete: () -> Unit) {
-    val showHeaderCancel = job.status == "Queued" || (job.isRunning && job.transcript.isBlank())
+private fun JobHeader(job: TranscriptionJobState, onDelete: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -78,11 +77,7 @@ private fun JobHeader(job: TranscriptionJobState, onCancel: () -> Unit, onDelete
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.weight(1f),
         )
-        if (showHeaderCancel) {
-            TextButton(onClick = onCancel) {
-                Text("Cancel", color = MaterialTheme.colorScheme.error)
-            }
-        } else if (!job.isRunning) {
+        if (!job.isRunning) {
             IconButton(onClick = onDelete) {
                 Icon(
                     imageVector = Icons.Default.Delete,
