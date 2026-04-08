@@ -22,8 +22,18 @@ class TranscriptionPresentationTest {
     }
 
     @Test
+    fun providerFamilyLabelForModel_classifiesVersionedFlashModelsAsGeminiFlash() {
+        assertEquals("Gemini Flash", providerFamilyLabelForModel("gemini-2.5-flash-preview-04-17"))
+    }
+
+    @Test
+    fun providerFamilyLabelForModel_classifiesVersionedFlashLiteModelsAsGeminiFlashLite() {
+        assertEquals("Gemini Flash Lite", providerFamilyLabelForModel("gemini-2.0-flash-lite-preview"))
+    }
+
+    @Test
     fun providerFamilyLabelForModel_returnsGeminiCustomForUnknownModel() {
-        assertEquals("Gemini Custom", providerFamilyLabelForModel("gemini-2.5-flash"))
+        assertEquals("Gemini Custom", providerFamilyLabelForModel("gemini-experimental-foo"))
     }
 
     @Test
