@@ -48,9 +48,8 @@ object AppModule {
     fun provideTranscriptionJobDao(database: AppDatabase): TranscriptionJobDao = database.transcriptionJobDao()
 
     @Provides
-    fun provideTranscriptionJobSummarizationDao(
-        database: AppDatabase,
-    ): TranscriptionJobSummarizationDao = database.transcriptionJobSummarizationDao()
+    fun provideTranscriptionJobSummarizationDao(database: AppDatabase): TranscriptionJobSummarizationDao =
+        database.transcriptionJobSummarizationDao()
 
     @Provides
     @Singleton
