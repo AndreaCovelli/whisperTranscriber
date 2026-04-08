@@ -38,6 +38,7 @@ exceptions:
     ignoredExceptionTypes:
       - InterruptedException
       - NumberFormatException
+      - ParseException
 
 naming:
   FunctionNaming:
@@ -52,9 +53,26 @@ naming:
 potential-bugs:
   UnsafeCallOnNullableType:
     active: true
+  EqualsWithHashCodeExist:
+    active: true
+  UnreachableCode:
+    active: true
+
+empty-blocks:
+  EmptyCatchBlock:
+    active: true
+    allowedExceptionNameRegex: '^(ignore|expected)$'
 
 style:
   UnusedImports:
+    active: true
+  UnusedPrivateClass:
+    active: true
+  UnusedPrivateMember:
+    active: true
+  UnusedPrivateProperty:
+    active: true
+  ModifierOrder:
     active: true
   MagicNumber:
     active: false
