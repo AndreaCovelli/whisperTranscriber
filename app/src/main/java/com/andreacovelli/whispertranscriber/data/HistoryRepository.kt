@@ -15,6 +15,8 @@ interface HistoryRepository {
 
     suspend fun getAllForExport(): List<TranscriptionHistory>
 
+    suspend fun getExportPage(limit: Int, offset: Int): List<TranscriptionHistory>
+
     suspend fun insert(historyItem: TranscriptionHistory): Int
 
     suspend fun updateSummary(id: Int, summary: String, summaryModel: String)
@@ -49,6 +51,9 @@ class RoomHistoryRepository @Inject constructor(private val historyDao: Transcri
     override suspend fun hasHistory(): Boolean = historyDao.hasHistory()
 
     override suspend fun getAllForExport(): List<TranscriptionHistory> = historyDao.getAllHistoryForExport()
+
+    override suspend fun getExportPage(limit: Int, offset: Int): List<TranscriptionHistory> =
+        historyDao.getHistoryExportPage(limit, offset)
 
     override suspend fun insert(historyItem: TranscriptionHistory): Int = historyDao.insert(historyItem).toInt()
 

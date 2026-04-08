@@ -40,6 +40,9 @@ class HistoryViewModel @Inject constructor(
     @param:ApplicationContext private val appContext: Context,
     private val historyRepository: HistoryRepository,
 ) : ViewModel() {
+    private companion object {
+        const val EXPORT_PAGE_SIZE = 100
+    }
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -74,12 +77,15 @@ class HistoryViewModel @Inject constructor(
         viewModelScope.launch {
             val result = runCatching {
                 withContext(Dispatchers.IO) {
-                    val items = historyRepository.getAllForExport()
-                    val content = buildHistoryExport(items, format)
                     val outputStream = appContext.contentResolver.openOutputStream(uri)
                         ?: throw IOException("Failed to open export destination.")
                     outputStream.bufferedWriter(Charsets.UTF_8).use { writer ->
-                        writer.write(content)
+                        writeHistoryExport(
+                            writer = writer,
+                            format = format,
+                            pageSize = EXPORT_PAGE_SIZE,
+                            loadPage = historyRepository::getExportPage,
+                        )
                     }
                 }
             }

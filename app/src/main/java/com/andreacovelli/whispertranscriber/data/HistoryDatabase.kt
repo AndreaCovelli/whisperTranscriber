@@ -86,6 +86,9 @@ interface TranscriptionHistoryDao {
     @Query("SELECT * FROM transcription_history ORDER BY timestamp DESC")
     suspend fun getAllHistoryForExport(): List<TranscriptionHistory>
 
+    @Query("SELECT * FROM transcription_history ORDER BY timestamp DESC LIMIT :limit OFFSET :offset")
+    suspend fun getHistoryExportPage(limit: Int, offset: Int): List<TranscriptionHistory>
+
     @Query("SELECT EXISTS(SELECT 1 FROM transcription_history)")
     suspend fun hasHistory(): Boolean
 

@@ -35,11 +35,40 @@ class HistoryExportTest {
 
         assertEquals(
             buildString {
-                appendLine("id,timestamp,displayName,language,model,summaryModel,text,summary")
+                append(
+                    "\"id\",\"timestamp\",\"displayName\",\"language\",\"model\",\"summaryModel\",\"text\",\"summary\"\r\n",
+                )
                 append("\"7\",\"2026-03-07T23:04:16Z\",\"quarterly,\"\"review\"\".wav\",\"en\",")
                 append("\"whisper-large-v3\",\"gemini-2.5-flash\",\"Line 1,\nLine 2\",\"Needs \"\"quotes\"\"\"")
             },
             export,
+        )
+    }
+
+    @Test
+    fun writeHistoryExport_streamsCsvWithEscapedHeaderAndCrLfRows() {
+        val writer = java.io.StringWriter()
+
+        kotlinx.coroutines.runBlocking {
+            writeHistoryExport(
+                writer = writer,
+                format = HistoryExportFormat.CSV,
+                pageSize = 1,
+            ) { limit, offset ->
+                listOf(
+                    historyItem(id = 2, timestamp = 2_000L, text = "Newest"),
+                    historyItem(id = 1, timestamp = 1_000L, text = "Older"),
+                ).drop(offset).take(limit)
+            }
+        }
+
+        assertEquals(
+            "\"id\",\"timestamp\",\"displayName\",\"language\",\"model\",\"summaryModel\",\"text\",\"summary\"\r\n" +
+                "\"2\",\"1970-01-01T00:00:02Z\",\"meeting.wav\",\"en\",\"whisper-large-v3\"," +
+                "\"gemini-2.5-flash\",\"Newest\",\"Summary body\"\r\n" +
+                "\"1\",\"1970-01-01T00:00:01Z\",\"meeting.wav\",\"en\",\"whisper-large-v3\"," +
+                "\"gemini-2.5-flash\",\"Older\",\"Summary body\"",
+            writer.toString(),
         )
     }
 
