@@ -444,9 +444,9 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         fun getDatabase(context: Context): AppDatabase = INSTANCE ?: synchronized(this) {
-            val instance = createBuilder(context).build()
-            INSTANCE = instance
-            instance
+            INSTANCE ?: createBuilder(context).build().also { instance ->
+                INSTANCE = instance
+            }
         }
     }
 }

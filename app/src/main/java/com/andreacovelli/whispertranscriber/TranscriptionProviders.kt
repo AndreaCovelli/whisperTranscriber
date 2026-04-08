@@ -13,7 +13,7 @@ import com.google.genai.types.UploadFileConfig
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -104,6 +104,7 @@ internal class GeminiTranscriber(
     private val apiKey: CharArray,
     private val modelName: String,
     private val speakerDiarizationEnabled: Boolean,
+    private val ioDispatcher: CoroutineDispatcher,
 ) : ProviderTranscriber {
     companion object {
         private const val TYPE_OBJECT = "OBJECT"
@@ -116,7 +117,7 @@ internal class GeminiTranscriber(
         try {
             emit(TranscriptionResult.Loading("Uploading audio ($mimeType) via File API..."))
             apiKey.useGenAiClient { client ->
-                uploadedFile = withContext(Dispatchers.IO) {
+                uploadedFile = withContext(ioDispatcher) {
                     val uploadConfig = UploadFileConfig.builder().mimeType(mimeType).build()
                     client.files.upload(audioFile.absolutePath, uploadConfig)
                 }
@@ -136,7 +137,7 @@ internal class GeminiTranscriber(
                     ),
                     audioPart,
                 )
-                val response = withContext(Dispatchers.IO) {
+                val response = withContext(ioDispatcher) {
                     client.models.generateContent(modelName, content, config)
                 }
                 val json = response.text() ?: "{}"
@@ -168,7 +169,7 @@ internal class GeminiTranscriber(
             uploadedFile?.let { remoteFile ->
                 runCatching {
                     apiKey.useGenAiClient { client ->
-                        withContext(NonCancellable + Dispatchers.IO) {
+                        withContext(NonCancellable + ioDispatcher) {
                             remoteFile.name().orElse(null)?.let { remoteFileName ->
                                 client.files.delete(remoteFileName, null)
                             }

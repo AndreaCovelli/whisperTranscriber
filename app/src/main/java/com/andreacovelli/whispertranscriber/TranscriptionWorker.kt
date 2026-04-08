@@ -16,13 +16,14 @@ import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
+import com.andreacovelli.whispertranscriber.di.IoDispatcher
 import com.andreacovelli.whispertranscriber.media.HardwareAudioConverter
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
@@ -71,6 +72,7 @@ class TranscriptionWorker @AssistedInject constructor(
     private val settings: ApiKeyManager,
     private val repository: TranscriptionRepository,
     private val elevenLabsApi: ElevenLabsApi,
+    @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : CoroutineWorker(appContext, workerParams) {
 
     private val notificationManager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -243,7 +245,7 @@ class TranscriptionWorker @AssistedInject constructor(
             0f,
         )
         updateNotification("Converting audio...")
-        val outputFile = withContext(Dispatchers.IO) {
+        val outputFile = withContext(ioDispatcher) {
             File.createTempFile("${CONVERTED_FILE_PREFIX}$jobId", ".wav", app.cacheDir)
         }
         HardwareAudioConverter.convertToWav(
@@ -356,6 +358,7 @@ class TranscriptionWorker @AssistedInject constructor(
             apiKey = keyChars,
             modelName = modelName,
             speakerDiarizationEnabled = speakerDiarizationEnabled,
+            ioDispatcher = ioDispatcher,
         )
     }
 
