@@ -22,15 +22,14 @@ fun providerFamilyLabel(provider: TranscriptionProvider): String = when (provide
 fun providerFamilyLabelForModel(modelName: String): String {
     val normalizedModelName = modelName.trim().lowercase()
 
-    TranscriptionProvider.entries
+    val provider = TranscriptionProvider.entries
         .find { it.modelName?.lowercase() == normalizedModelName }
-        ?.let(::providerFamilyLabel)
-        ?.let { return it }
+        ?: when {
+            normalizedModelName.contains("flash-lite") -> TranscriptionProvider.GEMINI_FLASH_LITE
+            normalizedModelName.contains("flash") -> TranscriptionProvider.GEMINI_FLASH
+            normalizedModelName.contains("pro") -> TranscriptionProvider.GEMINI_PRO
+            else -> TranscriptionProvider.GEMINI_CUSTOM
+        }
 
-    return when {
-        normalizedModelName.contains("flash-lite") -> providerFamilyLabel(TranscriptionProvider.GEMINI_FLASH_LITE)
-        normalizedModelName.contains("flash") -> providerFamilyLabel(TranscriptionProvider.GEMINI_FLASH)
-        normalizedModelName.contains("pro") -> providerFamilyLabel(TranscriptionProvider.GEMINI_PRO)
-        else -> providerFamilyLabel(TranscriptionProvider.GEMINI_CUSTOM)
-    }
+    return providerFamilyLabel(provider)
 }
