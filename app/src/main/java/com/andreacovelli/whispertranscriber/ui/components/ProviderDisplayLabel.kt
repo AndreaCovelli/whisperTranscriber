@@ -33,3 +33,6 @@ fun providerFamilyLabelForModel(modelName: String): String {
 
     return providerFamilyLabel(provider)
 }
+
+fun providerFamilyLabel(summaryProvider: TranscriptionProvider?, modelName: String): String =
+    summaryProvider?.let(::providerFamilyLabel) ?: providerFamilyLabelForModel(modelName)

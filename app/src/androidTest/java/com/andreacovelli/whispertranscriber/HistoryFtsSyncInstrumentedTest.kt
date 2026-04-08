@@ -57,7 +57,7 @@ class HistoryFtsSyncInstrumentedTest {
         assertTrue(ftsMatches("meeting*"))
 
         historyDao.updateText(historyId, "Updated transcript body")
-        historyDao.updateSummary(historyId, "Refined summary", "gemini-2.5-flash")
+        historyDao.updateSummary(historyId, "Refined summary", "GEMINI_FLASH", "gemini-2.5-flash")
 
         assertFalse(ftsMatches("Original*"))
         assertTrue(ftsMatches("Updated*"))
@@ -93,7 +93,7 @@ class HistoryFtsSyncInstrumentedTest {
             assertTrue(ftsMatches(migratedDb, "sprint*"))
 
             historyDao.updateText(historyId, "Retrospective notes")
-            historyDao.updateSummary(historyId, "Retrospective summary", "gemini-2.5-pro")
+            historyDao.updateSummary(historyId, "Retrospective summary", "GEMINI_PRO", "gemini-2.5-pro")
 
             assertFalse(ftsMatches(migratedDb, "sprint*"))
             assertTrue(ftsMatches(migratedDb, "Retrospective*"))

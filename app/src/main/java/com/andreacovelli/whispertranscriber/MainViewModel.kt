@@ -67,6 +67,7 @@ data class TranscriptionJobState(
     val language: String = "",
     val model: String = "",
     val summary: String = "",
+    val summaryProvider: TranscriptionProvider? = null,
     val summaryModel: String = "",
     val summaryStatus: String = "",
     val autoSummaryAttempted: Boolean = false,
@@ -92,6 +93,9 @@ fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     language = language,
     model = model,
     summary = summary,
+    summaryProvider = summaryProviderName
+        .takeIf(String::isNotBlank)
+        ?.let { runCatching { TranscriptionProvider.valueOf(it) }.getOrNull() },
     summaryModel = summaryModel,
     summaryStatus = summaryStatus,
     autoSummaryAttempted = autoSummaryAttempted,

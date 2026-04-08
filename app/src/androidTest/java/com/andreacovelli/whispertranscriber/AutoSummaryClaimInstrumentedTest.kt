@@ -36,8 +36,8 @@ class AutoSummaryClaimInstrumentedTest {
         val summarizationDao = db.transcriptionJobSummarizationDao()
         val jobId = jobDao.insert(testJob()).toInt()
 
-        val firstClaim = summarizationDao.claimAutoSummary(jobId, "gemini-2.5-flash")
-        val secondClaim = summarizationDao.claimAutoSummary(jobId, "gemini-2.5-flash")
+        val firstClaim = summarizationDao.claimAutoSummary(jobId, "GEMINI_FLASH", "gemini-2.5-flash")
+        val secondClaim = summarizationDao.claimAutoSummary(jobId, "GEMINI_FLASH", "gemini-2.5-flash")
         val storedJob = jobDao.getJobById(jobId)
 
         assertEquals(1, firstClaim)
@@ -52,8 +52,8 @@ class AutoSummaryClaimInstrumentedTest {
         val summarizationDao = db.transcriptionJobSummarizationDao()
         val jobId = jobDao.insert(testJob(summary = "Existing summary")).toInt()
 
-        val firstClaim = summarizationDao.claimManualSummary(jobId, "gemini-2.5-flash")
-        val secondClaim = summarizationDao.claimManualSummary(jobId, "gemini-2.5-flash")
+        val firstClaim = summarizationDao.claimManualSummary(jobId, "GEMINI_FLASH", "gemini-2.5-flash")
+        val secondClaim = summarizationDao.claimManualSummary(jobId, "GEMINI_FLASH", "gemini-2.5-flash")
         val storedJob = jobDao.getJobById(jobId)
 
         assertEquals(1, firstClaim)

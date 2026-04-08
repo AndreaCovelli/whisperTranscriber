@@ -24,6 +24,7 @@ data class TranscriptionHistory(
     val language: String,
     val model: String = "",
     val summary: String = "",
+    val summaryProviderName: String = "",
     val summaryModel: String = "",
     val displayName: String = "",
     val timestamp: Long = System.currentTimeMillis(),
@@ -56,6 +57,7 @@ data class TranscriptionJob(
     val language: String = "",
     val model: String = "",
     val summary: String = "",
+    val summaryProviderName: String = "",
     val summaryModel: String = "",
     val summaryStatus: String = "",
     val error: String? = null,
@@ -100,13 +102,22 @@ interface TranscriptionHistoryDao {
     )
     fun searchHistoryPaged(query: String): PagingSource<Int, TranscriptionHistory>
 
-    @Query("UPDATE transcription_history SET summary = :summary, summaryModel = :summaryModel WHERE id = :id")
-    suspend fun updateSummary(id: Int, summary: String, summaryModel: String)
+    @Query(
+        """
+        UPDATE transcription_history
+        SET summary = :summary,
+            summaryProviderName = :summaryProviderName,
+            summaryModel = :summaryModel
+        WHERE id = :id
+        """,
+    )
+    suspend fun updateSummary(id: Int, summary: String, summaryProviderName: String, summaryModel: String)
 
     @Query(
         """
         UPDATE transcription_history
         SET summary = :summary,
+            summaryProviderName = :summaryProviderName,
             summaryModel = :summaryModel
         WHERE id = (
             SELECT historyId
@@ -115,7 +126,7 @@ interface TranscriptionHistoryDao {
         )
         """,
     )
-    suspend fun updateSummaryByJobId(jobId: Int, summary: String, summaryModel: String)
+    suspend fun updateSummaryByJobId(jobId: Int, summary: String, summaryProviderName: String, summaryModel: String)
 
     @Query("UPDATE transcription_history SET text = :text WHERE id = :id")
     suspend fun updateText(id: Int, text: String)
@@ -163,6 +174,7 @@ interface TranscriptionJobDao {
             language = '',
             model = '',
             summary = '',
+            summaryProviderName = '',
             summaryModel = '',
             status = 'Cleared'
         WHERE id = :id
@@ -191,6 +203,7 @@ interface TranscriptionJobDao {
             language = '',
             model = '',
             summary = '',
+            summaryProviderName = '',
             summaryModel = '',
             summaryStatus = '',
             error = NULL,
@@ -228,6 +241,7 @@ interface TranscriptionJobSummarizationDao {
         """
         UPDATE active_jobs
         SET summary = '',
+            summaryProviderName = '',
             summaryModel = '',
             summaryStatus = '',
             summaryError = NULL,
@@ -242,13 +256,14 @@ interface TranscriptionJobSummarizationDao {
         UPDATE active_jobs
         SET isSummarizing = 0,
             summary = :summary,
+            summaryProviderName = :summaryProviderName,
             summaryModel = :summaryModel,
             summaryStatus = 'Summary generated',
             summaryError = NULL
         WHERE id = :id
         """,
     )
-    suspend fun succeedSummarization(id: Int, summary: String, summaryModel: String)
+    suspend fun succeedSummarization(id: Int, summary: String, summaryProviderName: String, summaryModel: String)
 
     @Query("UPDATE active_jobs SET isSummarizing = 0, summaryStatus = 'Error', summaryError = :error WHERE id = :id")
     suspend fun failSummarization(id: Int, error: String?)
@@ -267,6 +282,7 @@ interface TranscriptionJobSummarizationDao {
         UPDATE active_jobs
         SET isSummarizing = 1,
             summary = '',
+            summaryProviderName = :providerName,
             summaryModel = :modelName,
             summaryStatus = 'Summarizing...',
             summaryError = NULL,
@@ -281,13 +297,14 @@ interface TranscriptionJobSummarizationDao {
           AND summaryError IS NULL
         """,
     )
-    suspend fun claimAutoSummary(id: Int, modelName: String): Int
+    suspend fun claimAutoSummary(id: Int, providerName: String, modelName: String): Int
 
     @Query(
         """
         UPDATE active_jobs
         SET isSummarizing = 1,
             summary = '',
+            summaryProviderName = :providerName,
             summaryModel = :modelName,
             summaryStatus = 'Summarizing...',
             summaryError = NULL,
@@ -299,7 +316,7 @@ interface TranscriptionJobSummarizationDao {
           AND error IS NULL
         """,
     )
-    suspend fun claimManualSummary(id: Int, modelName: String): Int
+    suspend fun claimManualSummary(id: Int, providerName: String, modelName: String): Int
 
     @Query("UPDATE active_jobs SET isSummarizing = 0 WHERE isSummarizing = 1")
     suspend fun resetStaleSummaries(): Int
@@ -307,7 +324,7 @@ interface TranscriptionJobSummarizationDao {
 
 @Database(
     entities = [TranscriptionHistory::class, TranscriptionHistoryFts::class, TranscriptionJob::class],
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -423,6 +440,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transcription_history ADD COLUMN summaryProviderName TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE active_jobs ADD COLUMN summaryProviderName TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         val MIGRATIONS = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -434,6 +458,7 @@ abstract class AppDatabase : RoomDatabase() {
             MIGRATION_8_9,
             MIGRATION_9_10,
             MIGRATION_10_11,
+            MIGRATION_11_12,
         )
 
         private fun createBuilder(context: Context) = Room.databaseBuilder(
