@@ -34,6 +34,7 @@ object HardwareAudioConverter {
     private const val BYTES_IN_MEGABYTE = 1024L * 1024L
     private const val CONVERSION_SIZE_BUFFER_BYTES = 10 * BYTES_IN_MEGABYTE // 10 MiB
     private const val DEFAULT_CONVERSION_SIZE_BYTES = 50 * BYTES_IN_MEGABYTE // 50 MiB
+    private const val CODEC_BUFFER_TIMEOUT_US = 10000L
 
     data class Result(val sampleRate: Int, val channelCount: Int, val durationUs: Long)
 
@@ -257,8 +258,6 @@ object HardwareAudioConverter {
         scratchBuffers: ScratchBuffers,
         onProgress: (suspend (Float) -> Unit)?,
     ) {
-        val inputTimeoutUs = 10000L
-        val outputTimeoutUs = 10000L
         val info = MediaCodec.BufferInfo()
         var inputEos = false
         var outputEos = false
@@ -269,7 +268,7 @@ object HardwareAudioConverter {
                 inputEos = queueNextInputBuffer(
                     decoder = decoder,
                     extractor = extractor,
-                    inputTimeoutUs = inputTimeoutUs,
+                    inputTimeoutUs = CODEC_BUFFER_TIMEOUT_US,
                     durationUs = durationUs,
                     lastProgress = lastProgress,
                     onProgress = onProgress,
@@ -280,7 +279,6 @@ object HardwareAudioConverter {
             outputEos = handleDecoderOutput(
                 decoder = decoder,
                 info = info,
-                outputTimeoutUs = outputTimeoutUs,
                 outputFile = outputFile,
                 state = state,
                 scratchBuffers = scratchBuffers,
@@ -334,11 +332,10 @@ object HardwareAudioConverter {
     private fun handleDecoderOutput(
         decoder: MediaCodec,
         info: MediaCodec.BufferInfo,
-        outputTimeoutUs: Long,
         outputFile: File,
         state: DecoderState,
         scratchBuffers: ScratchBuffers,
-    ): Boolean = when (val outputIndex = decoder.dequeueOutputBuffer(info, outputTimeoutUs)) {
+    ): Boolean = when (val outputIndex = decoder.dequeueOutputBuffer(info, CODEC_BUFFER_TIMEOUT_US)) {
         MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
             updateDecoderState(decoder.outputFormat, state)
             false

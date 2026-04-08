@@ -49,7 +49,7 @@ private fun buildPrefixMatchRegex(tokens: List<String>): Regex? {
         .distinct()
         .sortedByDescending { it.length }
         .joinToString("|") { Regex.escape(it) }
-    return Regex("""\b(?:$pattern)""", RegexOption.IGNORE_CASE)
+    return Regex("""\b$pattern""", RegexOption.IGNORE_CASE)
 }
 
 private fun buildHighlightedText(

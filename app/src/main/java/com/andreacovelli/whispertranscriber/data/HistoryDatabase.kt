@@ -12,7 +12,6 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import androidx.room.Update
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
@@ -123,9 +122,6 @@ interface TranscriptionHistoryDao {
 interface TranscriptionJobDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(job: TranscriptionJob): Long
-
-    @Update
-    suspend fun update(job: TranscriptionJob)
 
     @Query("UPDATE active_jobs SET isRunning = :isRunning, status = :status WHERE id = :id")
     suspend fun updateRunning(id: Int, isRunning: Boolean, status: String)
