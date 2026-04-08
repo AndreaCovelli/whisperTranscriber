@@ -105,27 +105,27 @@ object HardwareAudioConverter {
             }
 
             decoder = MediaCodec.createDecoderByType(requireNotNull(srcFormat.getString(MediaFormat.KEY_MIME)))
-            requireNotNull(decoder).configure(srcFormat, null, null, 0)
+            decoder.configure(srcFormat, null, null, 0)
             decoder.start()
 
             state = createDecoderState(srcFormat, forceMono, targetSampleRate)
             val scratchBuffers = ScratchBuffers()
             decodeAudioStream(
-                extractor = requireNotNull(extractor),
-                decoder = requireNotNull(decoder),
+                extractor = extractor,
+                decoder = decoder,
                 outputFile = outputFile,
                 durationUs = durationUs,
-                state = requireNotNull(state),
+                state = state,
                 scratchBuffers = scratchBuffers,
                 onProgress = onProgress,
             )
 
-            flushResampler(requireNotNull(state), outputFile)
+            flushResampler(state, outputFile)
             if (durationUs > 0) onProgress?.invoke(1f)
 
             Result(
                 sampleRate = targetSampleRate,
-                channelCount = requireNotNull(state).outputChannels,
+                channelCount = state.outputChannels,
                 durationUs = durationUs,
             )
         } finally {

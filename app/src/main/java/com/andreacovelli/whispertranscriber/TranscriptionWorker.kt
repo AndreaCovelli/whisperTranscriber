@@ -224,7 +224,7 @@ class TranscriptionWorker @AssistedInject constructor(
         return if (conversionNeeded) {
             prepareConvertedAudio(app, jobId, uri, inputMimeType, usingElevenLabs)
         } else {
-            prepareNativeAudio(app, jobId, uri, requireNotNull(inputMimeType), usingElevenLabs)
+            prepareNativeAudio(app, jobId, uri, inputMimeType, usingElevenLabs)
         }
     }
 
@@ -293,7 +293,7 @@ class TranscriptionWorker @AssistedInject constructor(
         PreparedAudioInput.Gemini(file = tempFile, mimeType = inputMimeType, tempFileToClean = tempFile)
     }
 
-    private suspend fun copyInputToTempFile(app: Application, jobId: Int, uri: Uri): File {
+    private fun copyInputToTempFile(app: Application, jobId: Int, uri: Uri): File {
         val contentResolver = app.contentResolver
         return contentResolver.openInputStream(uri)?.use { input ->
             File.createTempFile("${DIRECT_FILE_PREFIX}$jobId", ".tmp", app.cacheDir).apply {

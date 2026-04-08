@@ -1,6 +1,9 @@
 package com.andreacovelli.whispertranscriber
 
 import com.andreacovelli.whispertranscriber.media.formatElevenLabsSpeakerTranscript
+import com.andreacovelli.whispertranscriber.ui.components.providerDisplayLabel
+import com.andreacovelli.whispertranscriber.ui.components.providerFamilyLabel
+import com.andreacovelli.whispertranscriber.ui.components.providerFamilyLabelForModel
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 import com.andreacovelli.whispertranscriber.ui.screens.buildBatchProgressState
 import org.junit.Assert.assertEquals
@@ -8,6 +11,37 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class TranscriptionPresentationTest {
+    @Test
+    fun providerFamilyLabel_returnsGeminiCustomForCustomProvider() {
+        assertEquals("Gemini Custom", providerFamilyLabel(TranscriptionProvider.GEMINI_CUSTOM))
+    }
+
+    @Test
+    fun providerFamilyLabelForModel_returnsKnownProviderLabelForBuiltInModel() {
+        assertEquals("Gemini Flash", providerFamilyLabelForModel("gemini-flash-latest"))
+    }
+
+    @Test
+    fun providerFamilyLabelForModel_returnsGeminiCustomForUnknownModel() {
+        assertEquals("Gemini Custom", providerFamilyLabelForModel("gemini-2.5-flash"))
+    }
+
+    @Test
+    fun providerDisplayLabel_includesConfiguredCustomModelName() {
+        assertEquals(
+            "gemini-2.5-flash",
+            providerDisplayLabel(TranscriptionProvider.GEMINI_CUSTOM, "gemini-2.5-flash"),
+        )
+    }
+
+    @Test
+    fun providerDisplayLabel_usesNotSetFallbackForBlankCustomModelName() {
+        assertEquals(
+            "Custom Gemini model (not set)",
+            providerDisplayLabel(TranscriptionProvider.GEMINI_CUSTOM, ""),
+        )
+    }
+
     @Test
     fun buildBatchProgressState_returnsNullForSingleJob() {
         val jobs = listOf(
