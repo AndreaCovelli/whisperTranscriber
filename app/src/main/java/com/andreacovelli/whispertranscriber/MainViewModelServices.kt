@@ -450,17 +450,24 @@ class SummarizationService @Inject constructor(
 
     private fun resolveSummarizerSelection(state: UiState): SummarizerSelection {
         val provider = state.summarizerProvider
-        val modelName = when {
+        return when {
             provider == TranscriptionProvider.GEMINI_CUSTOM -> {
-                state.summarizerCustomGeminiModelName.ifBlank {
+                val modelName = state.summarizerCustomGeminiModelName.ifBlank {
                     throw IllegalStateException("No custom Gemini model set for summarization.")
                 }
+                SummarizerSelection(provider = provider, modelName = modelName)
             }
-            provider.isGemini() -> requireNotNull(provider.modelName)
-            else -> requireNotNull(TranscriptionProvider.GEMINI_FLASH.modelName)
+            provider.isGemini() -> {
+                SummarizerSelection(provider = provider, modelName = requireNotNull(provider.modelName))
+            }
+            else -> {
+                val defaultProvider = TranscriptionProvider.GEMINI_FLASH
+                SummarizerSelection(
+                    provider = defaultProvider,
+                    modelName = requireNotNull(defaultProvider.modelName),
+                )
+            }
         }
-
-        return SummarizerSelection(provider = provider, modelName = modelName)
     }
 
     private suspend fun requestSummary(text: String, apiKey: CharArray, modelName: String): SummaryData =
