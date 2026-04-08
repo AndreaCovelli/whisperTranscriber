@@ -353,6 +353,8 @@ data class SummarizationResult(val statusMessage: String, val errorMessage: Stri
 
 data class SummaryData(val text: String, val model: String)
 
+private data class SummarizerSelection(val provider: TranscriptionProvider, val modelName: String)
+
 @Singleton
 class SummarizationService @Inject constructor(
     private val settings: ApiKeyManager,
@@ -360,16 +362,16 @@ class SummarizationService @Inject constructor(
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
     suspend fun summarize(jobId: Int, state: UiState, allowResummarize: Boolean): SummarizationResult {
-        val modelName = try {
-            resolveSummarizerModel(state)
+        val summarizerSelection = try {
+            resolveSummarizerSelection(state)
         } catch (e: IllegalStateException) {
             return SummarizationResult(statusMessage = "Error: ${e.message}", errorMessage = e.message)
         }
 
         val claimed = if (allowResummarize) {
-            repository.claimManualSummary(jobId, modelName)
+            repository.claimManualSummary(jobId, summarizerSelection.provider.name, summarizerSelection.modelName)
         } else {
-            repository.claimAutoSummary(jobId, modelName)
+            repository.claimAutoSummary(jobId, summarizerSelection.provider.name, summarizerSelection.modelName)
         }
         if (!claimed) return SummarizationResult(statusMessage = state.status)
 
@@ -392,13 +394,25 @@ class SummarizationService @Inject constructor(
                 repository.updateSummaryStatus(jobId, "Summarizing...")
                 val apiKey = requireGeminiApiKey()
                 val summary = try {
-                    requestSummary(text, apiKey, modelName)
+                    requestSummary(text, apiKey, summarizerSelection.modelName)
                 } finally {
                     apiKey.fill('\u0000')
                 }
-                repository.succeedSummarization(jobId, summary.text, summary.model)
+                repository.succeedSummarization(
+                    jobId,
+                    summary.text,
+                    summarizerSelection.provider.name,
+                    summary.model,
+                )
                 summarizingCleared = true
-                job.historyId?.let { repository.updateHistorySummary(it, summary.text, summary.model) }
+                job.historyId?.let {
+                    repository.updateHistorySummary(
+                        it,
+                        summary.text,
+                        summarizerSelection.provider.name,
+                        summary.model,
+                    )
+                }
                 SummarizationResult(statusMessage = "Summary generated.")
             }
         } catch (e: CancellationException) {
@@ -434,14 +448,19 @@ class SummarizationService @Inject constructor(
         return keyChars
     }
 
-    private fun resolveSummarizerModel(state: UiState): String = when {
-        state.summarizerProvider == TranscriptionProvider.GEMINI_CUSTOM -> {
-            state.summarizerCustomGeminiModelName.ifBlank {
-                throw IllegalStateException("No custom Gemini model set for summarization.")
+    private fun resolveSummarizerSelection(state: UiState): SummarizerSelection {
+        val provider = state.summarizerProvider
+        val modelName = when {
+            provider == TranscriptionProvider.GEMINI_CUSTOM -> {
+                state.summarizerCustomGeminiModelName.ifBlank {
+                    throw IllegalStateException("No custom Gemini model set for summarization.")
+                }
             }
+            provider.isGemini() -> requireNotNull(provider.modelName)
+            else -> requireNotNull(TranscriptionProvider.GEMINI_FLASH.modelName)
         }
-        state.summarizerProvider.isGemini() -> requireNotNull(state.summarizerProvider.modelName)
-        else -> requireNotNull(TranscriptionProvider.GEMINI_FLASH.modelName)
+
+        return SummarizerSelection(provider = provider, modelName = modelName)
     }
 
     private suspend fun requestSummary(text: String, apiKey: CharArray, modelName: String): SummaryData =

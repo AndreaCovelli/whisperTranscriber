@@ -283,7 +283,7 @@ private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJob
     )
     if (job.summaryModel.isNotBlank()) {
         Spacer(Modifier.height(4.dp))
-        val providerLabel = providerFamilyLabelForModel(job.summaryModel)
+        val providerLabel = providerFamilyLabel(job.summaryProvider, job.summaryModel)
         Text(
             text = stringResource(R.string.job_summary_provider_model, providerLabel, job.summaryModel),
             style = MaterialTheme.typography.labelMedium,

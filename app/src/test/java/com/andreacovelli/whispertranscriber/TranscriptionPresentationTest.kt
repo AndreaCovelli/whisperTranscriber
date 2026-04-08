@@ -38,6 +38,14 @@ class TranscriptionPresentationTest {
     }
 
     @Test
+    fun providerFamilyLabel_prefersExplicitCustomSummaryProviderOverModelHeuristics() {
+        assertEquals(
+            "Gemini Custom",
+            providerFamilyLabel(TranscriptionProvider.GEMINI_CUSTOM, "gemini-2.0-flash-lite-preview"),
+        )
+    }
+
+    @Test
     fun providerDisplayLabel_includesConfiguredCustomModelName() {
         assertEquals(
             "gemini-2.5-flash",

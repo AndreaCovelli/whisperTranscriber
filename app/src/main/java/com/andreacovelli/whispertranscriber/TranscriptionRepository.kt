@@ -25,8 +25,13 @@ class TranscriptionRepository @Inject constructor(
 
     suspend fun insertHistory(historyItem: TranscriptionHistory): Int = historyRepository.insert(historyItem)
 
-    suspend fun updateHistorySummary(historyId: Int, summary: String, summaryModel: String) {
-        historyRepository.updateSummary(historyId, summary, summaryModel)
+    suspend fun updateHistorySummary(
+        historyId: Int,
+        summary: String,
+        summaryProviderName: String,
+        summaryModel: String,
+    ) {
+        historyRepository.updateSummary(historyId, summary, summaryProviderName, summaryModel)
     }
 
     suspend fun updateRunning(id: Int, isRunning: Boolean, status: String) {
@@ -67,8 +72,8 @@ class TranscriptionRepository @Inject constructor(
         jobSummarizationDao.updateSummaryStatus(id, status)
     }
 
-    suspend fun succeedSummarization(id: Int, summary: String, summaryModel: String) {
-        jobSummarizationDao.succeedSummarization(id, summary, summaryModel)
+    suspend fun succeedSummarization(id: Int, summary: String, summaryProviderName: String, summaryModel: String) {
+        jobSummarizationDao.succeedSummarization(id, summary, summaryProviderName, summaryModel)
     }
 
     suspend fun failSummarization(id: Int, error: String?) {
@@ -77,18 +82,18 @@ class TranscriptionRepository @Inject constructor(
 
     suspend fun cancelSummarization(id: Int): Boolean = jobSummarizationDao.cancelSummarization(id) > 0
 
-    suspend fun claimAutoSummary(id: Int, modelName: String): Boolean =
-        jobSummarizationDao.claimAutoSummary(id, modelName) > 0
+    suspend fun claimAutoSummary(id: Int, providerName: String, modelName: String): Boolean =
+        jobSummarizationDao.claimAutoSummary(id, providerName, modelName) > 0
 
-    suspend fun claimManualSummary(id: Int, modelName: String): Boolean =
-        jobSummarizationDao.claimManualSummary(id, modelName) > 0
+    suspend fun claimManualSummary(id: Int, providerName: String, modelName: String): Boolean =
+        jobSummarizationDao.claimManualSummary(id, providerName, modelName) > 0
 
     suspend fun resetStaleSummaries(): Int = jobSummarizationDao.resetStaleSummaries()
 
     suspend fun clearJobSummary(jobId: Int) {
         db.withTransaction {
             jobSummarizationDao.clearJobSummaryFields(jobId)
-            historyRepository.updateSummaryByJobId(jobId, "", "")
+            historyRepository.updateSummaryByJobId(jobId, "", "", "")
         }
     }
 
@@ -98,7 +103,7 @@ class TranscriptionRepository @Inject constructor(
             jobDao.clearTranscriptionResult(jobId)
             if (historyId != null) {
                 historyRepository.updateText(historyId, "")
-                historyRepository.updateSummary(historyId, "", "")
+                historyRepository.updateSummary(historyId, "", "", "")
             }
         }
     }
