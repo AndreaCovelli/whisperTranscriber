@@ -4,6 +4,7 @@ import com.andreacovelli.whispertranscriber.media.formatElevenLabsSpeakerTranscr
 import com.andreacovelli.whispertranscriber.ui.components.providerDisplayLabel
 import com.andreacovelli.whispertranscriber.ui.components.providerFamilyLabel
 import com.andreacovelli.whispertranscriber.ui.components.providerFamilyLabelForModel
+import com.andreacovelli.whispertranscriber.ui.components.shouldShowRetranscribeAction
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 import com.andreacovelli.whispertranscriber.ui.screens.buildBatchProgressState
 import org.junit.Assert.assertEquals
@@ -110,6 +111,32 @@ class TranscriptionPresentationTest {
         assertEquals(
             BatchProgressState(currentFileNumber = 2, totalFiles = 2, completedFiles = 1),
             buildBatchProgressState(jobs),
+        )
+    }
+
+    @Test
+    fun shouldShowRetranscribeAction_returnsTrueForClearedJobWithoutTranscript() {
+        assertEquals(
+            true,
+            testUiJob(
+                id = 1,
+                batchId = "",
+                status = "Cleared",
+                transcript = "",
+            ).shouldShowRetranscribeAction(),
+        )
+    }
+
+    @Test
+    fun shouldShowRetranscribeAction_returnsFalseForIdleBlankJob() {
+        assertEquals(
+            false,
+            testUiJob(
+                id = 1,
+                batchId = "",
+                status = "Completed",
+                transcript = "",
+            ).shouldShowRetranscribeAction(),
         )
     }
 
@@ -255,6 +282,7 @@ class TranscriptionPresentationTest {
         batchId: String,
         status: String,
         isRunning: Boolean = false,
+        transcript: String = "Transcript",
     ) = TranscriptionJobState(
         id = id,
         timestamp = timestamp,
@@ -262,5 +290,6 @@ class TranscriptionPresentationTest {
         batchId = batchId,
         status = status,
         isRunning = isRunning,
+        transcript = transcript,
     )
 }

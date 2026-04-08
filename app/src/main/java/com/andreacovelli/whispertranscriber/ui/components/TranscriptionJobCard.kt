@@ -57,6 +57,7 @@ fun TranscriptionJobCard(job: TranscriptionJobState, canSummarize: Boolean, acti
             JobErrorSection(job = job, onRetry = actions.retryTranscription)
             JobProgressSection(job = job)
             TranscriptSection(job = job, actions = actions)
+            RetranscribeSection(job = job, actions = actions)
             JobPrimaryActions(job = job, canSummarize = canSummarize, actions = actions)
             SummaryErrorSection(job = job)
             SummarySection(job = job, actions = actions)
@@ -172,6 +173,11 @@ private fun TranscriptSection(job: TranscriptionJobState, actions: Transcription
         modifier = Modifier.fillMaxWidth(),
         minimizedMaxLines = 6,
     )
+}
+
+@Composable
+private fun RetranscribeSection(job: TranscriptionJobState, actions: TranscriptionJobCardActions) {
+    if (!job.shouldShowRetranscribeAction()) return
     Spacer(Modifier.height(8.dp))
     val isRunning = job.isRunning
     Row(
@@ -203,6 +209,9 @@ private fun TranscriptSection(job: TranscriptionJobState, actions: Transcription
         }
     }
 }
+
+internal fun TranscriptionJobState.shouldShowRetranscribeAction(): Boolean =
+    error == null && (isRunning || transcript.isNotBlank() || status == "Cleared")
 
 @Composable
 private fun JobPrimaryActions(

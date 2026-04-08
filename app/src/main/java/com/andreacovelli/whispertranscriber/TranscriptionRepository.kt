@@ -98,6 +98,7 @@ class TranscriptionRepository @Inject constructor(
             jobDao.clearTranscriptionResult(jobId)
             if (historyId != null) {
                 historyRepository.updateText(historyId, "")
+                historyRepository.updateSummary(historyId, "", "")
             }
         }
     }
