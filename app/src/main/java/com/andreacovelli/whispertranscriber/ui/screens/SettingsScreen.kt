@@ -51,10 +51,10 @@ fun SettingsScreen(viewModel: MainViewModel, onNavigateBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings") },
+                title = { Text(stringResource(R.string.settings_title)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
                     }
                 },
             )
@@ -79,28 +79,28 @@ fun SettingsScreen(viewModel: MainViewModel, onNavigateBack: () -> Unit) {
             AutomaticSummarizationCard(uiState = uiState, actions = actions)
 
             ApiKeyCard(
-                title = "ElevenLabs API Key",
-                label = "Enter ElevenLabs API key",
+                title = stringResource(R.string.settings_elevenlabs_api_key_title),
+                label = stringResource(R.string.settings_elevenlabs_api_key_label),
                 apiKeyState = uiState.elevenLabsApiKeyState,
                 keyValidationState = uiState.elevenLabsKeyValidation,
                 onLoadSavedKey = viewModel::loadElevenLabsKeyForDisplay,
                 onSave = actions.saveElevenLabsKey,
                 onForget = actions.forgetElevenLabsKey,
                 onResetValidation = actions.resetElevenLabsKeyValidation,
-                forgetMessage = "ElevenLabs key forgotten",
+                forgetMessage = stringResource(R.string.settings_elevenlabs_key_forgotten),
                 snackbarHostState = snackbarHostState,
             )
 
             ApiKeyCard(
-                title = "Gemini API Key",
-                label = "Enter Gemini API key",
+                title = stringResource(R.string.settings_gemini_api_key_title),
+                label = stringResource(R.string.settings_gemini_api_key_label),
                 apiKeyState = uiState.geminiApiKeyState,
                 keyValidationState = uiState.geminiKeyValidation,
                 onLoadSavedKey = viewModel::loadGeminiKeyForDisplay,
                 onSave = actions.saveGeminiKey,
                 onForget = actions.forgetGeminiKey,
                 onResetValidation = actions.resetGeminiKeyValidation,
-                forgetMessage = "Gemini key forgotten",
+                forgetMessage = stringResource(R.string.settings_gemini_key_forgotten),
                 snackbarHostState = snackbarHostState,
             )
 
@@ -116,7 +116,7 @@ private fun TranscriptionProviderCard(uiState: UiState, actions: SettingsScreenA
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("Transcription Provider", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.settings_transcription_provider), style = MaterialTheme.typography.titleMedium)
             ProviderSelector(
                 selected = uiState.provider,
                 onSelect = actions.setProvider,
@@ -132,8 +132,8 @@ private fun TranscriptionProviderCard(uiState: UiState, actions: SettingsScreenA
 @Composable
 private fun SpeakerDiarizationCard(uiState: UiState, actions: SettingsScreenActions) {
     SettingsToggleCard(
-        title = "Speaker Diarization",
-        body = "Label speakers in transcriptions when the provider can distinguish them",
+        title = stringResource(R.string.settings_speaker_diarization),
+        body = stringResource(R.string.settings_speaker_diarization_body),
         checked = uiState.speakerDiarizationEnabled,
         onCheckedChange = actions.setSpeakerDiarization,
     )
@@ -146,7 +146,7 @@ private fun SummarizerProviderCard(uiState: UiState, actions: SettingsScreenActi
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("Summarizer Model", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.settings_summarizer_model), style = MaterialTheme.typography.titleMedium)
             ProviderSelector(
                 selected = uiState.summarizerProvider,
                 onSelect = actions.setSummarizerProvider,
@@ -163,8 +163,8 @@ private fun SummarizerProviderCard(uiState: UiState, actions: SettingsScreenActi
 @Composable
 private fun AutomaticSummarizationCard(uiState: UiState, actions: SettingsScreenActions) {
     SettingsToggleCard(
-        title = "Automatic Summarization",
-        body = "Summarize completed transcriptions automatically",
+        title = stringResource(R.string.settings_automatic_summarization),
+        body = stringResource(R.string.settings_automatic_summarization_body),
         checked = uiState.automaticSummarizationEnabled,
         onCheckedChange = actions.setAutomaticSummarization,
     )
@@ -207,7 +207,7 @@ private fun AppInfoCard() {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text("App Info", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.settings_app_info), style = MaterialTheme.typography.titleMedium)
             Text(
                 text = stringResource(
                     R.string.app_version_info,

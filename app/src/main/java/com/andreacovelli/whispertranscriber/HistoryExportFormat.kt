@@ -7,8 +7,6 @@ import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 enum class HistoryExportFormat(val extension: String, val mimeType: String) {
     TXT(extension = "txt", mimeType = "text/plain"),
@@ -202,8 +200,4 @@ private fun formatHistoryTimestamp(timestamp: Long): String =
 
 private fun escapeCsvValue(value: String): String = "\"${value.replace("\"", "\"\"")}\""
 
-private suspend fun Writer.writeBlocking(value: String) {
-    withContext(Dispatchers.IO) {
-        write(value)
-    }
-}
+private fun Writer.writeBlocking(value: String) = write(value)

@@ -73,7 +73,7 @@ private fun JobHeader(job: TranscriptionJobState, onDelete: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = job.displayName.ifBlank { "Audio file" },
+            text = job.displayName.ifBlank { stringResource(R.string.job_audio_file) },
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.weight(1f),
         )
@@ -81,7 +81,7 @@ private fun JobHeader(job: TranscriptionJobState, onDelete: () -> Unit) {
             IconButton(onClick = onDelete) {
                 Icon(
                     imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete job",
+                    contentDescription = stringResource(R.string.delete_job_description),
                     tint = MaterialTheme.colorScheme.error,
                 )
             }
@@ -93,16 +93,19 @@ private fun JobHeader(job: TranscriptionJobState, onDelete: () -> Unit) {
 @Composable
 private fun JobSecondaryText(job: TranscriptionJobState, queuedProviderLabel: String) {
     val secondary = buildString {
-        append("Provider: $queuedProviderLabel")
+        append(stringResource(R.string.job_provider_label, queuedProviderLabel))
         if (job.language.isNotBlank()) {
-            append(" • Language: ${job.language}")
+            append(" • ")
+            append(stringResource(R.string.job_language_label, job.language))
         }
         if (job.model.isNotBlank()) {
-            append(" • Model: ${job.model}")
+            append(" • ")
+            append(stringResource(R.string.job_model_label, job.model))
         } else if (job.requestedModel.isNotBlank() &&
             job.provider != TranscriptionProvider.ELEVEN_LABS
         ) {
-            append(" • Queued model: ${job.requestedModel}")
+            append(" • ")
+            append(stringResource(R.string.job_queued_model_label, job.requestedModel))
         }
     }
     if (secondary.isBlank()) return
@@ -131,9 +134,13 @@ private fun JobErrorSection(job: TranscriptionJobState, onRetry: () -> Unit) {
         )
         Spacer(Modifier.width(8.dp))
         OutlinedButton(onClick = onRetry) {
-            Icon(Icons.Default.Refresh, contentDescription = "Retry", modifier = Modifier.size(16.dp))
+            Icon(
+                Icons.Default.Refresh,
+                contentDescription = stringResource(R.string.retry_description),
+                modifier = Modifier.size(16.dp),
+            )
             Spacer(Modifier.width(4.dp))
-            Text("Retry")
+            Text(stringResource(R.string.retry))
         }
     }
 }
@@ -157,7 +164,7 @@ private fun TranscriptSection(job: TranscriptionJobState, actions: Transcription
     if (job.transcript.isBlank()) return
     Spacer(Modifier.height(12.dp))
     SectionHeader(
-        title = "Transcription",
+        title = stringResource(R.string.job_transcription_title),
         onCopy = actions.copyTranscript,
         onShare = actions.shareTranscript,
         onClear = actions.clearTranscript,
@@ -197,10 +204,14 @@ private fun RetranscribeSection(job: TranscriptionJobState, actions: Transcripti
             ),
         ) {
             if (!isRunning) {
-                Icon(Icons.Default.Refresh, contentDescription = "Retranscribe", modifier = Modifier.size(16.dp))
+                Icon(
+                    Icons.Default.Refresh,
+                    contentDescription = stringResource(R.string.retranscribe_description),
+                    modifier = Modifier.size(16.dp),
+                )
                 Spacer(Modifier.width(4.dp))
             }
-            Text(if (isRunning) "Stop transcription" else "Retranscribe")
+            Text(if (isRunning) stringResource(R.string.stop_transcription) else stringResource(R.string.retranscribe))
         }
     }
 }
@@ -232,7 +243,7 @@ private fun JobPrimaryActions(
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             ),
         ) {
-            Text("Summarize")
+            Text(stringResource(R.string.summarize))
         }
     }
 }
@@ -243,7 +254,7 @@ private fun SummaryErrorSection(job: TranscriptionJobState) {
     if (summaryError.isBlank()) return
     Spacer(Modifier.height(4.dp))
     Text(
-        text = "Summarization error: $summaryError",
+        text = stringResource(R.string.job_summarization_error, summaryError),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.error,
         modifier = Modifier.fillMaxWidth(),
@@ -255,7 +266,7 @@ private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJob
     if (job.summary.isBlank() && !job.isSummarizing) return
     Spacer(Modifier.height(12.dp))
     SectionHeader(
-        title = "Summary",
+        title = stringResource(R.string.job_summary_title),
         onCopy = actions.copySummary,
         onShare = actions.shareSummary,
         onClear = actions.clearSummary,
@@ -263,7 +274,7 @@ private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJob
         trailing = if (job.isSummarizing) {
             {
                 TextButton(onClick = actions.cancelSummary) {
-                    Text("Cancel", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.cancel), color = MaterialTheme.colorScheme.error)
                 }
             }
         } else {
@@ -274,7 +285,7 @@ private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJob
         Spacer(Modifier.height(4.dp))
         val providerLabel = providerFamilyLabelForModel(job.summaryModel)
         Text(
-            text = "Provider: $providerLabel • Model: ${job.summaryModel}",
+            text = stringResource(R.string.job_summary_provider_model, providerLabel, job.summaryModel),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -312,9 +323,13 @@ private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJob
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ),
             ) {
-                Icon(Icons.Default.Refresh, contentDescription = "Resummarize", modifier = Modifier.size(16.dp))
+                Icon(
+                    Icons.Default.Refresh,
+                    contentDescription = stringResource(R.string.resummarize_description),
+                    modifier = Modifier.size(16.dp),
+                )
                 Spacer(Modifier.width(4.dp))
-                Text("Resummarize")
+                Text(stringResource(R.string.resummarize))
             }
         }
     }
@@ -340,10 +355,10 @@ private fun SectionHeader(
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onCopy) {
-                    Icon(Icons.Filled.ContentCopy, "Copy $title")
+                    Icon(Icons.Filled.ContentCopy, stringResource(R.string.copy_type, title))
                 }
                 IconButton(onClick = onShare) {
-                    Icon(Icons.Default.Share, "Share $title")
+                    Icon(Icons.Default.Share, stringResource(R.string.share_item_description))
                 }
                 IconButton(onClick = onClear) {
                     Icon(

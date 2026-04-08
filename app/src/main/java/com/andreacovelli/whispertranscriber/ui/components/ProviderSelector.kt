@@ -25,9 +25,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.andreacovelli.whispertranscriber.CustomModelValidation
+import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.TranscriptionProvider
 
 @Composable
@@ -46,7 +48,7 @@ fun ProviderSelector(
     Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp)) {
         if (showElevenLabs) {
             ProviderRadioOption(
-                text = "ElevenLabs",
+                text = stringResource(R.string.provider_option_elevenlabs),
                 isSelected = selected == TranscriptionProvider.ELEVEN_LABS,
                 onClick = { onSelect(TranscriptionProvider.ELEVEN_LABS) },
             )
@@ -54,7 +56,7 @@ fun ProviderSelector(
             Spacer(Modifier.height(8.dp))
         }
         Text(
-            "Gemini Models",
+            stringResource(R.string.provider_group_gemini_models),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -65,22 +67,22 @@ fun ProviderSelector(
         ) {
             Column {
                 ProviderRadioOption(
-                    text = "Gemini Flash Lite",
+                    text = stringResource(R.string.provider_option_flash_lite),
                     isSelected = selected == TranscriptionProvider.GEMINI_FLASH_LITE,
                     onClick = { onSelect(TranscriptionProvider.GEMINI_FLASH_LITE) },
                 )
                 ProviderRadioOption(
-                    text = "Gemini Flash",
+                    text = stringResource(R.string.provider_option_flash),
                     isSelected = selected == TranscriptionProvider.GEMINI_FLASH,
                     onClick = { onSelect(TranscriptionProvider.GEMINI_FLASH) },
                 )
                 ProviderRadioOption(
-                    text = "Gemini Pro",
+                    text = stringResource(R.string.provider_option_pro),
                     isSelected = selected == TranscriptionProvider.GEMINI_PRO,
                     onClick = { onSelect(TranscriptionProvider.GEMINI_PRO) },
                 )
                 ProviderRadioOption(
-                    text = "Custom model",
+                    text = stringResource(R.string.provider_option_custom),
                     isSelected = selected == TranscriptionProvider.GEMINI_CUSTOM,
                     onClick = { onSelect(TranscriptionProvider.GEMINI_CUSTOM) },
                 )
@@ -95,7 +97,7 @@ fun ProviderSelector(
                                 customInput = it
                                 onResetValidation()
                             },
-                            placeholder = { Text("e.g. gemini-2.0-flash") },
+                            placeholder = { Text(stringResource(R.string.provider_custom_placeholder)) },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .onFocusChanged { focusState ->
@@ -120,7 +122,10 @@ fun ProviderSelector(
                                         modifier = Modifier.height(14.dp).width(14.dp),
                                         strokeWidth = 2.dp,
                                     )
-                                    Text("Validating…", style = MaterialTheme.typography.labelSmall)
+                                    Text(
+                                        stringResource(R.string.provider_validating),
+                                        style = MaterialTheme.typography.labelSmall,
+                                    )
                                 }
                             }
                             is CustomModelValidation.Valid -> {

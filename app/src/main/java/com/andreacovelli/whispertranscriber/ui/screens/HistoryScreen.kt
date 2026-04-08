@@ -182,16 +182,16 @@ private fun DeleteAllHistoryDialog(visible: Boolean, onDismiss: () -> Unit, onCo
     if (!visible) return
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Delete all history?") },
-        text = { Text("This will permanently remove all transcription history.") },
+        title = { Text(stringResource(R.string.history_delete_all_title)) },
+        text = { Text(stringResource(R.string.history_delete_all_body)) },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text("Delete all", color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.history_delete_all_confirm), color = MaterialTheme.colorScheme.error)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel))
             }
         },
     )
@@ -206,10 +206,10 @@ private fun HistoryTopBar(
     onDeleteAll: () -> Unit,
 ) {
     TopAppBar(
-        title = { Text("Transcription History") },
+        title = { Text(stringResource(R.string.history_title)) },
         navigationIcon = {
             IconButton(onClick = onNavigateBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
             }
         },
         actions = {
@@ -218,7 +218,7 @@ private fun HistoryTopBar(
             }
             if (canDeleteAll) {
                 IconButton(onClick = onDeleteAll) {
-                    Icon(Icons.Default.DeleteSweep, "Delete all history")
+                    Icon(Icons.Default.DeleteSweep, stringResource(R.string.history_delete_all_description))
                 }
             }
         },
@@ -314,7 +314,7 @@ private fun HistorySearchField(visible: Boolean, searchQuery: String, onSearchCh
     OutlinedTextField(
         value = searchQuery,
         onValueChange = onSearchChange,
-        placeholder = { Text("Search transcriptions…") },
+        placeholder = { Text(stringResource(R.string.history_search_placeholder)) },
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -322,7 +322,7 @@ private fun HistorySearchField(visible: Boolean, searchQuery: String, onSearchCh
         trailingIcon = if (searchQuery.isNotEmpty()) {
             {
                 IconButton(onClick = { onSearchChange("") }) {
-                    Icon(Icons.Default.Delete, "Clear search")
+                    Icon(Icons.Default.Delete, stringResource(R.string.history_clear_search))
                 }
             }
         } else {
@@ -380,7 +380,11 @@ private fun ColumnScope.EmptyHistoryState(searchQuery: String) {
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            if (searchQuery.isEmpty()) "No history yet." else "No results for \"$searchQuery\"",
+            if (searchQuery.isEmpty()) {
+                stringResource(R.string.history_empty)
+            } else {
+                stringResource(R.string.history_no_results, searchQuery)
+            },
             style = MaterialTheme.typography.bodyLarge,
         )
     }
@@ -410,7 +414,7 @@ private fun ColumnScope.HistoryList(
                 onCopy = { text ->
                     scope.launch {
                         clipboardManager.setClipEntry(ClipEntry(ClipData.newPlainText("", text)))
-                        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.copied), Toast.LENGTH_SHORT).show()
                     }
                 },
                 onClearSummary = { historyViewModel.clearSummary(item) },
