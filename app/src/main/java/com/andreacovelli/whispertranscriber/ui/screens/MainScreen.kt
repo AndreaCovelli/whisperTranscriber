@@ -105,14 +105,8 @@ private fun MainScreenContent(
     scope: CoroutineScope,
     context: Context,
 ) {
-    val transcriptionProviderLabel = providerDisplayLabel(
-        provider = uiState.provider,
-        customModelName = uiState.transcriptionCustomGeminiModelName,
-    )
-    val summarizerProviderLabel = providerDisplayLabel(
-        provider = uiState.summarizerProvider,
-        customModelName = uiState.summarizerCustomGeminiModelName,
-    )
+    val transcriptionProviderLabel = providerDisplayLabel(uiState.provider, uiState.transcriptionCustomGeminiModelName)
+    val summarizerProviderLabel = providerDisplayLabel(uiState.summarizerProvider, uiState.summarizerCustomGeminiModelName)
     LazyColumn(
         modifier = Modifier
             .padding(paddingValues)

@@ -98,13 +98,6 @@ class TranscriptionRepository @Inject constructor(
         }
     }
 
-    suspend fun updateJobById(jobId: Int, transform: (TranscriptionJob) -> TranscriptionJob) {
-        val currentJob = jobDao.getJobById(jobId)
-        if (currentJob != null) {
-            jobDao.update(transform(currentJob))
-        }
-    }
-
     suspend fun getJob(jobId: Int): TranscriptionJob? = jobDao.getJobById(jobId)
 
     suspend fun getQueuedJobs(): List<TranscriptionJob> = jobDao.getQueuedJobs()
@@ -124,5 +117,4 @@ class TranscriptionRepository @Inject constructor(
         return job?.stagedFilePath
     }
 
-    suspend fun findHistoryItem(historyId: Int): TranscriptionHistory? = historyRepository.getById(historyId)
 }

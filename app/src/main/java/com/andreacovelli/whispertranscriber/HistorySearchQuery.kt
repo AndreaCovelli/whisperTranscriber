@@ -8,6 +8,5 @@ internal fun extractHistorySearchTokens(rawQuery: String): List<String> = HISTOR
     .distinct()
     .toList()
 
-internal fun buildHistorySearchQuery(rawQuery: String): String = extractHistorySearchTokens(rawQuery)
-    .map { "$it*" }
-    .joinToString(" ")
+internal fun buildHistorySearchQuery(rawQuery: String): String =
+    extractHistorySearchTokens(rawQuery).joinToString(" ") { "$it*" }

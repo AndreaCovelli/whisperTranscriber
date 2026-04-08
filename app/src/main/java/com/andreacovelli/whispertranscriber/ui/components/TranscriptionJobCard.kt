@@ -36,10 +36,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.TranscriptionJobState
+import com.andreacovelli.whispertranscriber.TranscriptionProvider
 
 @Composable
 fun TranscriptionJobCard(job: TranscriptionJobState, canSummarize: Boolean, actions: TranscriptionJobCardActions) {
-    val queuedProviderLabel = providerDisplayLabel(job.provider, job.requestedModel)
+    val queuedProviderLabel = providerFamilyLabel(job.provider)
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
@@ -104,7 +105,7 @@ private fun JobSecondaryText(job: TranscriptionJobState, queuedProviderLabel: St
         if (job.model.isNotBlank()) {
             append(" • Model: ${job.model}")
         } else if (job.requestedModel.isNotBlank() &&
-            job.provider != com.andreacovelli.whispertranscriber.TranscriptionProvider.ELEVEN_LABS
+            job.provider != TranscriptionProvider.ELEVEN_LABS
         ) {
             append(" • Queued model: ${job.requestedModel}")
         }
@@ -174,29 +175,33 @@ private fun TranscriptSection(job: TranscriptionJobState, actions: Transcription
     )
     Spacer(Modifier.height(8.dp))
     val isRunning = job.isRunning
-    Button(
-        onClick = if (isRunning) actions.cancelTranscription else actions.retryTranscription,
+    Row(
         modifier = Modifier.fillMaxWidth(),
-        colors = ButtonDefaults.buttonColors(
-            containerColor =
-            if (isRunning) {
-                MaterialTheme.colorScheme.errorContainer
-            } else {
-                MaterialTheme.colorScheme.primaryContainer
-            },
-            contentColor =
-            if (isRunning) {
-                MaterialTheme.colorScheme.onErrorContainer
-            } else {
-                MaterialTheme.colorScheme.onPrimaryContainer
-            },
-        ),
+        horizontalArrangement = Arrangement.End,
     ) {
-        if (!isRunning) {
-            Icon(Icons.Default.Refresh, contentDescription = "Retranscribe", modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(4.dp))
+        Button(
+            onClick = if (isRunning) actions.cancelTranscription else actions.retryTranscription,
+            colors = ButtonDefaults.buttonColors(
+                containerColor =
+                if (isRunning) {
+                    MaterialTheme.colorScheme.errorContainer
+                } else {
+                    MaterialTheme.colorScheme.primaryContainer
+                },
+                contentColor =
+                if (isRunning) {
+                    MaterialTheme.colorScheme.onErrorContainer
+                } else {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                },
+            ),
+        ) {
+            if (!isRunning) {
+                Icon(Icons.Default.Refresh, contentDescription = "Retranscribe", modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+            }
+            Text(if (isRunning) "Stop transcription" else "Retranscribe")
         }
-        Text(if (isRunning) "Stop transcription" else "Retranscribe")
     }
 }
 
@@ -264,8 +269,14 @@ private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJob
     )
     if (job.summaryModel.isNotBlank()) {
         Spacer(Modifier.height(4.dp))
+        val providerLabel = when (job.summaryModel) {
+            TranscriptionProvider.GEMINI_FLASH_LITE.modelName -> "Gemini Flash Lite"
+            TranscriptionProvider.GEMINI_FLASH.modelName -> "Gemini Flash"
+            TranscriptionProvider.GEMINI_PRO.modelName -> "Gemini Pro"
+            else -> "Gemini Custom"
+        }
         Text(
-            text = "Model: ${job.summaryModel}",
+            text = "Provider: $providerLabel • Model: ${job.summaryModel}",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -290,17 +301,21 @@ private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJob
     }
     if (!job.isSummarizing) {
         Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = actions.retrySummary,
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            ),
+            horizontalArrangement = Arrangement.End,
         ) {
-            Icon(Icons.Default.Refresh, contentDescription = "Resummarize", modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(4.dp))
-            Text("Resummarize")
+            Button(
+                onClick = actions.retrySummary,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
+            ) {
+                Icon(Icons.Default.Refresh, contentDescription = "Resummarize", modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Resummarize")
+            }
         }
     }
 }

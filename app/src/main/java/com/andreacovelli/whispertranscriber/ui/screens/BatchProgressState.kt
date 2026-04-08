@@ -9,7 +9,7 @@ internal fun buildBatchProgressState(jobs: List<TranscriptionJobState>): BatchPr
         .asSequence()
         .filter { it.batchId.isNotBlank() }
         .filter { it.isRunning || it.status == "Queued" }
-        .minWithOrNull(compareBy<TranscriptionJobState>({ !it.isRunning }, { it.timestamp }, { it.id }))
+        .minWithOrNull(compareBy({ !it.isRunning }, { it.timestamp }, { it.id }))
         ?: return null
 
     var totalFiles = 0
