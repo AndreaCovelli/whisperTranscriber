@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -290,9 +289,11 @@ private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJob
     }
     if (job.summary.isNotBlank()) {
         Spacer(Modifier.height(8.dp))
-        SelectionContainer {
-            Text(job.summary)
-        }
+        ExpandableText(
+            text = job.summary,
+            modifier = Modifier.fillMaxWidth(),
+            minimizedMaxLines = 6,
+        )
     }
     if (!job.isSummarizing) {
         Spacer(Modifier.height(8.dp))

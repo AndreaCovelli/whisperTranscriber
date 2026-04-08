@@ -38,22 +38,16 @@ fun ExpandableText(text: String, modifier: Modifier = Modifier, minimizedMaxLine
                 ),
             ),
     ) {
-        if (expanded) {
-            SelectionContainer {
-                Text(
-                    text = text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        } else {
+        SelectionContainer {
             Text(
                 text = text,
                 style = MaterialTheme.typography.bodyMedium,
-                maxLines = minimizedMaxLines,
-                overflow = TextOverflow.Ellipsis,
+                maxLines = if (expanded) Int.MAX_VALUE else minimizedMaxLines,
+                overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis,
                 onTextLayout = { result ->
-                    isOverflowing = result.hasVisualOverflow
+                    if (!expanded) {
+                        isOverflowing = result.hasVisualOverflow
+                    }
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
