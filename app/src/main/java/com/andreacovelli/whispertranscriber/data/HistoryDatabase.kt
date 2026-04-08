@@ -164,9 +164,54 @@ interface TranscriptionJobDao {
     )
     suspend fun clearTranscriptionResult(id: Int)
 
-    @Query("UPDATE active_jobs SET summary = :summary, summaryModel = :summaryModel WHERE id = :id")
-    suspend fun updateSummary(id: Int, summary: String, summaryModel: String)
+    @Query("SELECT * FROM active_jobs ORDER BY timestamp ASC")
+    fun getAllJobs(): Flow<List<TranscriptionJob>>
 
+    @Query("SELECT * FROM active_jobs WHERE id = :id")
+    suspend fun getJobById(id: Int): TranscriptionJob?
+
+    @Query("SELECT historyId FROM active_jobs WHERE id = :jobId")
+    suspend fun getHistoryIdByJobId(jobId: Int): Int?
+
+    @Query("SELECT * FROM active_jobs WHERE status = 'Queued' ORDER BY timestamp ASC")
+    suspend fun getQueuedJobs(): List<TranscriptionJob>
+
+    @Query(
+        """
+        UPDATE active_jobs
+        SET status = 'Queued',
+            progress = 0,
+            transcript = '',
+            language = '',
+            model = '',
+            summary = '',
+            summaryModel = '',
+            summaryStatus = '',
+            error = NULL,
+            summaryError = NULL,
+            isRunning = 0,
+            isSummarizing = 0,
+            autoSummaryAttempted = 0,
+            historyId = historyId,
+            providerName = :providerName,
+            requestedModel = :requestedModel
+        WHERE id = :jobId
+        """,
+    )
+    suspend fun retryById(jobId: Int, providerName: String, requestedModel: String?): Int
+
+    @Query("SELECT * FROM active_jobs WHERE isRunning = 0 AND status != 'Queued'")
+    suspend fun getCompletedJobs(): List<TranscriptionJob>
+
+    @Query("DELETE FROM active_jobs WHERE id = :jobId")
+    suspend fun deleteById(jobId: Int)
+
+    @Query("DELETE FROM active_jobs WHERE isRunning = 0 AND status != 'Queued'")
+    suspend fun clearCompleted()
+}
+
+@Dao
+interface TranscriptionJobSummarizationDao {
     @Query("UPDATE active_jobs SET summaryStatus = :status WHERE id = :id")
     suspend fun updateSummaryStatus(id: Int, status: String)
 
@@ -252,51 +297,6 @@ interface TranscriptionJobDao {
 
     @Query("UPDATE active_jobs SET isSummarizing = 0 WHERE isSummarizing = 1")
     suspend fun resetStaleSummaries(): Int
-
-    @Query("SELECT * FROM active_jobs ORDER BY timestamp ASC")
-    fun getAllJobs(): Flow<List<TranscriptionJob>>
-
-    @Query("SELECT * FROM active_jobs WHERE id = :id")
-    suspend fun getJobById(id: Int): TranscriptionJob?
-
-    @Query("SELECT historyId FROM active_jobs WHERE id = :jobId")
-    suspend fun getHistoryIdByJobId(jobId: Int): Int?
-
-    @Query("SELECT * FROM active_jobs WHERE status = 'Queued' ORDER BY timestamp ASC")
-    suspend fun getQueuedJobs(): List<TranscriptionJob>
-
-    @Query(
-        """
-        UPDATE active_jobs
-        SET status = 'Queued',
-            progress = 0,
-            transcript = '',
-            language = '',
-            model = '',
-            summary = '',
-            summaryModel = '',
-            summaryStatus = '',
-            error = NULL,
-            summaryError = NULL,
-            isRunning = 0,
-            isSummarizing = 0,
-            autoSummaryAttempted = 0,
-            historyId = historyId,
-            providerName = :providerName,
-            requestedModel = :requestedModel
-        WHERE id = :jobId
-        """,
-    )
-    suspend fun retryById(jobId: Int, providerName: String, requestedModel: String?): Int
-
-    @Query("SELECT * FROM active_jobs WHERE isRunning = 0 AND status != 'Queued'")
-    suspend fun getCompletedJobs(): List<TranscriptionJob>
-
-    @Query("DELETE FROM active_jobs WHERE id = :jobId")
-    suspend fun deleteById(jobId: Int)
-
-    @Query("DELETE FROM active_jobs WHERE isRunning = 0 AND status != 'Queued'")
-    suspend fun clearCompleted()
 }
 
 @Database(
@@ -307,6 +307,7 @@ interface TranscriptionJobDao {
 abstract class AppDatabase : RoomDatabase() {
     abstract fun transcriptionHistoryDao(): TranscriptionHistoryDao
     abstract fun transcriptionJobDao(): TranscriptionJobDao
+    abstract fun transcriptionJobSummarizationDao(): TranscriptionJobSummarizationDao
 
     companion object {
         private const val DATABASE_NAME = "transcription_database"

@@ -10,6 +10,7 @@ import com.andreacovelli.whispertranscriber.data.HistoryRepository
 import com.andreacovelli.whispertranscriber.data.RoomHistoryRepository
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistoryDao
 import com.andreacovelli.whispertranscriber.data.TranscriptionJobDao
+import com.andreacovelli.whispertranscriber.data.TranscriptionJobSummarizationDao
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -45,6 +46,10 @@ object AppModule {
 
     @Provides
     fun provideTranscriptionJobDao(database: AppDatabase): TranscriptionJobDao = database.transcriptionJobDao()
+
+    @Provides
+    fun provideTranscriptionJobSummarizationDao(database: AppDatabase): TranscriptionJobSummarizationDao =
+        database.transcriptionJobSummarizationDao()
 
     @Provides
     @Singleton
