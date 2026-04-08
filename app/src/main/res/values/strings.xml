@@ -24,7 +24,7 @@
     <string name="main_transcription_summary">Transcription: %1$s</string>
     <string name="main_summarizer_summary">Summarizer: %1$s</string>
     <string name="main_status_title">Status</string>
-    <string name="main_batch_progress">Processing %1$d of %2$d files...</string>
+    <string name="main_batch_progress">Processing %1$d of %2$d files…</string>
     <string name="main_empty_jobs">Share one or more audio files to start transcribing.</string>
     <string name="main_clear_completed">Clear completed</string>
     <string name="main_copied_transcript">Copied transcript</string>
@@ -85,7 +85,7 @@
     <string name="api_key_replace_saved_optional">Replace saved key (optional)</string>
     <string name="api_key_hide">Hide API key</string>
     <string name="api_key_show">Show API key</string>
-    <string name="api_key_validating">Validating API key...</string>
+    <string name="api_key_validating">Validating API key…</string>
     <string name="api_key_encrypted_saved">Encrypted &amp; saved</string>
     <string name="api_key_keystore_error">Keystore Error: %1$s. Please re-enter your key.</string>
     <string name="api_key_forget">Forget key</string>

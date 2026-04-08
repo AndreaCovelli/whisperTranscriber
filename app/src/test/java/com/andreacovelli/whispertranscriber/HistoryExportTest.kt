@@ -3,6 +3,7 @@ package com.andreacovelli.whispertranscriber
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
 class HistoryExportTest {
@@ -73,6 +74,16 @@ class HistoryExportTest {
     }
 
     @Test
+    fun writeHistoryExport_rejectsEmptyCsvWithoutWritingPartialContent() {
+        assertExportFailsWithNoOutput(HistoryExportFormat.CSV)
+    }
+
+    @Test
+    fun writeHistoryExport_rejectsEmptyJsonWithoutWritingPartialContent() {
+        assertExportFailsWithNoOutput(HistoryExportFormat.JSON)
+    }
+
+    @Test
     fun buildHistoryExport_formatsJsonInDescendingOrder() {
         val export = buildHistoryExport(
             listOf(
@@ -111,4 +122,21 @@ class HistoryExportTest {
         displayName = displayName,
         timestamp = timestamp,
     )
+
+    private fun assertExportFailsWithNoOutput(format: HistoryExportFormat) {
+        val writer = java.io.StringWriter()
+
+        try {
+            kotlinx.coroutines.runBlocking {
+                writeHistoryExport(
+                    writer = writer,
+                    format = format,
+                    pageSize = 1,
+                ) { _, _ -> emptyList() }
+            }
+            fail("Expected export to fail for empty history.")
+        } catch (_: IllegalArgumentException) {
+            assertEquals("", writer.toString())
+        }
+    }
 }

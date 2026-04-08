@@ -13,7 +13,6 @@ interface HistoryRepository {
 
     suspend fun hasHistory(): Boolean
 
-
     suspend fun getExportPage(limit: Int, offset: Int): List<TranscriptionHistory>
 
     suspend fun insert(historyItem: TranscriptionHistory): Int

@@ -114,20 +114,22 @@ private suspend fun writeCsvHistoryExport(
     pageSize: Int,
     loadPage: suspend (limit: Int, offset: Int) -> List<TranscriptionHistory>,
 ) {
+    val firstPage = loadPage(pageSize, 0)
+    require(firstPage.isNotEmpty()) { "No history to export." }
+
     writer.writeBlocking(csvHeaderRow.joinToString(",", transform = ::escapeCsvValue))
     var offset = 0
-    var wroteAny = false
     while (true) {
-        val page = loadPage(pageSize, offset)
-        if (page.isEmpty()) break
+        val page = if (offset == 0) firstPage else loadPage(pageSize, offset)
+        if (page.isEmpty()) {
+            break
+        }
         page.forEach { item ->
             writer.writeBlocking("\r\n")
             writer.writeBlocking(csvRowFor(item).joinToString(",", transform = ::escapeCsvValue))
-            wroteAny = true
         }
         offset += page.size
     }
-    require(wroteAny) { "No history to export." }
 }
 
 private suspend fun writeJsonHistoryExport(
@@ -135,12 +137,17 @@ private suspend fun writeJsonHistoryExport(
     pageSize: Int,
     loadPage: suspend (limit: Int, offset: Int) -> List<TranscriptionHistory>,
 ) {
+    val firstPage = loadPage(pageSize, 0)
+    require(firstPage.isNotEmpty()) { "No history to export." }
+
     writer.writeBlocking("[")
     var offset = 0
     var wroteAny = false
     while (true) {
-        val page = loadPage(pageSize, offset)
-        if (page.isEmpty()) break
+        val page = if (offset == 0) firstPage else loadPage(pageSize, offset)
+        if (page.isEmpty()) {
+            break
+        }
         page.forEach { item ->
             if (!wroteAny) {
                 writer.writeBlocking("\n")
@@ -152,7 +159,6 @@ private suspend fun writeJsonHistoryExport(
         }
         offset += page.size
     }
-    require(wroteAny) { "No history to export." }
     writer.writeBlocking("\n]")
 }
 
