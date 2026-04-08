@@ -1,3 +1,5 @@
+@file:Suppress("unused") // Hilt consumes these modules and bindings from generated code, not direct Kotlin call sites.
+
 package com.andreacovelli.whispertranscriber.di
 
 import android.content.Context
