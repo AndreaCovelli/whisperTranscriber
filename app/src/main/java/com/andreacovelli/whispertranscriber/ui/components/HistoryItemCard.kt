@@ -3,6 +3,7 @@ package com.andreacovelli.whispertranscriber.ui.components
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -27,6 +28,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -197,9 +200,11 @@ private fun HistoryItemBody(
     highlightedText: AnnotatedString,
     highlightedSummary: AnnotatedString,
 ) {
+    val transcriptOverflow = rememberOverflowState(item.id, "transcript", highlightedText)
+    val summaryOverflow = rememberOverflowState(item.id, "summary", highlightedSummary)
     val hasTranscript = item.text.isNotBlank()
     val hasSummary = item.summary.isNotBlank()
-    val showExpandControl = hasTranscript || hasSummary
+    val showExpandControl = transcriptOverflow.value || summaryOverflow.value
 
     if (hasTranscript) {
         SelectableHistoryText(
@@ -207,6 +212,8 @@ private fun HistoryItemBody(
             expanded = expanded,
             collapsedMaxLines = 4,
             styleColor = Color.Unspecified,
+            overflowState = transcriptOverflow,
+            onExpand = onToggleExpand,
         )
     }
     if (hasSummary) {
@@ -215,6 +222,8 @@ private fun HistoryItemBody(
             summary = highlightedSummary,
             expanded = expanded,
             showTitle = expanded || !hasTranscript,
+            overflowState = summaryOverflow,
+            onExpand = onToggleExpand,
         )
     }
     if (showExpandControl) {
@@ -242,6 +251,8 @@ private fun SummaryContent(
     summary: AnnotatedString,
     expanded: Boolean,
     showTitle: Boolean,
+    overflowState: MutableState<Boolean>,
+    onExpand: () -> Unit,
 ) {
     Spacer(Modifier.height(if (expanded) 12.dp else 6.dp))
     if (showTitle) {
@@ -261,6 +272,8 @@ private fun SummaryContent(
         expanded = expanded,
         collapsedMaxLines = 3,
         styleColor = if (expanded) Color.Unspecified else MaterialTheme.colorScheme.onSurfaceVariant,
+        overflowState = overflowState,
+        onExpand = onExpand,
     )
 }
 
@@ -327,6 +340,8 @@ private fun SelectableHistoryText(
     expanded: Boolean,
     collapsedMaxLines: Int,
     styleColor: Color,
+    overflowState: MutableState<Boolean>,
+    onExpand: () -> Unit,
 ) {
     SelectionContainer {
         Text(
@@ -335,6 +350,24 @@ private fun SelectableHistoryText(
             maxLines = if (expanded) Int.MAX_VALUE else collapsedMaxLines,
             overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis,
             color = styleColor,
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (!expanded && overflowState.value) {
+                        Modifier.clickable(onClick = onExpand)
+                    } else {
+                        Modifier
+                    },
+                ),
+            onTextLayout = { result ->
+                if (!expanded) {
+                    overflowState.value = result.hasVisualOverflow
+                }
+            },
         )
     }
 }
+
+@Composable
+private fun rememberOverflowState(itemId: Int, section: String, text: AnnotatedString): MutableState<Boolean> =
+    remember(itemId, section, text) { mutableStateOf(false) }
