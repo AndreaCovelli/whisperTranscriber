@@ -106,7 +106,8 @@ private fun MainScreenContent(
     context: Context,
 ) {
     val transcriptionProviderLabel = providerDisplayLabel(uiState.provider, uiState.transcriptionCustomGeminiModelName)
-    val summarizerProviderLabel = providerDisplayLabel(uiState.summarizerProvider, uiState.summarizerCustomGeminiModelName)
+    val summarizerProviderLabel =
+        providerDisplayLabel(uiState.summarizerProvider, uiState.summarizerCustomGeminiModelName)
     LazyColumn(
         modifier = Modifier
             .padding(paddingValues)

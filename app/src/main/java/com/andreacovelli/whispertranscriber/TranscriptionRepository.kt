@@ -116,5 +116,4 @@ class TranscriptionRepository @Inject constructor(
         jobDao.deleteById(jobId)
         return job?.stagedFilePath
     }
-
 }
