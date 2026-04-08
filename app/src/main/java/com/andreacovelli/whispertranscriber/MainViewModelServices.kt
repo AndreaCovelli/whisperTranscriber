@@ -59,7 +59,9 @@ class TranscriptionQueueService @Inject constructor(
         customModelName: String,
         speakerDiarizationEnabled: Boolean,
     ): QueuedShareResult {
-        if (uris.isEmpty()) return QueuedShareResult(0, "Waiting for audios...")
+        if (uris.isEmpty()) {
+            return QueuedShareResult(0, context.getString(R.string.main_waiting_for_audios))
+        }
 
         val batchId = UUID.randomUUID().toString()
         val speakerLabelPrefix = context.getString(R.string.speaker_label_prefix)
@@ -86,7 +88,7 @@ class TranscriptionQueueService @Inject constructor(
             enqueueWorker(jobId, speakerLabelPrefix)
         }
 
-        return QueuedShareResult(uris.size, "Queued ${uris.size} file(s).")
+        return QueuedShareResult(uris.size, context.getString(R.string.main_queued_files, uris.size))
     }
 
     suspend fun cancelJob(jobId: Int) {

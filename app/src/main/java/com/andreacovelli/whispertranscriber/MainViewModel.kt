@@ -1,5 +1,6 @@
 package com.andreacovelli.whispertranscriber
 
+import android.content.Context
 import android.net.Uri
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
@@ -9,6 +10,7 @@ import com.andreacovelli.whispertranscriber.di.IoDispatcher
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 import com.andreacovelli.whispertranscriber.ui.screens.buildBatchProgressState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -35,7 +37,7 @@ sealed class KeyValidationState {
 }
 
 data class UiState(
-    val status: String = "Waiting for audios...",
+    val status: String = "",
     val provider: TranscriptionProvider = TranscriptionProvider.ELEVEN_LABS,
     val summarizerProvider: TranscriptionProvider = TranscriptionProvider.GEMINI_FLASH,
     val elevenLabsApiKeyState: ApiKeyState = ApiKeyState.Missing,
@@ -130,6 +132,7 @@ sealed interface TranscriptionResult {
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
+    @param:ApplicationContext private val appContext: Context,
     private val settings: ApiKeyManager,
     private val repository: TranscriptionRepository,
     private val queueService: TranscriptionQueueService,
@@ -141,7 +144,9 @@ class MainViewModel @Inject constructor(
         private val staleSummariesRecovered = AtomicBoolean(false)
     }
 
-    private val _uiState = MutableStateFlow(UiState())
+    private val _uiState = MutableStateFlow(
+        UiState(status = appContext.getString(R.string.main_waiting_for_audios)),
+    )
     val uiState = _uiState.asStateFlow()
     private val summaryJobs = ConcurrentHashMap<Int, Job>()
 
@@ -408,7 +413,9 @@ class MainViewModel @Inject constructor(
         if (uris.isEmpty()) return
 
         viewModelScope.launch {
-            _uiState.update { it.copy(status = "Queuing ${uris.size} file(s)...") }
+            _uiState.update {
+                it.copy(status = appContext.getString(R.string.main_queuing_files, uris.size))
+            }
             val result = queueService.enqueueSharedAudio(
                 uris = uris,
                 provider = _uiState.value.provider,

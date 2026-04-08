@@ -26,6 +26,9 @@
     <string name="main_status_title">Status</string>
     <string name="main_batch_progress">Processing %1$d of %2$d files…</string>
     <string name="main_empty_jobs">Share one or more audio files to start transcribing.</string>
+    <string name="main_waiting_for_audios">Waiting for audios…</string>
+    <string name="main_queuing_files">Queuing %1$d file(s)…</string>
+    <string name="main_queued_files">Queued %1$d file(s).</string>
     <string name="main_clear_completed">Clear completed</string>
     <string name="main_copied_transcript">Copied transcript</string>
     <string name="main_copied_summary">Copied summary</string>
@@ -81,6 +84,7 @@
     <string name="history_item_language">Language: %1$s</string>
     <string name="history_item_model">Model: %1$s</string>
     <string name="history_item_show_more">Show more</string>
+    <string name="history_item_show_less">Show less</string>
     <string name="history_item_summary_model">Summary model: %1$s</string>
     <string name="api_key_replace_saved_optional">Replace saved key (optional)</string>
     <string name="api_key_hide">Hide API key</string>

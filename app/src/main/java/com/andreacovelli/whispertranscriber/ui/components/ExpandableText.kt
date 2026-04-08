@@ -19,8 +19,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.andreacovelli.whispertranscriber.R
 
 @Composable
 fun ExpandableText(text: String, modifier: Modifier = Modifier, minimizedMaxLines: Int = 6) {
@@ -56,7 +58,13 @@ fun ExpandableText(text: String, modifier: Modifier = Modifier, minimizedMaxLine
         if (expanded || isOverflowing) {
             Spacer(Modifier.height(4.dp))
             Text(
-                text = if (expanded) "Show less" else "Show more",
+                text = stringResource(
+                    if (expanded) {
+                        R.string.history_item_show_less
+                    } else {
+                        R.string.history_item_show_more
+                    },
+                ),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier
