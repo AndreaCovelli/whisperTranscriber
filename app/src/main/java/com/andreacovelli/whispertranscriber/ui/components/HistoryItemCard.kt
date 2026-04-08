@@ -8,12 +8,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -26,6 +28,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -126,12 +130,13 @@ fun HistoryItemCard(
     val highlightedText = rememberHighlightedText(item.text, normalizedSearchTokens)
     val highlightedSummary = rememberHighlightedText(item.summary, normalizedSearchTokens)
     val highlightedDisplayName = rememberHighlightedText(item.displayName, normalizedSearchTokens)
+    val hasTranscript = item.text.isNotBlank()
+    val hasSummary = item.summary.isNotBlank()
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .clickable(onClick = onToggleExpand),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Column(
             modifier = Modifier
@@ -168,20 +173,16 @@ fun HistoryItemCard(
             HistoryItemBody(
                 item = item,
                 expanded = expanded,
+                onToggleExpand = onToggleExpand,
                 highlightedText = highlightedText,
                 highlightedSummary = highlightedSummary,
             )
-            if (!expanded) {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = stringResource(R.string.history_item_show_more),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(if (hasTranscript || hasSummary) 8.dp else 4.dp))
             HistoryItemActions(
-                item = item,
+                hasTranscript = hasTranscript,
+                hasSummary = hasSummary,
+                transcript = item.text,
+                summary = item.summary,
                 onCopy = onCopy,
                 onShare = onShare,
                 onClearSummary = onClearSummary,
@@ -195,40 +196,66 @@ fun HistoryItemCard(
 private fun HistoryItemBody(
     item: TranscriptionHistory,
     expanded: Boolean,
+    onToggleExpand: () -> Unit,
     highlightedText: AnnotatedString,
     highlightedSummary: AnnotatedString,
 ) {
-    if (expanded) {
-        Text(highlightedText, style = MaterialTheme.typography.bodyMedium)
-        if (item.summary.isNotBlank()) {
-            SummaryContent(
-                item = item,
-                summary = highlightedSummary,
-                expanded = true,
-            )
-        }
-        return
-    }
+    val transcriptOverflow = rememberOverflowState(item.id, "transcript", highlightedText)
+    val summaryOverflow = rememberOverflowState(item.id, "summary", highlightedSummary)
+    val hasTranscript = item.text.isNotBlank()
+    val hasSummary = item.summary.isNotBlank()
+    val showExpandControl = transcriptOverflow.value || summaryOverflow.value
 
-    Text(
-        highlightedText,
-        style = MaterialTheme.typography.bodyMedium,
-        maxLines = 4,
-        overflow = TextOverflow.Ellipsis,
-    )
-    if (item.summary.isNotBlank()) {
+    if (hasTranscript) {
+        SelectableHistoryText(
+            text = highlightedText,
+            expanded = expanded,
+            collapsedMaxLines = 4,
+            styleColor = Color.Unspecified,
+            overflowState = transcriptOverflow,
+            onExpand = onToggleExpand,
+        )
+    }
+    if (hasSummary) {
         SummaryContent(
             item = item,
             summary = highlightedSummary,
-            expanded = false,
+            expanded = expanded,
+            showTitle = expanded || !hasTranscript,
+            overflowState = summaryOverflow,
+            onExpand = onToggleExpand,
         )
+    }
+    if (showExpandControl) {
+        Spacer(Modifier.height(4.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = onToggleExpand) {
+                Text(
+                    text = stringResource(
+                        if (expanded) {
+                            R.string.history_item_show_less
+                        } else {
+                            R.string.history_item_show_more
+                        },
+                    ),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun SummaryContent(item: TranscriptionHistory, summary: AnnotatedString, expanded: Boolean) {
+private fun SummaryContent(
+    item: TranscriptionHistory,
+    summary: AnnotatedString,
+    expanded: Boolean,
+    showTitle: Boolean,
+    overflowState: MutableState<Boolean>,
+    onExpand: () -> Unit,
+) {
     Spacer(Modifier.height(if (expanded) 12.dp else 6.dp))
-    if (expanded) {
+    if (showTitle) {
         Text(stringResource(R.string.job_summary_title), style = MaterialTheme.typography.titleSmall)
     }
     if (item.summaryModel.isNotBlank()) {
@@ -240,28 +267,32 @@ private fun SummaryContent(item: TranscriptionHistory, summary: AnnotatedString,
         )
     }
     Spacer(Modifier.height(if (expanded) 4.dp else 2.dp))
-    Text(
-        summary,
-        style = MaterialTheme.typography.bodyMedium,
-        maxLines = if (expanded) Int.MAX_VALUE else 3,
-        overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis,
-        color = if (expanded) Color.Unspecified else MaterialTheme.colorScheme.onSurfaceVariant,
+    SelectableHistoryText(
+        text = summary,
+        expanded = expanded,
+        collapsedMaxLines = 3,
+        styleColor = if (expanded) Color.Unspecified else MaterialTheme.colorScheme.onSurfaceVariant,
+        overflowState = overflowState,
+        onExpand = onExpand,
     )
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HistoryItemActions(
-    item: TranscriptionHistory,
+    hasTranscript: Boolean,
+    hasSummary: Boolean,
+    transcript: String,
+    summary: String,
     onCopy: (String) -> Unit,
     onShare: () -> Unit,
     onClearSummary: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    val copyActions = remember(item.text, item.summary) {
+    val copyActions = remember(transcript, summary, hasTranscript, hasSummary) {
         buildList {
-            add(R.string.copy_text_label to item.text)
-            if (item.summary.isNotBlank()) add(R.string.copy_summary_label to item.summary)
+            if (hasTranscript) add(R.string.copy_text_label to transcript)
+            if (hasSummary) add(R.string.copy_summary_label to summary)
         }
     }
     FlowRow(
@@ -279,10 +310,12 @@ private fun HistoryItemActions(
                 Text(stringResource(R.string.copy_type, stringResource(typeRes)), maxLines = 1, softWrap = false)
             }
         }
-        IconButton(onClick = onShare) {
-            Icon(Icons.Default.Share, stringResource(R.string.share_item_description))
+        if (hasTranscript || hasSummary) {
+            IconButton(onClick = onShare) {
+                Icon(Icons.Default.Share, stringResource(R.string.share_item_description))
+            }
         }
-        if (item.summary.isNotBlank()) {
+        if (hasSummary) {
             IconButton(onClick = onClearSummary) {
                 Icon(
                     Icons.Default.DeleteSweep,
@@ -300,3 +333,41 @@ private fun HistoryItemActions(
         }
     }
 }
+
+@Composable
+private fun SelectableHistoryText(
+    text: AnnotatedString,
+    expanded: Boolean,
+    collapsedMaxLines: Int,
+    styleColor: Color,
+    overflowState: MutableState<Boolean>,
+    onExpand: () -> Unit,
+) {
+    SelectionContainer {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = if (expanded) Int.MAX_VALUE else collapsedMaxLines,
+            overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis,
+            color = styleColor,
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (!expanded && overflowState.value) {
+                        Modifier.clickable(onClick = onExpand)
+                    } else {
+                        Modifier
+                    },
+                ),
+            onTextLayout = { result ->
+                if (!expanded) {
+                    overflowState.value = result.hasVisualOverflow
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun rememberOverflowState(itemId: Int, section: String, text: AnnotatedString): MutableState<Boolean> =
+    remember(itemId, section, text) { mutableStateOf(false) }

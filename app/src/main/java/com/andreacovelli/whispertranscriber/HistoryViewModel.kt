@@ -53,9 +53,16 @@ class HistoryViewModel @Inject constructor(
     fun prepareShareContent(item: TranscriptionHistory) {
         viewModelScope.launch {
             val content = buildString {
-                append(item.text)
+                if (item.text.isNotBlank()) {
+                    append(item.text)
+                }
                 if (item.summary.isNotBlank()) {
-                    append(appContext.getString(R.string.summary_header))
+                    if (isNotEmpty()) {
+                        append(appContext.getString(R.string.summary_header))
+                    } else {
+                        append(appContext.getString(R.string.job_summary_title))
+                        append(":\n")
+                    }
                     append(item.summary)
                 }
             }
