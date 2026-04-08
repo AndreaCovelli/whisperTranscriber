@@ -13,7 +13,7 @@
     "removeComments": false,
     "removeEmptyLines": false,
     "compress": false,
-    "topFilesLength": 20,
+    "topFilesLength": 30,
     "showLineNumbers": false,
     "truncateBase64": false,
     "copyToClipboard": false,

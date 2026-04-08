@@ -6,3 +6,7 @@
 **/.idea/**/*.xml
 **/build/**/*.xml
 .kotlin/errors/
+gradlew
+**/schemas
+README.md
+AGENTS.MD
