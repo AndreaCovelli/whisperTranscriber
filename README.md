@@ -19,12 +19,12 @@ An Android app that transcribes audio files using AI — powered by [ElevenLabs]
 
 ## Requirements
 
-| | |
-|---|---|
-| **Minimum Android** | 8.0 Oreo (API 26) |
-| **Target / Compile SDK** | 36 (Android 15) |
-| **JDK** | 21 (resolved automatically via Gradle toolchain) |
-| **API key** | ElevenLabs **or** Gemini (at least one required) |
+|                          |                                                  |
+|--------------------------|--------------------------------------------------|
+| **Minimum Android**      | 8.0 Oreo (API 26)                                |
+| **Target / Compile SDK** | 36 (Android 15)                                  |
+| **JDK**                  | 21 (resolved automatically via Gradle toolchain) |
+| **API key**              | ElevenLabs **or** Gemini (at least one required) |
 
 ---
 
@@ -101,11 +101,11 @@ When audio is shared into the app, it is first copied into app-managed storage s
 
 ## Supported Audio Formats
 
-| Provider | Accepted MIME types |
-|---|---|
-| **ElevenLabs** | `audio/mp3`, `audio/mpeg`, `audio/wav`, `audio/x-wav`, `audio/m4a`, `audio/x-m4a`, `audio/flac`, `audio/x-flac`, `audio/ogg`, `audio/vorbis`, `audio/opus`, `audio/webm`, `audio/aac`, `audio/aiff`, `audio/x-aiff` |
-| **Gemini** | `audio/wav`, `audio/mp3`, `audio/aiff`, `audio/aac`, `audio/ogg`, `audio/flac` |
-| **Auto-converted** | Any format not in the list above is converted to 16 kHz mono WAV automatically |
+| Provider           | Accepted MIME types                                                                                                                                                                                                 |
+|--------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **ElevenLabs**     | `audio/mp3`, `audio/mpeg`, `audio/wav`, `audio/x-wav`, `audio/m4a`, `audio/x-m4a`, `audio/flac`, `audio/x-flac`, `audio/ogg`, `audio/vorbis`, `audio/opus`, `audio/webm`, `audio/aac`, `audio/aiff`, `audio/x-aiff` |
+| **Gemini**         | `audio/wav`, `audio/mp3`, `audio/aiff`, `audio/aac`, `audio/ogg`, `audio/flac`                                                                                                                                      |
+| **Auto-converted** | Any format not in the list above is converted to 16 kHz mono WAV automatically                                                                                                                                      |
 
 ---
 
@@ -143,36 +143,36 @@ ui/theme/                    — Material Design 3 theme, colors, typography
 
 **Navigation routes:**
 
-| Route | Screen |
-|---|---|
-| `main` | Main (start destination) |
-| `history` | History |
-| `settings` | Settings |
+| Route      | Screen                   |
+|------------|--------------------------|
+| `main`     | Main (start destination) |
+| `history`  | History                  |
+| `settings` | Settings                 |
 
 ---
 
 ## Tech Stack
 
-| Library | Version | Purpose |
-|---|---|---|
-| Jetpack Compose BOM | 2026.03.01 | Declarative UI |
-| Material3 | (via BOM) | Material Design 3 components |
-| Navigation Compose | 2.9.7 | In-app navigation |
-| Lifecycle / ViewModel | 2.10.0 | MVVM lifecycle management |
-| Room | 2.8.4 | Local SQLite database |
-| DataStore Preferences | 1.2.1 | Persistent key-value storage |
-| Retrofit + Gson | 3.0.0 | ElevenLabs REST client |
-| OkHttp Logging Interceptor | 5.3.2 | HTTP debug logging |
-| Google Generative AI SDK | 1.45.0 | Gemini API client |
-| KSP | 2.3.6 | Room annotation processing |
-| Kotlin | 2.3.20 | Language |
+| Library                    | Version    | Purpose                      |
+|----------------------------|------------|------------------------------|
+| Jetpack Compose BOM        | 2026.03.01 | Declarative UI               |
+| Material3                  | (via BOM)  | Material Design 3 components |
+| Navigation Compose         | 2.9.7      | In-app navigation            |
+| Lifecycle / ViewModel      | 2.10.0     | MVVM lifecycle management    |
+| Room                       | 2.8.4      | Local SQLite database        |
+| DataStore Preferences      | 1.2.1      | Persistent key-value storage |
+| Retrofit + Gson            | 3.0.0      | ElevenLabs REST client       |
+| OkHttp Logging Interceptor | 5.3.2      | HTTP debug logging           |
+| Google Generative AI SDK   | 1.45.0     | Gemini API client            |
+| KSP                        | 2.3.6      | Room annotation processing   |
+| Kotlin                     | 2.3.20     | Language                     |
 
 ---
 
 ## Permissions
 
-| Permission | Reason |
-|---|---|
+| Permission                    | Reason                                      |
+|-------------------------------|---------------------------------------------|
 | `android.permission.INTERNET` | Required to call ElevenLabs and Gemini APIs |
 
 Audio files are accessed via Android share intents — no `READ_EXTERNAL_STORAGE` permission is needed.

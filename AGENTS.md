@@ -4,6 +4,12 @@
 This repository is a single-module Android app in `app/`. Kotlin sources live under `app/src/main/java/com/andreacovelli/whispertranscriber/`, with UI split into `ui/screens`, `ui/components`, and `ui/theme`. Persistence and queue state are in `data/`, audio conversion in `media/`, and key storage in `security/`. Android resources are in `app/src/main/res/`. Unit tests live in `app/src/test/...`; instrumentation tests live in `app/src/androidTest/...`. CI workflows are in `.github/workflows/`, and static-analysis config lives in `config/detekt/`.
 
 ## Build, Test, and Development Commands
+The project uses the Gradle build system (Kotlin DSL).
+
+**Note:** Ensure that your Java environment variable (e.g., `JAVA_HOME`) is correctly set in your terminal as an environment variable before running Gradle commands:
+```
+$env:JAVA_HOME = "C:\Users\<User>\AppData\Local\Programs\Android Studio\jbr"
+```
 - `./gradlew assembleDebug` builds the debug APK.
 - `./gradlew testDebugUnitTest` runs JVM unit tests.
 - `./gradlew connectedDebugAndroidTest` runs instrumented tests on a device/emulator.
@@ -15,6 +21,7 @@ This repository is a single-module Android app in `app/`. Kotlin sources live un
 - Use one Gradle invocation at a time per workspace. Parallel local Gradle runs against the same repo can trigger Kotlin/KSP cache corruption.
 - `--no-daemon` is useful when diagnosing cache or incremental-build issues, but it is not required for normal day-to-day development.
 - Run Gradle verification sequentially in this repo. Do not launch multiple Gradle commands in parallel against the same workspace; that can trigger Kotlin/KSP incremental cache corruption on its own.
+
 
 ## Coding Style & Naming Conventions
 Use 4-space indentation and standard Kotlin style. Keep composables in `PascalCase`, functions and properties in `camelCase`, and constants in `UPPER_SNAKE_CASE`. Prefer small UI components in `ui/components/` and keep screen orchestration in `ui/screens/`. Formatting is enforced by Spotless with ktlint; static analysis uses Detekt with `config/detekt/detekt.yml`. Avoid editing generated `app/build/` outputs.
