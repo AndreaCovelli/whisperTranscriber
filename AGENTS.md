@@ -6,10 +6,11 @@ This repository is a single-module Android app in `app/`. Kotlin sources live un
 ## Build, Test, and Development Commands
 The project uses the Gradle build system (Kotlin DSL).
 
-**Note:** Ensure that your Java environment variable (e.g., `JAVA_HOME`) is correctly set in your terminal as an environment variable before running Gradle commands:
+**Note:** Ensure that your Java environment variable (for example `JAVA_HOME`) is set in the current terminal session before running Gradle commands. On this Windows setup, Android Studio's bundled JBR is typically under `%LOCALAPPDATA%\Programs\Android Studio\jbr` rather than `Program Files`.
 ```
-$env:JAVA_HOME = "C:\Users\<User>\AppData\Local\Programs\Android Studio\jbr"
+$env:JAVA_HOME = Join-Path $env:LOCALAPPDATA "Programs\Android Studio\jbr"
 ```
+If `java` is missing from `PATH`, setting `JAVA_HOME` like above is usually sufficient for `.\gradlew.bat`.
 - `./gradlew assembleDebug` builds the debug APK.
 - `./gradlew testDebugUnitTest` runs JVM unit tests.
 - `./gradlew connectedDebugAndroidTest` runs instrumented tests on a device/emulator.
