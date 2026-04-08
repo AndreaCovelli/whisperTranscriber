@@ -25,8 +25,8 @@ complexity:
   TooManyFunctions:
     active: true
     thresholdInFiles: 30
-    thresholdInClasses: 27
-    thresholdInInterfaces: 27
+    thresholdInClasses: 25
+    thresholdInInterfaces: 25
     thresholdInObjects: 25
     thresholdInEnums: 25
     ignoreAnnotatedFunctions:
