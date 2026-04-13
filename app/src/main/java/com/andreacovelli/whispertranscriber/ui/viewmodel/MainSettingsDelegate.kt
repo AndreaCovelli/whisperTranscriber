@@ -76,18 +76,22 @@ internal class MainSettingsDelegate(
     }
 
     private fun updateProviderSelection(provider: TranscriptionProvider) {
+
+        uiState.update { it.copy(provider = provider) }
         scope.launch {
             settings.saveProvider(provider)
         }
     }
 
     private fun updateSummarizerProviderSelection(provider: TranscriptionProvider) {
+        uiState.update { it.copy(summarizerProvider = provider) }
         scope.launch {
             settings.saveSummarizerProvider(provider)
         }
     }
 
     private fun updateAutomaticSummarization(enabled: Boolean) {
+        uiState.update { it.copy(automaticSummarizationEnabled = enabled) }
         scope.launch {
             settings.saveAutomaticSummarization(enabled)
         }
@@ -184,16 +188,20 @@ internal class MainSettingsDelegate(
     private suspend fun persistValidatedModel(modelName: String, isSummarizer: Boolean, displayName: String) {
         if (isSummarizer) {
             settings.saveSummarizerCustomGeminiModelName(modelName)
-            updateModelValidationState(
-                isSummarizer = true,
-                validation = CustomModelValidation.Valid(displayName),
-            )
+            uiState.update {
+                it.copy(
+                    summarizerCustomGeminiModelName = modelName,
+                    summarizerCustomModelValidation = CustomModelValidation.Valid(displayName),
+                )
+            }
         } else {
             settings.saveTranscriptionCustomGeminiModelName(modelName)
-            updateModelValidationState(
-                isSummarizer = false,
-                validation = CustomModelValidation.Valid(displayName),
-            )
+            uiState.update {
+                it.copy(
+                    transcriptionCustomGeminiModelName = modelName,
+                    transcriptionCustomModelValidation = CustomModelValidation.Valid(displayName),
+                )
+            }
         }
     }
 
