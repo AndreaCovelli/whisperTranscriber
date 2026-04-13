@@ -15,7 +15,6 @@ import java.security.GeneralSecurityException
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 
@@ -207,15 +206,11 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
             ?: TranscriptionProvider.GEMINI_FLASH
     }
 
-    val transcriptionQueueSettingsFlow: Flow<TranscriptionQueueSettings> = combine(
-        providerFlow,
-        transcriptionCustomGeminiModelNameFlow,
-        speakerDiarizationFlow,
-    ) { provider, customModelName, speakerDiarizationEnabled ->
+    val transcriptionQueueSettingsFlow: Flow<TranscriptionQueueSettings> = context.dataStore.data.map { prefs ->
         TranscriptionQueueSettings(
-            provider = provider,
-            customModelName = customModelName.orEmpty(),
-            speakerDiarizationEnabled = speakerDiarizationEnabled,
+            provider = decodeStoredTranscriptionProvider(prefs[SELECTED_PROVIDER]),
+            customModelName = prefs[GEMINI_TRANSCRIPTION_CUSTOM_MODEL_NAME].orEmpty(),
+            speakerDiarizationEnabled = prefs[SPEAKER_DIARIZATION_ENABLED] ?: false,
         )
     }
 
