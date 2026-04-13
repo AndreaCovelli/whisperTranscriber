@@ -76,28 +76,24 @@ internal class MainSettingsDelegate(
     }
 
     private fun updateProviderSelection(provider: TranscriptionProvider) {
-        uiState.update { it.copy(provider = provider) }
         scope.launch {
             settings.saveProvider(provider)
         }
     }
 
     private fun updateSummarizerProviderSelection(provider: TranscriptionProvider) {
-        uiState.update { it.copy(summarizerProvider = provider) }
         scope.launch {
             settings.saveSummarizerProvider(provider)
         }
     }
 
     private fun updateAutomaticSummarization(enabled: Boolean) {
-        uiState.update { it.copy(automaticSummarizationEnabled = enabled) }
         scope.launch {
             settings.saveAutomaticSummarization(enabled)
         }
     }
 
     private fun updateSpeakerDiarization(enabled: Boolean) {
-        uiState.update { it.copy(speakerDiarizationEnabled = enabled) }
         scope.launch {
             settings.saveSpeakerDiarization(enabled)
         }
@@ -188,20 +184,16 @@ internal class MainSettingsDelegate(
     private suspend fun persistValidatedModel(modelName: String, isSummarizer: Boolean, displayName: String) {
         if (isSummarizer) {
             settings.saveSummarizerCustomGeminiModelName(modelName)
-            uiState.update {
-                it.copy(
-                    summarizerCustomGeminiModelName = modelName,
-                    summarizerCustomModelValidation = CustomModelValidation.Valid(displayName),
-                )
-            }
+            updateModelValidationState(
+                isSummarizer = true,
+                validation = CustomModelValidation.Valid(displayName),
+            )
         } else {
             settings.saveTranscriptionCustomGeminiModelName(modelName)
-            uiState.update {
-                it.copy(
-                    transcriptionCustomGeminiModelName = modelName,
-                    transcriptionCustomModelValidation = CustomModelValidation.Valid(displayName),
-                )
-            }
+            updateModelValidationState(
+                isSummarizer = false,
+                validation = CustomModelValidation.Valid(displayName),
+            )
         }
     }
 

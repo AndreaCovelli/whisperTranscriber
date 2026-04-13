@@ -347,10 +347,15 @@ class MainViewModel @Inject constructor(
 
     private suspend fun resolveTranscriptionQueueSettingsForShare(): TranscriptionQueueSettings {
         val currentState = _uiState.value
-        return if (transcriptionSettingsHydrated.value) {
-            currentState.toTranscriptionQueueSettings()
-        } else {
-            settings.getTranscriptionQueueSettings()
-        }
+        val hydrated = transcriptionSettingsHydrated.value
+        return resolveShareQueueSettings(
+            uiState = currentState,
+            transcriptionSettingsHydrated = hydrated,
+            persistedSettings = if (hydrated) {
+                currentState.toTranscriptionQueueSettings()
+            } else {
+                settings.getTranscriptionQueueSettings()
+            },
+        )
     }
 }
