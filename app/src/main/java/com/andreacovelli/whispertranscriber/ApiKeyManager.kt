@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
@@ -201,7 +202,7 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
             customModelName = prefs[GEMINI_TRANSCRIPTION_CUSTOM_MODEL_NAME].orEmpty(),
             speakerDiarizationEnabled = prefs[SPEAKER_DIARIZATION_ENABLED] ?: false,
         )
-    }
+    }.distinctUntilChanged()
 
     suspend fun getTranscriptionQueueSettings(): TranscriptionQueueSettings = transcriptionQueueSettingsFlow.first()
 }
