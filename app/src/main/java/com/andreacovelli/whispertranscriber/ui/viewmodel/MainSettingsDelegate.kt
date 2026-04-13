@@ -76,7 +76,6 @@ internal class MainSettingsDelegate(
     }
 
     private fun updateProviderSelection(provider: TranscriptionProvider) {
-
         uiState.update { it.copy(provider = provider) }
         scope.launch {
             settings.saveProvider(provider)
