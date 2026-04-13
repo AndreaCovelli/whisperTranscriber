@@ -13,6 +13,82 @@ import org.junit.Test
 
 class TranscriptionPresentationTest {
     @Test
+    fun resolveShareQueueSettings_usesPersistedSettingsBeforeHydration() {
+        val resolved = resolveShareQueueSettings(
+            uiState = UiState(
+                provider = TranscriptionProvider.ELEVEN_LABS,
+                transcriptionCustomGeminiModelName = "",
+                speakerDiarizationEnabled = false,
+            ),
+            transcriptionSettingsHydrated = false,
+            persistedSettings = TranscriptionQueueSettings(
+                provider = TranscriptionProvider.GEMINI_FLASH,
+                customModelName = "gemini-2.5-flash",
+                speakerDiarizationEnabled = true,
+            ),
+        )
+
+        assertEquals(
+            TranscriptionQueueSettings(
+                provider = TranscriptionProvider.GEMINI_FLASH,
+                customModelName = "gemini-2.5-flash",
+                speakerDiarizationEnabled = true,
+            ),
+            resolved,
+        )
+    }
+
+    @Test
+    fun resolveShareQueueSettings_prefersInMemoryStateAfterHydration() {
+        val resolved = resolveShareQueueSettings(
+            uiState = UiState(
+                provider = TranscriptionProvider.GEMINI_CUSTOM,
+                transcriptionCustomGeminiModelName = "gemini-live-custom",
+                speakerDiarizationEnabled = true,
+            ),
+            transcriptionSettingsHydrated = true,
+            persistedSettings = TranscriptionQueueSettings(
+                provider = TranscriptionProvider.ELEVEN_LABS,
+                customModelName = "",
+                speakerDiarizationEnabled = false,
+            ),
+        )
+
+        assertEquals(
+            TranscriptionQueueSettings(
+                provider = TranscriptionProvider.GEMINI_CUSTOM,
+                customModelName = "gemini-live-custom",
+                speakerDiarizationEnabled = true,
+            ),
+            resolved,
+        )
+    }
+
+    @Test
+    fun uiStateToTranscriptionQueueSettings_preservesCurrentSelection() {
+        assertEquals(
+            TranscriptionQueueSettings(
+                provider = TranscriptionProvider.GEMINI_PRO,
+                customModelName = "ignored-for-built-in-model",
+                speakerDiarizationEnabled = true,
+            ),
+            UiState(
+                provider = TranscriptionProvider.GEMINI_PRO,
+                transcriptionCustomGeminiModelName = "ignored-for-built-in-model",
+                speakerDiarizationEnabled = true,
+            ).toTranscriptionQueueSettings(),
+        )
+    }
+
+    @Test
+    fun decodeStoredTranscriptionProvider_mapsLegacyGemini25FlashValue() {
+        assertEquals(
+            TranscriptionProvider.GEMINI_FLASH,
+            decodeStoredTranscriptionProvider("GEMINI_25_FLASH"),
+        )
+    }
+
+    @Test
     fun providerFamilyLabel_returnsGeminiCustomForCustomProvider() {
         assertEquals("Gemini Custom", providerFamilyLabel(TranscriptionProvider.GEMINI_CUSTOM))
     }

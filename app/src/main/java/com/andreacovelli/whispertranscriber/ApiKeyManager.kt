@@ -15,6 +15,7 @@ import java.security.GeneralSecurityException
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 
@@ -35,6 +36,19 @@ sealed class ApiKeyState {
     object Missing : ApiKeyState()
     object Present : ApiKeyState()
     data class Error(val message: String) : ApiKeyState()
+}
+
+data class TranscriptionQueueSettings(
+    val provider: TranscriptionProvider,
+    val customModelName: String,
+    val speakerDiarizationEnabled: Boolean,
+)
+
+internal fun decodeStoredTranscriptionProvider(name: String?): TranscriptionProvider = when (name) {
+    null -> TranscriptionProvider.ELEVEN_LABS
+    "GEMINI_25_FLASH" -> TranscriptionProvider.GEMINI_FLASH
+    else -> runCatching { TranscriptionProvider.valueOf(name) }
+        .getOrDefault(TranscriptionProvider.ELEVEN_LABS)
 }
 
 @Singleton
@@ -183,16 +197,34 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
         p[GEMINI_SUMMARIZER_CUSTOM_MODEL_NAME]?.takeIf { it.isNotBlank() }
     }
 
-    val providerFlow: Flow<TranscriptionProvider> = context.dataStore.data.map { p ->
-        p[SELECTED_PROVIDER]?.let { name ->
-            runCatching { TranscriptionProvider.valueOf(name) }
-                .getOrElse { if (name == "GEMINI_25_FLASH") TranscriptionProvider.GEMINI_FLASH else null }
-        } ?: TranscriptionProvider.ELEVEN_LABS
+    val providerFlow: Flow<TranscriptionProvider> = context.dataStore.data.map { prefs ->
+        decodeStoredTranscriptionProvider(prefs[SELECTED_PROVIDER])
     }
 
     val summarizerProviderFlow: Flow<TranscriptionProvider> = context.dataStore.data.map { p ->
         p[SELECTED_SUMMARIZER_PROVIDER]
             ?.let { runCatching { TranscriptionProvider.valueOf(it) }.getOrNull() }
             ?: TranscriptionProvider.GEMINI_FLASH
+    }
+
+    val transcriptionQueueSettingsFlow: Flow<TranscriptionQueueSettings> = combine(
+        providerFlow,
+        transcriptionCustomGeminiModelNameFlow,
+        speakerDiarizationFlow,
+    ) { provider, customModelName, speakerDiarizationEnabled ->
+        TranscriptionQueueSettings(
+            provider = provider,
+            customModelName = customModelName.orEmpty(),
+            speakerDiarizationEnabled = speakerDiarizationEnabled,
+        )
+    }
+
+    suspend fun getTranscriptionQueueSettings(): TranscriptionQueueSettings {
+        val prefs = context.dataStore.data.firstOrNull()
+        return TranscriptionQueueSettings(
+            provider = decodeStoredTranscriptionProvider(prefs?.get(SELECTED_PROVIDER)),
+            customModelName = prefs?.get(GEMINI_TRANSCRIPTION_CUSTOM_MODEL_NAME).orEmpty(),
+            speakerDiarizationEnabled = prefs?.get(SPEAKER_DIARIZATION_ENABLED) ?: false,
+        )
     }
 }

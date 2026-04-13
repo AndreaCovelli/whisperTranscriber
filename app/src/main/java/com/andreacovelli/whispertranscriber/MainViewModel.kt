@@ -128,6 +128,22 @@ private val TranscriptionJob.isReadyForAutoSummary: Boolean
 
 data class TranscriptionData(val text: String, val language: String, val model: String)
 
+internal fun UiState.toTranscriptionQueueSettings(): TranscriptionQueueSettings = TranscriptionQueueSettings(
+    provider = provider,
+    customModelName = transcriptionCustomGeminiModelName,
+    speakerDiarizationEnabled = speakerDiarizationEnabled,
+)
+
+internal fun resolveShareQueueSettings(
+    uiState: UiState,
+    transcriptionSettingsHydrated: Boolean,
+    persistedSettings: TranscriptionQueueSettings,
+): TranscriptionQueueSettings = if (transcriptionSettingsHydrated) {
+    uiState.toTranscriptionQueueSettings()
+} else {
+    persistedSettings
+}
+
 sealed interface TranscriptionResult {
     data class Loading(val message: String) : TranscriptionResult
     data class Success(val data: TranscriptionData) : TranscriptionResult
@@ -153,6 +169,7 @@ class MainViewModel @Inject constructor(
     )
     val uiState = _uiState.asStateFlow()
     private val summaryJobs = ConcurrentHashMap<Int, Job>()
+    private val transcriptionSettingsHydrated = AtomicBoolean(false)
 
     val mainScreenActions = createMainScreenActions(
         clearCompletedJobs = {
@@ -205,8 +222,15 @@ class MainViewModel @Inject constructor(
 
         viewModelScope.launch {
             launch {
-                settings.providerFlow.collect { p ->
-                    _uiState.update { it.copy(provider = p) }
+                settings.transcriptionQueueSettingsFlow.collect { queueSettings ->
+                    _uiState.update {
+                        it.copy(
+                            provider = queueSettings.provider,
+                            transcriptionCustomGeminiModelName = queueSettings.customModelName,
+                            speakerDiarizationEnabled = queueSettings.speakerDiarizationEnabled,
+                        )
+                    }
+                    transcriptionSettingsHydrated.set(true)
                 }
             }
             launch {
@@ -225,11 +249,6 @@ class MainViewModel @Inject constructor(
                 }
             }
             launch {
-                settings.transcriptionCustomGeminiModelNameFlow.collect { name ->
-                    _uiState.update { it.copy(transcriptionCustomGeminiModelName = name.orEmpty()) }
-                }
-            }
-            launch {
                 settings.summarizerCustomGeminiModelNameFlow.collect { name ->
                     _uiState.update { it.copy(summarizerCustomGeminiModelName = name.orEmpty()) }
                 }
@@ -237,11 +256,6 @@ class MainViewModel @Inject constructor(
             launch {
                 settings.automaticSummarizationFlow.collect { enabled ->
                     _uiState.update { it.copy(automaticSummarizationEnabled = enabled) }
-                }
-            }
-            launch {
-                settings.speakerDiarizationFlow.collect { enabled ->
-                    _uiState.update { it.copy(speakerDiarizationEnabled = enabled) }
                 }
             }
             launch {
@@ -333,6 +347,7 @@ class MainViewModel @Inject constructor(
     }
 
     internal fun updateSpeakerDiarization(enabled: Boolean) {
+        _uiState.update { it.copy(speakerDiarizationEnabled = enabled) }
         viewModelScope.launch {
             settings.saveSpeakerDiarization(enabled)
         }
@@ -420,11 +435,12 @@ class MainViewModel @Inject constructor(
             _uiState.update {
                 it.copy(status = appContext.getString(R.string.main_queuing_files, uris.size))
             }
+            val queueSettings = resolveTranscriptionQueueSettingsForShare()
             val result = queueService.enqueueSharedAudio(
                 uris = uris,
-                provider = _uiState.value.provider,
-                customModelName = _uiState.value.transcriptionCustomGeminiModelName,
-                speakerDiarizationEnabled = _uiState.value.speakerDiarizationEnabled,
+                provider = queueSettings.provider,
+                customModelName = queueSettings.customModelName,
+                speakerDiarizationEnabled = queueSettings.speakerDiarizationEnabled,
             )
             _uiState.update { it.copy(status = result.statusMessage) }
         }
@@ -488,5 +504,17 @@ class MainViewModel @Inject constructor(
                 )
             }
         }
+    }
+
+    private suspend fun resolveTranscriptionQueueSettingsForShare(): TranscriptionQueueSettings {
+        val currentState = _uiState.value
+        if (transcriptionSettingsHydrated.get()) {
+            return currentState.toTranscriptionQueueSettings()
+        }
+        return resolveShareQueueSettings(
+            uiState = currentState,
+            transcriptionSettingsHydrated = false,
+            persistedSettings = settings.getTranscriptionQueueSettings(),
+        )
     }
 }
