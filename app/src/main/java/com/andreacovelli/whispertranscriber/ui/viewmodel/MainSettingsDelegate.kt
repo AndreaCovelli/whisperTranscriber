@@ -97,6 +97,7 @@ internal class MainSettingsDelegate(
     }
 
     private fun updateSpeakerDiarization(enabled: Boolean) {
+        uiState.update { it.copy(speakerDiarizationEnabled = enabled) }
         scope.launch {
             settings.saveSpeakerDiarization(enabled)
         }
