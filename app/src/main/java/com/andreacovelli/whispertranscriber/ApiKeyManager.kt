@@ -68,10 +68,6 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
         p[AUTOMATIC_SUMMARIZATION_ENABLED] ?: false
     }
 
-    val speakerDiarizationFlow: Flow<Boolean> = context.dataStore.data.map { p ->
-        p[SPEAKER_DIARIZATION_ENABLED] ?: false
-    }
-
     suspend fun saveAutomaticSummarization(enabled: Boolean) {
         context.dataStore.edit { it[AUTOMATIC_SUMMARIZATION_ENABLED] = enabled }
     }
@@ -188,16 +184,8 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
     suspend fun getElevenLabsApiKey(): CharArray? = getApiKey(ELEVEN_LABS_API_KEY_ENC)
     suspend fun getGeminiApiKey(): CharArray? = getApiKey(GEMINI_API_KEY_ENC)
 
-    val transcriptionCustomGeminiModelNameFlow: Flow<String?> = context.dataStore.data.map { p ->
-        p[GEMINI_TRANSCRIPTION_CUSTOM_MODEL_NAME]?.takeIf { it.isNotBlank() }
-    }
-
     val summarizerCustomGeminiModelNameFlow: Flow<String?> = context.dataStore.data.map { p ->
         p[GEMINI_SUMMARIZER_CUSTOM_MODEL_NAME]?.takeIf { it.isNotBlank() }
-    }
-
-    val providerFlow: Flow<TranscriptionProvider> = context.dataStore.data.map { prefs ->
-        decodeStoredTranscriptionProvider(prefs[SELECTED_PROVIDER])
     }
 
     val summarizerProviderFlow: Flow<TranscriptionProvider> = context.dataStore.data.map { p ->
