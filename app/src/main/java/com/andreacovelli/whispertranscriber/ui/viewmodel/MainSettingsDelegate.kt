@@ -9,7 +9,6 @@ import com.andreacovelli.whispertranscriber.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.UiState
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
@@ -61,7 +60,7 @@ internal class MainSettingsDelegate(
 
         validationJob(isGemini)?.cancel()
         updateApiKeyValidationState(isGemini = isGemini, validation = KeyValidationState.Validating)
-        val job = scope.launch(start = CoroutineStart.LAZY) {
+        val job = scope.launch {
             val result = if (isGemini) {
                 validationService.validateGeminiKey(trimmed)
             } else {
@@ -82,7 +81,6 @@ internal class MainSettingsDelegate(
             }
         }
         assignValidationJob(isGemini, job)
-        job.start()
     }
 
     private fun updateProviderSelection(provider: TranscriptionProvider) {
@@ -164,7 +162,7 @@ internal class MainSettingsDelegate(
             validation = CustomModelValidation.Validating,
         )
         modelValidationJob(isSummarizer)?.cancel()
-        val job = scope.launch(start = CoroutineStart.LAZY) {
+        val job = scope.launch {
             val result = validationService.validateCustomModel(trimmed)
             if (result.isValid) {
                 persistValidatedModel(trimmed, isSummarizer, result.displayName.orEmpty())
@@ -176,7 +174,6 @@ internal class MainSettingsDelegate(
             }
         }
         assignModelValidationJob(isSummarizer, job)
-        job.start()
     }
 
     private fun validationJob(isGemini: Boolean): Job? = if (isGemini) {
