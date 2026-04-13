@@ -9,6 +9,7 @@ import com.andreacovelli.whispertranscriber.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.UiState
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -21,6 +22,11 @@ internal class MainSettingsDelegate(
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher,
 ) {
+    private var elevenLabsValidationJob: Job? = null
+    private var geminiValidationJob: Job? = null
+    private var transcriptionModelValidationJob: Job? = null
+    private var summarizerModelValidationJob: Job? = null
+
     val actions = SettingsScreenActions(
         setProvider = ::updateProviderSelection,
         setSummarizerProvider = ::updateSummarizerProviderSelection,
@@ -52,8 +58,9 @@ internal class MainSettingsDelegate(
         val trimmed = key.trim()
         if (trimmed.isBlank()) return
 
+        validationJob(isGemini)?.cancel()
         updateApiKeyValidationState(isGemini = isGemini, validation = KeyValidationState.Validating)
-        scope.launch {
+        val job = scope.launch {
             val result = if (isGemini) {
                 validationService.validateGeminiKey(trimmed)
             } else {
@@ -73,6 +80,7 @@ internal class MainSettingsDelegate(
                 )
             }
         }
+        assignValidationJob(isGemini, job)
     }
 
     private fun updateProviderSelection(provider: TranscriptionProvider) {
@@ -141,6 +149,7 @@ internal class MainSettingsDelegate(
     private fun validateCustomGeminiModel(modelName: String, isSummarizer: Boolean) {
         val trimmed = modelName.trim()
         if (trimmed.isBlank()) {
+            modelValidationJob(isSummarizer)?.cancel()
             updateModelValidationState(
                 isSummarizer = isSummarizer,
                 validation = CustomModelValidation.Error("Enter a model name"),
@@ -152,7 +161,8 @@ internal class MainSettingsDelegate(
             isSummarizer = isSummarizer,
             validation = CustomModelValidation.Validating,
         )
-        scope.launch {
+        modelValidationJob(isSummarizer)?.cancel()
+        val job = scope.launch {
             val result = validationService.validateCustomModel(trimmed)
             if (result.isValid) {
                 persistValidatedModel(trimmed, isSummarizer, result.displayName.orEmpty())
@@ -162,6 +172,35 @@ internal class MainSettingsDelegate(
                     validation = CustomModelValidation.Error(result.errorMessage ?: "Validation failed"),
                 )
             }
+        }
+        assignModelValidationJob(isSummarizer, job)
+    }
+
+    private fun validationJob(isGemini: Boolean): Job? = if (isGemini) {
+        geminiValidationJob
+    } else {
+        elevenLabsValidationJob
+    }
+
+    private fun assignValidationJob(isGemini: Boolean, job: Job) {
+        if (isGemini) {
+            geminiValidationJob = job
+        } else {
+            elevenLabsValidationJob = job
+        }
+    }
+
+    private fun modelValidationJob(isSummarizer: Boolean): Job? = if (isSummarizer) {
+        summarizerModelValidationJob
+    } else {
+        transcriptionModelValidationJob
+    }
+
+    private fun assignModelValidationJob(isSummarizer: Boolean, job: Job) {
+        if (isSummarizer) {
+            summarizerModelValidationJob = job
+        } else {
+            transcriptionModelValidationJob = job
         }
     }
 
