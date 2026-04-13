@@ -16,6 +16,8 @@ data class SettingsScreenActions(
     val setSummarizerProvider: (TranscriptionProvider) -> Unit,
     val setAutomaticSummarization: (Boolean) -> Unit,
     val setSpeakerDiarization: (Boolean) -> Unit,
+    val loadElevenLabsKey: suspend () -> String?,
+    val loadGeminiKey: suspend () -> String?,
     val saveElevenLabsKey: (String) -> Unit,
     val saveGeminiKey: (String) -> Unit,
     val validateTranscriptionModel: (String) -> Unit,
@@ -46,21 +48,4 @@ internal fun createMainScreenActions(
     cancelJob = cancelJob,
     cancelSummary = cancelSummary,
     deleteJob = deleteJob,
-)
-
-internal fun MainViewModel.createSettingsScreenActions(): SettingsScreenActions = SettingsScreenActions(
-    setProvider = ::updateProviderSelection,
-    setSummarizerProvider = ::updateSummarizerProviderSelection,
-    setAutomaticSummarization = ::updateAutomaticSummarization,
-    setSpeakerDiarization = ::updateSpeakerDiarization,
-    saveElevenLabsKey = ::setElevenLabsKey,
-    saveGeminiKey = ::setGeminiKey,
-    validateTranscriptionModel = ::validateTranscriptionGeminiModel,
-    validateSummarizerModel = ::validateSummarizerGeminiModel,
-    resetTranscriptionModelValidation = ::resetTranscriptionModelValidation,
-    resetSummarizerModelValidation = ::resetSummarizerModelValidation,
-    resetElevenLabsKeyValidation = ::resetElevenLabsKeyValidation,
-    resetGeminiKeyValidation = ::resetGeminiKeyValidation,
-    forgetElevenLabsKey = ::forgetElevenLabsKey,
-    forgetGeminiKey = ::forgetGeminiKey,
 )

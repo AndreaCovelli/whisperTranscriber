@@ -170,6 +170,13 @@ class MainViewModel @Inject constructor(
     val uiState = _uiState.asStateFlow()
     private val summaryJobs = ConcurrentHashMap<Int, Job>()
     private val transcriptionSettingsHydrated = AtomicBoolean(false)
+    private val settingsDelegate = MainViewModelSettingsDelegate(
+        uiState = _uiState,
+        settings = settings,
+        validationService = validationService,
+        scope = viewModelScope,
+        ioDispatcher = ioDispatcher,
+    )
 
     val mainScreenActions = createMainScreenActions(
         clearCompletedJobs = {
@@ -211,7 +218,7 @@ class MainViewModel @Inject constructor(
         },
     )
 
-    val settingsScreenActions = createSettingsScreenActions()
+    val settingsScreenActions = settingsDelegate.actions
 
     init {
         if (staleSummariesRecovered.compareAndSet(false, true)) {
@@ -289,145 +296,6 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun setElevenLabsKey(k: String) {
-        val trimmed = k.trim()
-        if (trimmed.isBlank()) return
-        _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Validating) }
-        viewModelScope.launch {
-            val result = validationService.validateElevenLabsKey(trimmed)
-            if (result.isValid) {
-                settings.saveElevenLabsApiKey(trimmed)
-                _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Idle) }
-            } else {
-                _uiState.update {
-                    it.copy(
-                        elevenLabsKeyValidation = KeyValidationState.Error(result.errorMessage ?: "Validation failed"),
-                    )
-                }
-            }
-        }
-    }
-
-    fun setGeminiKey(k: String) {
-        val trimmed = k.trim()
-        if (trimmed.isBlank()) return
-        _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Validating) }
-        viewModelScope.launch {
-            val result = validationService.validateGeminiKey(trimmed)
-            if (result.isValid) {
-                settings.saveGeminiApiKey(trimmed)
-                _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Idle) }
-            } else {
-                _uiState.update {
-                    it.copy(geminiKeyValidation = KeyValidationState.Error(result.errorMessage ?: "Validation failed"))
-                }
-            }
-        }
-    }
-
-    internal fun updateProviderSelection(provider: TranscriptionProvider) {
-        _uiState.update { it.copy(provider = provider) }
-        viewModelScope.launch {
-            settings.saveProvider(provider)
-        }
-    }
-
-    internal fun updateSummarizerProviderSelection(provider: TranscriptionProvider) {
-        _uiState.update { it.copy(summarizerProvider = provider) }
-        viewModelScope.launch {
-            settings.saveSummarizerProvider(provider)
-        }
-    }
-
-    internal fun updateAutomaticSummarization(enabled: Boolean) {
-        _uiState.update { it.copy(automaticSummarizationEnabled = enabled) }
-        viewModelScope.launch {
-            settings.saveAutomaticSummarization(enabled)
-        }
-    }
-
-    internal fun updateSpeakerDiarization(enabled: Boolean) {
-        _uiState.update { it.copy(speakerDiarizationEnabled = enabled) }
-        viewModelScope.launch {
-            settings.saveSpeakerDiarization(enabled)
-        }
-    }
-
-    internal fun resetTranscriptionModelValidation() {
-        _uiState.update { it.copy(transcriptionCustomModelValidation = CustomModelValidation.Idle) }
-    }
-
-    internal fun resetSummarizerModelValidation() {
-        _uiState.update { it.copy(summarizerCustomModelValidation = CustomModelValidation.Idle) }
-    }
-
-    internal fun resetElevenLabsKeyValidation() {
-        _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Idle) }
-    }
-
-    internal fun resetGeminiKeyValidation() {
-        _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Idle) }
-    }
-
-    internal fun forgetElevenLabsKey() {
-        viewModelScope.launch {
-            settings.forgetElevenLabsApiKey()
-            _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Idle) }
-        }
-    }
-
-    internal fun forgetGeminiKey() {
-        viewModelScope.launch {
-            settings.forgetGeminiApiKey()
-            _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Idle) }
-        }
-    }
-
-    fun validateTranscriptionGeminiModel(modelName: String) {
-        validateCustomGeminiModel(modelName, isSummarizer = false)
-    }
-
-    fun validateSummarizerGeminiModel(modelName: String) {
-        validateCustomGeminiModel(modelName, isSummarizer = true)
-    }
-
-    private fun validateCustomGeminiModel(modelName: String, isSummarizer: Boolean) {
-        val trimmed = modelName.trim()
-        if (trimmed.isBlank()) {
-            updateModelValidationState(
-                isSummarizer = isSummarizer,
-                validation = CustomModelValidation.Error("Enter a model name"),
-            )
-            return
-        }
-        updateModelValidationState(isSummarizer = isSummarizer, validation = CustomModelValidation.Validating)
-
-        viewModelScope.launch {
-            val result = validationService.validateCustomModel(trimmed)
-            if (result.isValid) {
-                persistValidatedModel(trimmed, isSummarizer, result.displayName.orEmpty())
-            } else {
-                updateModelValidationState(
-                    isSummarizer = isSummarizer,
-                    validation = CustomModelValidation.Error(result.errorMessage ?: "Validation failed"),
-                )
-            }
-        }
-    }
-
-    private suspend fun loadKeyForDisplay(keyProvider: suspend () -> CharArray?): String? = withContext(ioDispatcher) {
-        val keyChars = keyProvider() ?: return@withContext null
-        try {
-            String(keyChars)
-        } finally {
-            keyChars.fill('\u0000')
-        }
-    }
-
-    suspend fun loadElevenLabsKeyForDisplay(): String? = loadKeyForDisplay(settings::getElevenLabsApiKey)
-
-    suspend fun loadGeminiKeyForDisplay(): String? = loadKeyForDisplay(settings::getGeminiApiKey)
-
     fun handleAudioShareMultiple(uris: List<Uri>) {
         if (uris.isEmpty()) return
 
@@ -476,45 +344,12 @@ class MainViewModel @Inject constructor(
         super.onCleared()
     }
 
-    private fun updateModelValidationState(isSummarizer: Boolean, validation: CustomModelValidation) {
-        _uiState.update {
-            if (isSummarizer) {
-                it.copy(summarizerCustomModelValidation = validation)
-            } else {
-                it.copy(transcriptionCustomModelValidation = validation)
-            }
-        }
-    }
-
-    private suspend fun persistValidatedModel(modelName: String, isSummarizer: Boolean, displayName: String) {
-        if (isSummarizer) {
-            settings.saveSummarizerCustomGeminiModelName(modelName)
-            _uiState.update {
-                it.copy(
-                    summarizerCustomGeminiModelName = modelName,
-                    summarizerCustomModelValidation = CustomModelValidation.Valid(displayName),
-                )
-            }
-        } else {
-            settings.saveTranscriptionCustomGeminiModelName(modelName)
-            _uiState.update {
-                it.copy(
-                    transcriptionCustomGeminiModelName = modelName,
-                    transcriptionCustomModelValidation = CustomModelValidation.Valid(displayName),
-                )
-            }
-        }
-    }
-
     private suspend fun resolveTranscriptionQueueSettingsForShare(): TranscriptionQueueSettings {
         val currentState = _uiState.value
-        if (transcriptionSettingsHydrated.get()) {
-            return currentState.toTranscriptionQueueSettings()
+        return if (transcriptionSettingsHydrated.get()) {
+            currentState.toTranscriptionQueueSettings()
+        } else {
+            settings.getTranscriptionQueueSettings()
         }
-        return resolveShareQueueSettings(
-            uiState = currentState,
-            transcriptionSettingsHydrated = false,
-            persistedSettings = settings.getTranscriptionQueueSettings(),
-        )
     }
 }

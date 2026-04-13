@@ -15,6 +15,7 @@ import java.security.GeneralSecurityException
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 
@@ -202,12 +203,5 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
         )
     }
 
-    suspend fun getTranscriptionQueueSettings(): TranscriptionQueueSettings {
-        val prefs = context.dataStore.data.firstOrNull()
-        return TranscriptionQueueSettings(
-            provider = decodeStoredTranscriptionProvider(prefs?.get(SELECTED_PROVIDER)),
-            customModelName = prefs?.get(GEMINI_TRANSCRIPTION_CUSTOM_MODEL_NAME).orEmpty(),
-            speakerDiarizationEnabled = prefs?.get(SPEAKER_DIARIZATION_ENABLED) ?: false,
-        )
-    }
+    suspend fun getTranscriptionQueueSettings(): TranscriptionQueueSettings = transcriptionQueueSettingsFlow.first()
 }
