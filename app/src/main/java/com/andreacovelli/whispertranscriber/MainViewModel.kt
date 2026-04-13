@@ -9,6 +9,7 @@ import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 import com.andreacovelli.whispertranscriber.ui.screens.buildBatchProgressState
+import com.andreacovelli.whispertranscriber.ui.viewmodel.MainSettingsDelegate
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.ConcurrentHashMap
@@ -128,6 +129,22 @@ private val TranscriptionJob.isReadyForAutoSummary: Boolean
 
 data class TranscriptionData(val text: String, val language: String, val model: String)
 
+internal fun UiState.toTranscriptionQueueSettings(): TranscriptionQueueSettings = TranscriptionQueueSettings(
+    provider = provider,
+    customModelName = transcriptionCustomGeminiModelName,
+    speakerDiarizationEnabled = speakerDiarizationEnabled,
+)
+
+internal fun resolveShareQueueSettings(
+    uiState: UiState,
+    transcriptionSettingsHydrated: Boolean,
+    persistedSettings: TranscriptionQueueSettings,
+): TranscriptionQueueSettings = if (transcriptionSettingsHydrated) {
+    uiState.toTranscriptionQueueSettings()
+} else {
+    persistedSettings
+}
+
 sealed interface TranscriptionResult {
     data class Loading(val message: String) : TranscriptionResult
     data class Success(val data: TranscriptionData) : TranscriptionResult
@@ -153,6 +170,14 @@ class MainViewModel @Inject constructor(
     )
     val uiState = _uiState.asStateFlow()
     private val summaryJobs = ConcurrentHashMap<Int, Job>()
+    private val transcriptionSettingsHydrated = MutableStateFlow(false)
+    private val settingsDelegate = MainSettingsDelegate(
+        uiState = _uiState,
+        settings = settings,
+        validationService = validationService,
+        scope = viewModelScope,
+        ioDispatcher = ioDispatcher,
+    )
 
     val mainScreenActions = createMainScreenActions(
         clearCompletedJobs = {
@@ -194,7 +219,7 @@ class MainViewModel @Inject constructor(
         },
     )
 
-    val settingsScreenActions = createSettingsScreenActions()
+    val settingsScreenActions = settingsDelegate.actions
 
     init {
         if (staleSummariesRecovered.compareAndSet(false, true)) {
@@ -205,8 +230,15 @@ class MainViewModel @Inject constructor(
 
         viewModelScope.launch {
             launch {
-                settings.providerFlow.collect { p ->
-                    _uiState.update { it.copy(provider = p) }
+                settings.transcriptionQueueSettingsFlow.collect { queueSettings ->
+                    _uiState.update {
+                        it.copy(
+                            provider = queueSettings.provider,
+                            transcriptionCustomGeminiModelName = queueSettings.customModelName,
+                            speakerDiarizationEnabled = queueSettings.speakerDiarizationEnabled,
+                        )
+                    }
+                    transcriptionSettingsHydrated.value = true
                 }
             }
             launch {
@@ -225,11 +257,6 @@ class MainViewModel @Inject constructor(
                 }
             }
             launch {
-                settings.transcriptionCustomGeminiModelNameFlow.collect { name ->
-                    _uiState.update { it.copy(transcriptionCustomGeminiModelName = name.orEmpty()) }
-                }
-            }
-            launch {
                 settings.summarizerCustomGeminiModelNameFlow.collect { name ->
                     _uiState.update { it.copy(summarizerCustomGeminiModelName = name.orEmpty()) }
                 }
@@ -237,11 +264,6 @@ class MainViewModel @Inject constructor(
             launch {
                 settings.automaticSummarizationFlow.collect { enabled ->
                     _uiState.update { it.copy(automaticSummarizationEnabled = enabled) }
-                }
-            }
-            launch {
-                settings.speakerDiarizationFlow.collect { enabled ->
-                    _uiState.update { it.copy(speakerDiarizationEnabled = enabled) }
                 }
             }
             launch {
@@ -275,144 +297,6 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun setElevenLabsKey(k: String) {
-        val trimmed = k.trim()
-        if (trimmed.isBlank()) return
-        _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Validating) }
-        viewModelScope.launch {
-            val result = validationService.validateElevenLabsKey(trimmed)
-            if (result.isValid) {
-                settings.saveElevenLabsApiKey(trimmed)
-                _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Idle) }
-            } else {
-                _uiState.update {
-                    it.copy(
-                        elevenLabsKeyValidation = KeyValidationState.Error(result.errorMessage ?: "Validation failed"),
-                    )
-                }
-            }
-        }
-    }
-
-    fun setGeminiKey(k: String) {
-        val trimmed = k.trim()
-        if (trimmed.isBlank()) return
-        _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Validating) }
-        viewModelScope.launch {
-            val result = validationService.validateGeminiKey(trimmed)
-            if (result.isValid) {
-                settings.saveGeminiApiKey(trimmed)
-                _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Idle) }
-            } else {
-                _uiState.update {
-                    it.copy(geminiKeyValidation = KeyValidationState.Error(result.errorMessage ?: "Validation failed"))
-                }
-            }
-        }
-    }
-
-    internal fun updateProviderSelection(provider: TranscriptionProvider) {
-        _uiState.update { it.copy(provider = provider) }
-        viewModelScope.launch {
-            settings.saveProvider(provider)
-        }
-    }
-
-    internal fun updateSummarizerProviderSelection(provider: TranscriptionProvider) {
-        _uiState.update { it.copy(summarizerProvider = provider) }
-        viewModelScope.launch {
-            settings.saveSummarizerProvider(provider)
-        }
-    }
-
-    internal fun updateAutomaticSummarization(enabled: Boolean) {
-        _uiState.update { it.copy(automaticSummarizationEnabled = enabled) }
-        viewModelScope.launch {
-            settings.saveAutomaticSummarization(enabled)
-        }
-    }
-
-    internal fun updateSpeakerDiarization(enabled: Boolean) {
-        viewModelScope.launch {
-            settings.saveSpeakerDiarization(enabled)
-        }
-    }
-
-    internal fun resetTranscriptionModelValidation() {
-        _uiState.update { it.copy(transcriptionCustomModelValidation = CustomModelValidation.Idle) }
-    }
-
-    internal fun resetSummarizerModelValidation() {
-        _uiState.update { it.copy(summarizerCustomModelValidation = CustomModelValidation.Idle) }
-    }
-
-    internal fun resetElevenLabsKeyValidation() {
-        _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Idle) }
-    }
-
-    internal fun resetGeminiKeyValidation() {
-        _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Idle) }
-    }
-
-    internal fun forgetElevenLabsKey() {
-        viewModelScope.launch {
-            settings.forgetElevenLabsApiKey()
-            _uiState.update { it.copy(elevenLabsKeyValidation = KeyValidationState.Idle) }
-        }
-    }
-
-    internal fun forgetGeminiKey() {
-        viewModelScope.launch {
-            settings.forgetGeminiApiKey()
-            _uiState.update { it.copy(geminiKeyValidation = KeyValidationState.Idle) }
-        }
-    }
-
-    fun validateTranscriptionGeminiModel(modelName: String) {
-        validateCustomGeminiModel(modelName, isSummarizer = false)
-    }
-
-    fun validateSummarizerGeminiModel(modelName: String) {
-        validateCustomGeminiModel(modelName, isSummarizer = true)
-    }
-
-    private fun validateCustomGeminiModel(modelName: String, isSummarizer: Boolean) {
-        val trimmed = modelName.trim()
-        if (trimmed.isBlank()) {
-            updateModelValidationState(
-                isSummarizer = isSummarizer,
-                validation = CustomModelValidation.Error("Enter a model name"),
-            )
-            return
-        }
-        updateModelValidationState(isSummarizer = isSummarizer, validation = CustomModelValidation.Validating)
-
-        viewModelScope.launch {
-            val result = validationService.validateCustomModel(trimmed)
-            if (result.isValid) {
-                persistValidatedModel(trimmed, isSummarizer, result.displayName.orEmpty())
-            } else {
-                updateModelValidationState(
-                    isSummarizer = isSummarizer,
-                    validation = CustomModelValidation.Error(result.errorMessage ?: "Validation failed"),
-                )
-            }
-        }
-    }
-
-    private suspend fun loadKeyForDisplay(keyProvider: suspend () -> CharArray?): String? = withContext(ioDispatcher) {
-        val keyChars = keyProvider() ?: return@withContext null
-        try {
-            String(keyChars)
-        } finally {
-            keyChars.fill('\u0000')
-        }
-    }
-
-    suspend fun loadElevenLabsKeyForDisplay(): String? = loadKeyForDisplay(settings::getElevenLabsApiKey)
-
-    suspend fun loadGeminiKeyForDisplay(): String? = loadKeyForDisplay(settings::getGeminiApiKey)
-
     fun handleAudioShareMultiple(uris: List<Uri>) {
         if (uris.isEmpty()) return
 
@@ -420,11 +304,12 @@ class MainViewModel @Inject constructor(
             _uiState.update {
                 it.copy(status = appContext.getString(R.string.main_queuing_files, uris.size))
             }
+            val queueSettings = resolveTranscriptionQueueSettingsForShare()
             val result = queueService.enqueueSharedAudio(
                 uris = uris,
-                provider = _uiState.value.provider,
-                customModelName = _uiState.value.transcriptionCustomGeminiModelName,
-                speakerDiarizationEnabled = _uiState.value.speakerDiarizationEnabled,
+                provider = queueSettings.provider,
+                customModelName = queueSettings.customModelName,
+                speakerDiarizationEnabled = queueSettings.speakerDiarizationEnabled,
             )
             _uiState.update { it.copy(status = result.statusMessage) }
         }
@@ -460,33 +345,17 @@ class MainViewModel @Inject constructor(
         super.onCleared()
     }
 
-    private fun updateModelValidationState(isSummarizer: Boolean, validation: CustomModelValidation) {
-        _uiState.update {
-            if (isSummarizer) {
-                it.copy(summarizerCustomModelValidation = validation)
+    private suspend fun resolveTranscriptionQueueSettingsForShare(): TranscriptionQueueSettings {
+        val currentState = _uiState.value
+        val hydrated = transcriptionSettingsHydrated.value
+        return resolveShareQueueSettings(
+            uiState = currentState,
+            transcriptionSettingsHydrated = hydrated,
+            persistedSettings = if (hydrated) {
+                currentState.toTranscriptionQueueSettings()
             } else {
-                it.copy(transcriptionCustomModelValidation = validation)
-            }
-        }
-    }
-
-    private suspend fun persistValidatedModel(modelName: String, isSummarizer: Boolean, displayName: String) {
-        if (isSummarizer) {
-            settings.saveSummarizerCustomGeminiModelName(modelName)
-            _uiState.update {
-                it.copy(
-                    summarizerCustomGeminiModelName = modelName,
-                    summarizerCustomModelValidation = CustomModelValidation.Valid(displayName),
-                )
-            }
-        } else {
-            settings.saveTranscriptionCustomGeminiModelName(modelName)
-            _uiState.update {
-                it.copy(
-                    transcriptionCustomGeminiModelName = modelName,
-                    transcriptionCustomModelValidation = CustomModelValidation.Valid(displayName),
-                )
-            }
-        }
+                settings.getTranscriptionQueueSettings()
+            },
+        )
     }
 }
