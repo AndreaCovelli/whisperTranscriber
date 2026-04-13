@@ -170,7 +170,7 @@ class MainViewModel @Inject constructor(
     )
     val uiState = _uiState.asStateFlow()
     private val summaryJobs = ConcurrentHashMap<Int, Job>()
-    private val transcriptionSettingsHydrated = AtomicBoolean(false)
+    private val transcriptionSettingsHydrated = MutableStateFlow(false)
     private val settingsDelegate = MainSettingsDelegate(
         uiState = _uiState,
         settings = settings,
@@ -238,7 +238,7 @@ class MainViewModel @Inject constructor(
                             speakerDiarizationEnabled = queueSettings.speakerDiarizationEnabled,
                         )
                     }
-                    transcriptionSettingsHydrated.set(true)
+                    transcriptionSettingsHydrated.value = true
                 }
             }
             launch {
@@ -347,7 +347,7 @@ class MainViewModel @Inject constructor(
 
     private suspend fun resolveTranscriptionQueueSettingsForShare(): TranscriptionQueueSettings {
         val currentState = _uiState.value
-        return if (transcriptionSettingsHydrated.get()) {
+        return if (transcriptionSettingsHydrated.value) {
             currentState.toTranscriptionQueueSettings()
         } else {
             settings.getTranscriptionQueueSettings()
