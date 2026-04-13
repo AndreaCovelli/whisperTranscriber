@@ -1,5 +1,12 @@
-package com.andreacovelli.whispertranscriber
+package com.andreacovelli.whispertranscriber.ui.viewmodel
 
+import com.andreacovelli.whispertranscriber.ApiKeyManager
+import com.andreacovelli.whispertranscriber.CustomModelValidation
+import com.andreacovelli.whispertranscriber.GeminiValidationService
+import com.andreacovelli.whispertranscriber.KeyValidationState
+import com.andreacovelli.whispertranscriber.SettingsScreenActions
+import com.andreacovelli.whispertranscriber.TranscriptionProvider
+import com.andreacovelli.whispertranscriber.UiState
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -7,7 +14,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-internal class MainViewModelSettingsDelegate(
+internal class MainSettingsDelegate(
     private val uiState: MutableStateFlow<UiState>,
     private val settings: ApiKeyManager,
     private val validationService: GeminiValidationService,

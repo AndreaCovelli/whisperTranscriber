@@ -9,6 +9,7 @@ import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 import com.andreacovelli.whispertranscriber.ui.screens.buildBatchProgressState
+import com.andreacovelli.whispertranscriber.ui.viewmodel.MainSettingsDelegate
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.ConcurrentHashMap
@@ -170,7 +171,7 @@ class MainViewModel @Inject constructor(
     val uiState = _uiState.asStateFlow()
     private val summaryJobs = ConcurrentHashMap<Int, Job>()
     private val transcriptionSettingsHydrated = AtomicBoolean(false)
-    private val settingsDelegate = MainViewModelSettingsDelegate(
+    private val settingsDelegate = MainSettingsDelegate(
         uiState = _uiState,
         settings = settings,
         validationService = validationService,
