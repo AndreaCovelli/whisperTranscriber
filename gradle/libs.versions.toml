@@ -22,7 +22,7 @@ paging = "3.4.2"
 work = "2.11.2"
 detekt = "1.23.8"
 spotless = "8.4.0"
-serialization = "1.10.0"
+serialization = "1.11.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
