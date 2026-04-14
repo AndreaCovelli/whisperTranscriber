@@ -76,8 +76,8 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
     val searchQuery by historyViewModel.searchQuery.collectAsStateWithLifecycle()
     val expandedIdsSaver = listSaver<Set<Int>, Int>(save = { it.toList() }, restore = { it.toSet() })
     var expandedIds by rememberSaveable(stateSaver = expandedIdsSaver) { mutableStateOf(emptySet()) }
-    val showDeleteAllDialog = rememberSaveable { mutableStateOf(false) }
-    val showExportDialog = rememberSaveable { mutableStateOf(false) }
+    var showDeleteAllDialog by rememberSaveable { mutableStateOf(false) }
+    var showExportDialog by rememberSaveable { mutableStateOf(false) }
     val searchTokens = remember(searchQuery) { extractHistorySearchTokens(searchQuery) }
     val txtExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument(HistoryExportFormat.TXT.mimeType),
@@ -106,20 +106,20 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
             }
         },
     )
-    if (showDeleteAllDialog.value) {
+    if (showDeleteAllDialog) {
         DeleteAllHistoryDialog(
-            onDismiss = { showDeleteAllDialog.value = false },
+            onDismiss = { showDeleteAllDialog = false },
             onConfirm = {
                 historyViewModel.deleteAllHistory()
-                showDeleteAllDialog.value = false
+                showDeleteAllDialog = false
             },
         )
     }
-    if (showExportDialog.value) {
+    if (showExportDialog) {
         ExportHistoryDialog(
-            onDismiss = { showExportDialog.value = false },
+            onDismiss = { showExportDialog = false },
             onExport = { format ->
-                showExportDialog.value = false
+                showExportDialog = false
                 historyViewModel.prepareExport(format)
             },
         )
@@ -130,8 +130,8 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
             HistoryTopBar(
                 canDeleteAll = pagedItems.itemCount > 0 || searchQuery.isNotEmpty(),
                 onNavigateBack = onNavigateBack,
-                onExport = { showExportDialog.value = true },
-                onDeleteAll = { showDeleteAllDialog.value = true },
+                onExport = { showExportDialog = true },
+                onDeleteAll = { showDeleteAllDialog = true },
             )
         },
     ) { paddingValues ->
@@ -405,41 +405,45 @@ private fun ColumnScope.HistoryList(
     ) {
         items(count = pagedItems.itemCount, key = pagedItems.itemKey { it.id }) { index ->
             val item = pagedItems[index] ?: return@items
+            val actions =
+                remember(item, transcriptLabel, summaryLabel, clipboardManager, scope, context, historyViewModel) {
+                    HistoryItemCardActions(
+                        copyTranscript = {
+                            scope.launch {
+                                clipboardManager.setClipEntry(
+                                    ClipEntry(ClipData.newPlainText(transcriptLabel, item.text)),
+                                )
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.main_copied_transcript),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        },
+                        copySummary = {
+                            scope.launch {
+                                clipboardManager.setClipEntry(
+                                    ClipEntry(ClipData.newPlainText(summaryLabel, item.summary)),
+                                )
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.main_copied_summary),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        },
+                        clearTranscript = { historyViewModel.clearTranscript(item) },
+                        clearSummary = { historyViewModel.clearSummary(item) },
+                        delete = { historyViewModel.deleteHistoryItem(item) },
+                        shareTranscript = { historyViewModel.prepareShareTranscript(item) },
+                        shareSummary = { historyViewModel.prepareShareSummary(item) },
+                    )
+                }
             HistoryItemCard(
                 item = item,
                 expanded = expandedIds.contains(item.id),
                 onToggleExpand = { onExpandedIdsChange(expandedIds.toggle(item.id)) },
-                actions = HistoryItemCardActions(
-                    copyTranscript = {
-                        scope.launch {
-                            clipboardManager.setClipEntry(
-                                ClipEntry(ClipData.newPlainText(transcriptLabel, item.text)),
-                            )
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.main_copied_transcript),
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        }
-                    },
-                    copySummary = {
-                        scope.launch {
-                            clipboardManager.setClipEntry(
-                                ClipEntry(ClipData.newPlainText(summaryLabel, item.summary)),
-                            )
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.main_copied_summary),
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        }
-                    },
-                    clearTranscript = { historyViewModel.clearTranscript(item) },
-                    clearSummary = { historyViewModel.clearSummary(item) },
-                    delete = { historyViewModel.deleteHistoryItem(item) },
-                    shareTranscript = { historyViewModel.prepareShareTranscript(item) },
-                    shareSummary = { historyViewModel.prepareShareSummary(item) },
-                ),
+                actions = actions,
                 searchTokens = searchTokens,
             )
         }
