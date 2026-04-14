@@ -105,13 +105,7 @@ fun HistoryItemCard(
     item: TranscriptionHistory,
     expanded: Boolean,
     onToggleExpand: () -> Unit,
-    onCopyTranscript: () -> Unit,
-    onCopySummary: () -> Unit,
-    onClearTranscript: () -> Unit,
-    onClearSummary: () -> Unit,
-    onDelete: () -> Unit,
-    onShareTranscript: () -> Unit,
-    onShareSummary: () -> Unit,
+    actions: HistoryItemCardActions,
     searchTokens: List<String> = emptyList(),
 ) {
     val formattedDate = remember(item.timestamp) {
@@ -147,7 +141,7 @@ fun HistoryItemCard(
             HistoryItemHeader(
                 title = if (item.displayName.isBlank()) stringResource(R.string.job_audio_file) else null,
                 highlightedTitle = highlightedDisplayName.takeIf { item.displayName.isNotBlank() },
-                onDelete = onDelete,
+                onDelete = actions.delete,
             )
             Text(
                 formattedDate,
@@ -175,12 +169,7 @@ fun HistoryItemCard(
                 onToggleExpand = onToggleExpand,
                 highlightedText = highlightedText,
                 highlightedSummary = highlightedSummary,
-                onCopyTranscript = onCopyTranscript,
-                onCopySummary = onCopySummary,
-                onShareTranscript = onShareTranscript,
-                onShareSummary = onShareSummary,
-                onClearTranscript = onClearTranscript,
-                onClearSummary = onClearSummary,
+                actions = actions,
             )
         }
     }
@@ -228,12 +217,7 @@ private fun HistoryItemBody(
     onToggleExpand: () -> Unit,
     highlightedText: AnnotatedString,
     highlightedSummary: AnnotatedString,
-    onCopyTranscript: () -> Unit,
-    onCopySummary: () -> Unit,
-    onShareTranscript: () -> Unit,
-    onShareSummary: () -> Unit,
-    onClearTranscript: () -> Unit,
-    onClearSummary: () -> Unit,
+    actions: HistoryItemCardActions,
 ) {
     val transcriptOverflow = rememberOverflowState(item.id, "transcript", highlightedText)
     val summaryOverflow = rememberOverflowState(item.id, "summary", highlightedSummary)
@@ -244,9 +228,9 @@ private fun HistoryItemBody(
     if (hasTranscript) {
         CardSectionHeader(
             title = stringResource(R.string.job_transcription_title),
-            onCopy = onCopyTranscript,
-            onShare = onShareTranscript,
-            onClear = onClearTranscript,
+            onCopy = actions.copyTranscript,
+            onShare = actions.shareTranscript,
+            onClear = actions.clearTranscript,
             clearDescription = stringResource(R.string.clear_transcription),
         )
         Spacer(Modifier.height(4.dp))
@@ -266,9 +250,7 @@ private fun HistoryItemBody(
             expanded = expanded,
             overflowState = summaryOverflow,
             onExpand = onToggleExpand,
-            onCopySummary = onCopySummary,
-            onShareSummary = onShareSummary,
-            onClearSummary = onClearSummary,
+            actions = actions,
         )
     }
     if (showExpandControl) {
@@ -297,16 +279,14 @@ private fun SummaryContent(
     expanded: Boolean,
     overflowState: MutableState<Boolean>,
     onExpand: () -> Unit,
-    onCopySummary: () -> Unit,
-    onShareSummary: () -> Unit,
-    onClearSummary: () -> Unit,
+    actions: HistoryItemCardActions,
 ) {
     Spacer(Modifier.height(if (expanded) 12.dp else 6.dp))
     CardSectionHeader(
         title = stringResource(R.string.job_summary_title),
-        onCopy = onCopySummary,
-        onShare = onShareSummary,
-        onClear = onClearSummary,
+        onCopy = actions.copySummary,
+        onShare = actions.shareSummary,
+        onClear = actions.clearSummary,
         clearDescription = stringResource(R.string.clear_summary),
     )
     if (item.summaryModel.isNotBlank()) {

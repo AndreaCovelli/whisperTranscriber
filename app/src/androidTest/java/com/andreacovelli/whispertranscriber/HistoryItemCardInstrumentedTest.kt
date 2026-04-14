@@ -19,6 +19,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCard
+import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCardActions
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -61,13 +62,15 @@ class HistoryItemCardInstrumentedTest {
                         item = item,
                         expanded = expanded,
                         onToggleExpand = { expanded = !expanded },
-                        onCopyTranscript = {},
-                        onCopySummary = {},
-                        onClearTranscript = {},
-                        onClearSummary = {},
-                        onDelete = {},
-                        onShareTranscript = {},
-                        onShareSummary = {},
+                        actions = HistoryItemCardActions(
+                            copyTranscript = {},
+                            copySummary = {},
+                            clearTranscript = {},
+                            clearSummary = {},
+                            delete = {},
+                            shareTranscript = {},
+                            shareSummary = {},
+                        ),
                     )
                 }
             }
@@ -107,13 +110,15 @@ class HistoryItemCardInstrumentedTest {
                         item = item,
                         expanded = false,
                         onToggleExpand = {},
-                        onCopyTranscript = {},
-                        onCopySummary = {},
-                        onClearTranscript = {},
-                        onClearSummary = {},
-                        onDelete = {},
-                        onShareTranscript = {},
-                        onShareSummary = {},
+                        actions = HistoryItemCardActions(
+                            copyTranscript = {},
+                            copySummary = {},
+                            clearTranscript = {},
+                            clearSummary = {},
+                            delete = {},
+                            shareTranscript = {},
+                            shareSummary = {},
+                        ),
                     )
                 }
             }

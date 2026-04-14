@@ -1,7 +1,6 @@
 package com.andreacovelli.whispertranscriber.ui.screens
 
 import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -36,11 +35,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
@@ -61,15 +63,16 @@ import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.extractHistorySearchTokens
 import com.andreacovelli.whispertranscriber.suggestedHistoryExportFileName
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCard
+import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCardActions
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNavigateBack: () -> Unit) {
     val pagedItems = historyViewModel.pagedHistoryItems.collectAsLazyPagingItems()
     val context = LocalContext.current
-    val clipboardManager = remember(context) {
-        requireNotNull(context.getSystemService(ClipboardManager::class.java))
-    }
+    val clipboardManager = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     val searchQuery by historyViewModel.searchQuery.collectAsStateWithLifecycle()
     val expandedIdsSaver = listSaver<Set<Int>, Int>(save = { it.toList() }, restore = { it.toSet() })
     var expandedIds by rememberSaveable(stateSaver = expandedIdsSaver) { mutableStateOf(emptySet()) }
@@ -141,6 +144,7 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
             onExpandedIdsChange = { expandedIds = it },
             paddingValues = paddingValues,
             clipboardManager = clipboardManager,
+            scope = scope,
             context = context,
         )
     }
@@ -267,7 +271,8 @@ private fun HistoryScreenContent(
     expandedIds: Set<Int>,
     onExpandedIdsChange: (Set<Int>) -> Unit,
     paddingValues: PaddingValues,
-    clipboardManager: ClipboardManager,
+    clipboardManager: androidx.compose.ui.platform.Clipboard,
+    scope: kotlinx.coroutines.CoroutineScope,
     context: android.content.Context,
 ) {
     val focusManager = LocalFocusManager.current
@@ -293,6 +298,7 @@ private fun HistoryScreenContent(
             onExpandedIdsChange = onExpandedIdsChange,
             historyViewModel = historyViewModel,
             clipboardManager = clipboardManager,
+            scope = scope,
             context = context,
         )
     }
@@ -329,7 +335,8 @@ private fun ColumnScope.HistoryContent(
     expandedIds: Set<Int>,
     onExpandedIdsChange: (Set<Int>) -> Unit,
     historyViewModel: HistoryViewModel,
-    clipboardManager: ClipboardManager,
+    clipboardManager: androidx.compose.ui.platform.Clipboard,
+    scope: kotlinx.coroutines.CoroutineScope,
     context: android.content.Context,
 ) {
     when {
@@ -342,6 +349,7 @@ private fun ColumnScope.HistoryContent(
             onExpandedIdsChange = onExpandedIdsChange,
             historyViewModel = historyViewModel,
             clipboardManager = clipboardManager,
+            scope = scope,
             context = context,
         )
     }
@@ -385,7 +393,8 @@ private fun ColumnScope.HistoryList(
     expandedIds: Set<Int>,
     onExpandedIdsChange: (Set<Int>) -> Unit,
     historyViewModel: HistoryViewModel,
-    clipboardManager: ClipboardManager,
+    clipboardManager: androidx.compose.ui.platform.Clipboard,
+    scope: kotlinx.coroutines.CoroutineScope,
     context: android.content.Context,
 ) {
     LazyColumn(
@@ -394,25 +403,43 @@ private fun ColumnScope.HistoryList(
     ) {
         items(count = pagedItems.itemCount, key = pagedItems.itemKey { it.id }) { index ->
             val item = pagedItems[index] ?: return@items
+            val transcriptLabel = context.getString(R.string.job_transcription_title)
+            val summaryLabel = context.getString(R.string.job_summary_title)
             HistoryItemCard(
                 item = item,
                 expanded = expandedIds.contains(item.id),
                 onToggleExpand = { onExpandedIdsChange(expandedIds.toggle(item.id)) },
-                onCopyTranscript = {
-                    clipboardManager.setPrimaryClip(ClipData.newPlainText("", item.text))
-                    Toast.makeText(context, context.getString(R.string.main_copied_transcript), Toast.LENGTH_SHORT)
-                        .show()
-                },
-                onCopySummary = {
-                    clipboardManager.setPrimaryClip(ClipData.newPlainText("", item.summary))
-                    Toast.makeText(context, context.getString(R.string.main_copied_summary), Toast.LENGTH_SHORT)
-                        .show()
-                },
-                onClearTranscript = { historyViewModel.clearTranscript(item) },
-                onClearSummary = { historyViewModel.clearSummary(item) },
-                onDelete = { historyViewModel.deleteHistoryItem(item) },
-                onShareTranscript = { historyViewModel.prepareShareTranscript(item) },
-                onShareSummary = { historyViewModel.prepareShareSummary(item) },
+                actions = HistoryItemCardActions(
+                    copyTranscript = {
+                        scope.launch {
+                            clipboardManager.setClipEntry(
+                                ClipEntry(ClipData.newPlainText(transcriptLabel, item.text)),
+                            )
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.main_copied_transcript),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    },
+                    copySummary = {
+                        scope.launch {
+                            clipboardManager.setClipEntry(
+                                ClipEntry(ClipData.newPlainText(summaryLabel, item.summary)),
+                            )
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.main_copied_summary),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    },
+                    clearTranscript = { historyViewModel.clearTranscript(item) },
+                    clearSummary = { historyViewModel.clearSummary(item) },
+                    delete = { historyViewModel.deleteHistoryItem(item) },
+                    shareTranscript = { historyViewModel.prepareShareTranscript(item) },
+                    shareSummary = { historyViewModel.prepareShareSummary(item) },
+                ),
                 searchTokens = searchTokens,
             )
         }
