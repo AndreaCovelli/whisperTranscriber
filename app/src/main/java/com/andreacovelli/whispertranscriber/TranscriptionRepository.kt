@@ -25,13 +25,31 @@ class TranscriptionRepository @Inject constructor(
 
     suspend fun insertHistory(historyItem: TranscriptionHistory): Int = historyRepository.insert(historyItem)
 
-    suspend fun updateHistorySummary(
-        historyId: Int,
+    suspend fun upsertHistoryForSummarization(
+        job: TranscriptionJob,
         summary: String,
         summaryProviderName: String,
         summaryModel: String,
-    ) {
-        historyRepository.updateSummary(historyId, summary, summaryProviderName, summaryModel)
+    ): Int = db.withTransaction {
+        val existingHistoryId = job.historyId?.takeIf { historyRepository.getById(it) != null }
+        if (existingHistoryId != null) {
+            historyRepository.updateSummary(existingHistoryId, summary, summaryProviderName, summaryModel)
+            return@withTransaction existingHistoryId
+        }
+
+        val newHistoryId = historyRepository.insert(
+            TranscriptionHistory(
+                text = job.transcript,
+                language = job.language.ifBlank { "Unknown" },
+                model = job.model,
+                summary = summary,
+                summaryProviderName = summaryProviderName,
+                summaryModel = summaryModel,
+                displayName = job.displayName,
+            ),
+        )
+        jobDao.updateHistoryId(job.id, newHistoryId)
+        newHistoryId
     }
 
     suspend fun updateRunning(id: Int, isRunning: Boolean, status: String) {

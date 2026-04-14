@@ -191,6 +191,9 @@ interface TranscriptionJobDao {
     @Query("SELECT historyId FROM active_jobs WHERE id = :jobId")
     suspend fun getHistoryIdByJobId(jobId: Int): Int?
 
+    @Query("UPDATE active_jobs SET historyId = :historyId WHERE id = :jobId")
+    suspend fun updateHistoryId(jobId: Int, historyId: Int)
+
     @Query("SELECT * FROM active_jobs WHERE status = 'Queued' ORDER BY timestamp ASC")
     suspend fun getQueuedJobs(): List<TranscriptionJob>
 
