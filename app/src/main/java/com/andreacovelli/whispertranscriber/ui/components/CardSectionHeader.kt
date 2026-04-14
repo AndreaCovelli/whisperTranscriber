@@ -26,6 +26,7 @@ internal fun CardSectionHeader(
     onCopy: () -> Unit,
     onShare: () -> Unit,
     onClear: () -> Unit,
+    shareDescription: String,
     clearDescription: String,
     trailing: @Composable (() -> Unit)? = null,
 ) {
@@ -49,7 +50,7 @@ internal fun CardSectionHeader(
                     Icon(Icons.Filled.ContentCopy, stringResource(R.string.copy_type, title))
                 }
                 IconButton(onClick = onShare) {
-                    Icon(Icons.Default.Share, stringResource(R.string.share_item_description))
+                    Icon(Icons.Default.Share, shareDescription)
                 }
                 IconButton(onClick = onClear) {
                     Icon(

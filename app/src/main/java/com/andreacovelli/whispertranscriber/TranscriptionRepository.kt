@@ -31,10 +31,17 @@ class TranscriptionRepository @Inject constructor(
         summaryProviderName: String,
         summaryModel: String,
     ): Int = db.withTransaction {
-        val existingHistoryId = job.historyId?.takeIf { historyRepository.getById(it) != null }
+        val existingHistoryId = job.historyId
         if (existingHistoryId != null) {
-            historyRepository.updateSummary(existingHistoryId, summary, summaryProviderName, summaryModel)
-            return@withTransaction existingHistoryId
+            val updatedRows = historyRepository.updateSummary(
+                existingHistoryId,
+                summary,
+                summaryProviderName,
+                summaryModel,
+            )
+            if (updatedRows > 0) {
+                return@withTransaction existingHistoryId
+            }
         }
 
         val newHistoryId = historyRepository.insert(

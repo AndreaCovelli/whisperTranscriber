@@ -397,14 +397,14 @@ private fun ColumnScope.HistoryList(
     scope: kotlinx.coroutines.CoroutineScope,
     context: android.content.Context,
 ) {
+    val transcriptLabel = context.getString(R.string.job_transcription_title)
+    val summaryLabel = context.getString(R.string.job_summary_title)
     LazyColumn(
         modifier = Modifier.weight(1f),
         contentPadding = PaddingValues(vertical = 8.dp),
     ) {
         items(count = pagedItems.itemCount, key = pagedItems.itemKey { it.id }) { index ->
             val item = pagedItems[index] ?: return@items
-            val transcriptLabel = context.getString(R.string.job_transcription_title)
-            val summaryLabel = context.getString(R.string.job_summary_title)
             HistoryItemCard(
                 item = item,
                 expanded = expandedIds.contains(item.id),

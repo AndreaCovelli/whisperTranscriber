@@ -231,6 +231,7 @@ private fun HistoryItemBody(
             onCopy = actions.copyTranscript,
             onShare = actions.shareTranscript,
             onClear = actions.clearTranscript,
+            shareDescription = stringResource(R.string.share_transcription_title),
             clearDescription = stringResource(R.string.clear_transcription),
         )
         Spacer(Modifier.height(4.dp))
@@ -287,6 +288,7 @@ private fun SummaryContent(
         onCopy = actions.copySummary,
         onShare = actions.shareSummary,
         onClear = actions.clearSummary,
+        shareDescription = stringResource(R.string.share_summary_title),
         clearDescription = stringResource(R.string.clear_summary),
     )
     if (item.summaryModel.isNotBlank()) {

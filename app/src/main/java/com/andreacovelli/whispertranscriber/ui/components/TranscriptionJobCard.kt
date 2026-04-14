@@ -165,6 +165,7 @@ private fun TranscriptSection(job: TranscriptionJobState, actions: Transcription
         onCopy = actions.copyTranscript,
         onShare = actions.shareTranscript,
         onClear = actions.clearTranscript,
+        shareDescription = stringResource(R.string.share_transcription_title),
         clearDescription = stringResource(R.string.clear_transcription),
     )
     ExpandableText(
@@ -267,6 +268,7 @@ private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJob
         onCopy = actions.copySummary,
         onShare = actions.shareSummary,
         onClear = actions.clearSummary,
+        shareDescription = stringResource(R.string.share_summary_title),
         clearDescription = stringResource(R.string.clear_summary),
         trailing = if (job.isSummarizing) {
             {
