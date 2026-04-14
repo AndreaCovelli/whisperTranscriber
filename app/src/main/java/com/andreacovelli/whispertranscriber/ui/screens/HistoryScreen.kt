@@ -75,8 +75,8 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
     val searchQuery by historyViewModel.searchQuery.collectAsStateWithLifecycle()
     val expandedIdsSaver = listSaver<Set<Int>, Int>(save = { it.toList() }, restore = { it.toSet() })
     var expandedIds by rememberSaveable(stateSaver = expandedIdsSaver) { mutableStateOf(emptySet()) }
-    val showDeleteAllDialog = remember { mutableStateOf(false) }
-    val showExportDialog = remember { mutableStateOf(false) }
+    val showDeleteAllDialog = rememberSaveable { mutableStateOf(false) }
+    val showExportDialog = rememberSaveable { mutableStateOf(false) }
     val searchTokens = remember(searchQuery) { extractHistorySearchTokens(searchQuery) }
     val txtExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument(HistoryExportFormat.TXT.mimeType),
