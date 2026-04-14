@@ -68,7 +68,7 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
     val pagedItems = historyViewModel.pagedHistoryItems.collectAsLazyPagingItems()
     val context = LocalContext.current
     val clipboardManager = remember(context) {
-        context.getSystemService(ClipboardManager::class.java)
+        requireNotNull(context.getSystemService(ClipboardManager::class.java))
     }
     val searchQuery by historyViewModel.searchQuery.collectAsStateWithLifecycle()
     val expandedIdsSaver = listSaver<Set<Int>, Int>(save = { it.toList() }, restore = { it.toSet() })
