@@ -72,7 +72,7 @@ class TranscriptionRepositoryInstrumentedTest {
             summaryModel = "gemini-2.5-flash",
         )
 
-        val restoredHistory = historyRepository.getById(restoredHistoryId)
+        val restoredHistory = db.transcriptionHistoryDao().getById(restoredHistoryId)
         val updatedJob = repository.getJob(jobId)
 
         assertNotEquals(originalHistoryId, restoredHistoryId)

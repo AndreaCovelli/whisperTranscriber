@@ -42,7 +42,8 @@ class HistoryItemCardInstrumentedTest {
             R.string.copy_type,
             context.getString(R.string.job_summary_title),
         )
-        val shareLabel = context.getString(R.string.share_item_description)
+        val shareTranscriptLabel = context.getString(R.string.share_transcription_title)
+        val shareSummaryLabel = context.getString(R.string.share_summary_title)
         val clearTranscriptLabel = context.getString(R.string.clear_transcription)
         val clearSummaryLabel = context.getString(R.string.clear_summary)
         val item = TranscriptionHistory(
@@ -79,7 +80,8 @@ class HistoryItemCardInstrumentedTest {
         composeRule.onNodeWithText(showMoreLabel).assertExists()
         composeRule.onAllNodesWithContentDescription(copyTranscriptLabel).assertCountEquals(1)
         composeRule.onAllNodesWithContentDescription(copySummaryLabel).assertCountEquals(1)
-        composeRule.onAllNodesWithContentDescription(shareLabel).assertCountEquals(2)
+        composeRule.onAllNodesWithContentDescription(shareTranscriptLabel).assertCountEquals(1)
+        composeRule.onAllNodesWithContentDescription(shareSummaryLabel).assertCountEquals(1)
         composeRule.onAllNodesWithContentDescription(clearTranscriptLabel).assertCountEquals(1)
         composeRule.onAllNodesWithContentDescription(clearSummaryLabel).assertCountEquals(1)
         composeRule.onNodeWithText(showMoreLabel).performClick()

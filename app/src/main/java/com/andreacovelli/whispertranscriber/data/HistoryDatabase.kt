@@ -130,6 +130,9 @@ interface TranscriptionHistoryDao {
 
     @Query("UPDATE transcription_history SET text = :text WHERE id = :id")
     suspend fun updateText(id: Int, text: String)
+
+    @Query("SELECT * FROM transcription_history WHERE id = :id")
+    suspend fun getById(id: Int): TranscriptionHistory?
 }
 
 @Dao
