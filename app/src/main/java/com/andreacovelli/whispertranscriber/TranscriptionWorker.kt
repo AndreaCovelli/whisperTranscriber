@@ -248,12 +248,10 @@ class TranscriptionWorker @AssistedInject constructor(
         val outputFile = withContext(ioDispatcher) {
             File.createTempFile("${CONVERTED_FILE_PREFIX}$jobId", ".wav", app.cacheDir)
         }
-        HardwareAudioConverter.convertToWav(
+        HardwareAudioConverter.convertTo16kMonoWav(
             context = app,
             inputUri = uri,
             outputFile = outputFile,
-            forceMono = true,
-            targetSampleRate = 16_000,
             onProgress = { progress ->
                 repository.updateStatusAndProgress(
                     jobId,
