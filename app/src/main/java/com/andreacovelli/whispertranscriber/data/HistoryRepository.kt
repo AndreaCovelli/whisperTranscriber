@@ -17,13 +17,11 @@ interface HistoryRepository {
 
     suspend fun insert(historyItem: TranscriptionHistory): Int
 
-    suspend fun updateSummary(id: Int, summary: String, summaryProviderName: String, summaryModel: String)
+    suspend fun updateSummary(id: Int, summary: String, summaryProviderName: String, summaryModel: String): Int
 
     suspend fun updateSummaryByJobId(jobId: Int, summary: String, summaryProviderName: String, summaryModel: String)
 
     suspend fun updateText(id: Int, text: String)
-
-    suspend fun getById(id: Int): TranscriptionHistory?
 
     suspend fun deleteById(id: Int)
 
@@ -53,9 +51,12 @@ class RoomHistoryRepository @Inject constructor(private val historyDao: Transcri
 
     override suspend fun insert(historyItem: TranscriptionHistory): Int = historyDao.insert(historyItem).toInt()
 
-    override suspend fun updateSummary(id: Int, summary: String, summaryProviderName: String, summaryModel: String) {
-        historyDao.updateSummary(id, summary, summaryProviderName, summaryModel)
-    }
+    override suspend fun updateSummary(
+        id: Int,
+        summary: String,
+        summaryProviderName: String,
+        summaryModel: String,
+    ): Int = historyDao.updateSummary(id, summary, summaryProviderName, summaryModel)
 
     override suspend fun updateSummaryByJobId(
         jobId: Int,
@@ -69,8 +70,6 @@ class RoomHistoryRepository @Inject constructor(private val historyDao: Transcri
     override suspend fun updateText(id: Int, text: String) {
         historyDao.updateText(id, text)
     }
-
-    override suspend fun getById(id: Int): TranscriptionHistory? = historyDao.getById(id)
 
     override suspend fun deleteById(id: Int) {
         historyDao.deleteById(id)

@@ -30,7 +30,7 @@ import kotlinx.coroutines.withContext
 sealed interface HistoryUiEvent {
     data class LaunchExport(val format: HistoryExportFormat) : HistoryUiEvent
 
-    data class Share(val content: String) : HistoryUiEvent
+    data class Share(val content: String, val title: String) : HistoryUiEvent
 
     data class Toast(val message: String) : HistoryUiEvent
 }
@@ -50,23 +50,25 @@ class HistoryViewModel @Inject constructor(
     private val _uiEvents = Channel<HistoryUiEvent>()
     val uiEvents = _uiEvents.receiveAsFlow()
 
-    fun prepareShareContent(item: TranscriptionHistory) {
+    fun prepareShareTranscript(item: TranscriptionHistory) {
         viewModelScope.launch {
-            val content = buildString {
-                if (item.text.isNotBlank()) {
-                    append(item.text)
-                }
-                if (item.summary.isNotBlank()) {
-                    if (isNotEmpty()) {
-                        append(appContext.getString(R.string.summary_header))
-                    } else {
-                        append(appContext.getString(R.string.job_summary_title))
-                        append(":\n")
-                    }
-                    append(item.summary)
-                }
-            }
-            _uiEvents.send(HistoryUiEvent.Share(content))
+            _uiEvents.send(
+                HistoryUiEvent.Share(
+                    content = item.text,
+                    title = appContext.getString(R.string.share_transcription_title),
+                ),
+            )
+        }
+    }
+
+    fun prepareShareSummary(item: TranscriptionHistory) {
+        viewModelScope.launch {
+            _uiEvents.send(
+                HistoryUiEvent.Share(
+                    content = item.summary,
+                    title = appContext.getString(R.string.share_summary_title),
+                ),
+            )
         }
     }
 
@@ -119,6 +121,12 @@ class HistoryViewModel @Inject constructor(
     fun clearSummary(item: TranscriptionHistory) {
         viewModelScope.launch {
             historyRepository.updateSummary(item.id, "", "", "")
+        }
+    }
+
+    fun clearTranscript(item: TranscriptionHistory) {
+        viewModelScope.launch {
+            historyRepository.updateText(item.id, "")
         }
     }
 

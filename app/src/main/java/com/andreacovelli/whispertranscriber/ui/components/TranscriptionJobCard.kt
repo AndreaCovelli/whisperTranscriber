@@ -13,11 +13,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -163,11 +160,12 @@ private fun JobProgressSection(job: TranscriptionJobState) {
 private fun TranscriptSection(job: TranscriptionJobState, actions: TranscriptionJobCardActions) {
     if (job.transcript.isBlank()) return
     Spacer(Modifier.height(12.dp))
-    SectionHeader(
+    CardSectionHeader(
         title = stringResource(R.string.job_transcription_title),
         onCopy = actions.copyTranscript,
         onShare = actions.shareTranscript,
         onClear = actions.clearTranscript,
+        shareDescription = stringResource(R.string.share_transcription_title),
         clearDescription = stringResource(R.string.clear_transcription),
     )
     ExpandableText(
@@ -265,11 +263,12 @@ private fun SummaryErrorSection(job: TranscriptionJobState) {
 private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJobCardActions) {
     if (job.summary.isBlank() && !job.isSummarizing) return
     Spacer(Modifier.height(12.dp))
-    SectionHeader(
+    CardSectionHeader(
         title = stringResource(R.string.job_summary_title),
         onCopy = actions.copySummary,
         onShare = actions.shareSummary,
         onClear = actions.clearSummary,
+        shareDescription = stringResource(R.string.share_summary_title),
         clearDescription = stringResource(R.string.clear_summary),
         trailing = if (job.isSummarizing) {
             {
@@ -330,43 +329,6 @@ private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJob
                 )
                 Spacer(Modifier.width(4.dp))
                 Text(stringResource(R.string.resummarize))
-            }
-        }
-    }
-}
-
-@Composable
-private fun SectionHeader(
-    title: String,
-    onCopy: () -> Unit,
-    onShare: () -> Unit,
-    onClear: () -> Unit,
-    clearDescription: String,
-    trailing: @Composable (() -> Unit)? = null,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(title, style = MaterialTheme.typography.titleSmall)
-        if (trailing != null) {
-            trailing()
-        } else {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onCopy) {
-                    Icon(Icons.Filled.ContentCopy, stringResource(R.string.copy_type, title))
-                }
-                IconButton(onClick = onShare) {
-                    Icon(Icons.Default.Share, stringResource(R.string.share_item_description))
-                }
-                IconButton(onClick = onClear) {
-                    Icon(
-                        Icons.Default.DeleteSweep,
-                        contentDescription = clearDescription,
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
             }
         }
     }

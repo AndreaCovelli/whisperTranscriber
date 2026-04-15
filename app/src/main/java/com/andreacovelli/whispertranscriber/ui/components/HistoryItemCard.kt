@@ -6,21 +6,14 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -106,16 +100,12 @@ private fun rememberHighlightedText(text: String, tokens: List<String>): Annotat
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HistoryItemCard(
     item: TranscriptionHistory,
     expanded: Boolean,
     onToggleExpand: () -> Unit,
-    onCopy: (String) -> Unit,
-    onClearSummary: () -> Unit,
-    onDelete: () -> Unit,
-    onShare: () -> Unit,
+    actions: HistoryItemCardActions,
     searchTokens: List<String> = emptyList(),
 ) {
     val formattedDate = remember(item.timestamp) {
@@ -148,10 +138,11 @@ fun HistoryItemCard(
                     ),
                 ),
         ) {
-            if (item.displayName.isNotBlank()) {
-                Text(highlightedDisplayName, style = MaterialTheme.typography.titleSmall)
-                Spacer(Modifier.height(2.dp))
-            }
+            HistoryItemHeader(
+                title = if (item.displayName.isBlank()) stringResource(R.string.job_audio_file) else null,
+                highlightedTitle = highlightedDisplayName.takeIf { item.displayName.isNotBlank() },
+                onDelete = actions.delete,
+            )
             Text(
                 formattedDate,
                 style = MaterialTheme.typography.labelSmall,
@@ -169,27 +160,54 @@ fun HistoryItemCard(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(8.dp))
+            if (hasTranscript || hasSummary) {
+                Spacer(Modifier.height(8.dp))
+            }
             HistoryItemBody(
                 item = item,
                 expanded = expanded,
                 onToggleExpand = onToggleExpand,
                 highlightedText = highlightedText,
                 highlightedSummary = highlightedSummary,
-            )
-            Spacer(Modifier.height(if (hasTranscript || hasSummary) 8.dp else 4.dp))
-            HistoryItemActions(
-                hasTranscript = hasTranscript,
-                hasSummary = hasSummary,
-                transcript = item.text,
-                summary = item.summary,
-                onCopy = onCopy,
-                onShare = onShare,
-                onClearSummary = onClearSummary,
-                onDelete = onDelete,
+                actions = actions,
             )
         }
     }
+}
+
+@Composable
+private fun HistoryItemHeader(title: String?, highlightedTitle: AnnotatedString?, onDelete: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        when {
+            highlightedTitle != null -> {
+                Text(
+                    highlightedTitle,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            title != null -> {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        IconButton(onClick = onDelete) {
+            Icon(
+                Icons.Default.Delete,
+                stringResource(R.string.delete_item_description),
+                tint = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+    Spacer(Modifier.height(4.dp))
 }
 
 @Composable
@@ -199,6 +217,7 @@ private fun HistoryItemBody(
     onToggleExpand: () -> Unit,
     highlightedText: AnnotatedString,
     highlightedSummary: AnnotatedString,
+    actions: HistoryItemCardActions,
 ) {
     val transcriptOverflow = rememberOverflowState(item.id, "transcript", highlightedText)
     val summaryOverflow = rememberOverflowState(item.id, "summary", highlightedSummary)
@@ -207,6 +226,15 @@ private fun HistoryItemBody(
     val showExpandControl = transcriptOverflow.value || summaryOverflow.value
 
     if (hasTranscript) {
+        CardSectionHeader(
+            title = stringResource(R.string.job_transcription_title),
+            onCopy = actions.copyTranscript,
+            onShare = actions.shareTranscript,
+            onClear = actions.clearTranscript,
+            shareDescription = stringResource(R.string.share_transcription_title),
+            clearDescription = stringResource(R.string.clear_transcription),
+        )
+        Spacer(Modifier.height(4.dp))
         SelectableHistoryText(
             text = highlightedText,
             expanded = expanded,
@@ -221,9 +249,9 @@ private fun HistoryItemBody(
             item = item,
             summary = highlightedSummary,
             expanded = expanded,
-            showTitle = expanded || !hasTranscript,
             overflowState = summaryOverflow,
             onExpand = onToggleExpand,
+            actions = actions,
         )
     }
     if (showExpandControl) {
@@ -250,16 +278,21 @@ private fun SummaryContent(
     item: TranscriptionHistory,
     summary: AnnotatedString,
     expanded: Boolean,
-    showTitle: Boolean,
     overflowState: MutableState<Boolean>,
     onExpand: () -> Unit,
+    actions: HistoryItemCardActions,
 ) {
     Spacer(Modifier.height(if (expanded) 12.dp else 6.dp))
-    if (showTitle) {
-        Text(stringResource(R.string.job_summary_title), style = MaterialTheme.typography.titleSmall)
-    }
+    CardSectionHeader(
+        title = stringResource(R.string.job_summary_title),
+        onCopy = actions.copySummary,
+        onShare = actions.shareSummary,
+        onClear = actions.clearSummary,
+        shareDescription = stringResource(R.string.share_summary_title),
+        clearDescription = stringResource(R.string.clear_summary),
+    )
     if (item.summaryModel.isNotBlank()) {
-        Spacer(Modifier.height(2.dp))
+        Spacer(Modifier.height(4.dp))
         Text(
             stringResource(R.string.history_item_summary_model, item.summaryModel),
             style = MaterialTheme.typography.labelMedium,
@@ -275,63 +308,6 @@ private fun SummaryContent(
         overflowState = overflowState,
         onExpand = onExpand,
     )
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun HistoryItemActions(
-    hasTranscript: Boolean,
-    hasSummary: Boolean,
-    transcript: String,
-    summary: String,
-    onCopy: (String) -> Unit,
-    onShare: () -> Unit,
-    onClearSummary: () -> Unit,
-    onDelete: () -> Unit,
-) {
-    val copyActions = remember(transcript, summary, hasTranscript, hasSummary) {
-        buildList {
-            if (hasTranscript) add(R.string.copy_text_label to transcript)
-            if (hasSummary) add(R.string.copy_summary_label to summary)
-        }
-    }
-    FlowRow(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End,
-    ) {
-        copyActions.forEach { (typeRes, content) ->
-            TextButton(onClick = { onCopy(content) }) {
-                Icon(
-                    Icons.Default.ContentCopy,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(stringResource(R.string.copy_type, stringResource(typeRes)), maxLines = 1, softWrap = false)
-            }
-        }
-        if (hasTranscript || hasSummary) {
-            IconButton(onClick = onShare) {
-                Icon(Icons.Default.Share, stringResource(R.string.share_item_description))
-            }
-        }
-        if (hasSummary) {
-            IconButton(onClick = onClearSummary) {
-                Icon(
-                    Icons.Default.DeleteSweep,
-                    contentDescription = stringResource(R.string.clear_summary),
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-        }
-        IconButton(onClick = onDelete) {
-            Icon(
-                Icons.Default.Delete,
-                stringResource(R.string.delete_item_description),
-                tint = MaterialTheme.colorScheme.error,
-            )
-        }
-    }
 }
 
 @Composable

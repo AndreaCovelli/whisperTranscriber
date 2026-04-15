@@ -405,14 +405,12 @@ class SummarizationService @Inject constructor(
                     summary.model,
                 )
                 summarizingCleared = true
-                job.historyId?.let {
-                    repository.updateHistorySummary(
-                        it,
-                        summary.text,
-                        summarizerSelection.provider.name,
-                        summary.model,
-                    )
-                }
+                repository.upsertHistoryForSummarization(
+                    job = job,
+                    summary = summary.text,
+                    summaryProviderName = summarizerSelection.provider.name,
+                    summaryModel = summary.model,
+                )
                 SummarizationResult(statusMessage = "Summary generated.")
             }
         } catch (e: CancellationException) {
