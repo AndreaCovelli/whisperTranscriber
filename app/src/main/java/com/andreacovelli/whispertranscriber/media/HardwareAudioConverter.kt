@@ -32,8 +32,7 @@ object HardwareAudioConverter {
     private const val TARGET_SAMPLE_RATE = 16_000
     private const val TARGET_CHANNELS = 1
     private const val TARGET_BITS_PER_SAMPLE = 16
-    private const val BYTES_PER_PCM16_SAMPLE = 2L
-    private const val PCM16_FRAME_BYTES = 2
+    private const val BYTES_PER_PCM16_SAMPLE = 2
     private const val MICROSECONDS_IN_SECOND = 1_000_000.0
     private const val BYTES_IN_MEGABYTE = 1024L * 1024L
     private const val CONVERSION_SIZE_BUFFER_BYTES = 10 * BYTES_IN_MEGABYTE // 10 MiB
@@ -166,7 +165,7 @@ object HardwareAudioConverter {
     }
 
     private fun reserveOutputStorage(storageManager: StorageManager, outputFile: File, srcFormat: MediaFormat): UUID? {
-        val bytesPerSecond = TARGET_SAMPLE_RATE * TARGET_CHANNELS * BYTES_PER_PCM16_SAMPLE
+        val bytesPerSecond = TARGET_SAMPLE_RATE.toLong() * TARGET_CHANNELS.toLong() * BYTES_PER_PCM16_SAMPLE.toLong()
         val durationUs = srcFormat.longValueOr(MediaFormat.KEY_DURATION, -1L)
         val estimatedBytes = if (durationUs > 0) {
             ((durationUs / MICROSECONDS_IN_SECOND) * bytesPerSecond).toLong() + CONVERSION_SIZE_BUFFER_BYTES
@@ -422,7 +421,7 @@ object HardwareAudioConverter {
         state: DecoderState,
         scratchBuffers: ScratchBuffers,
     ) {
-        val shortsCount = info.size / PCM16_FRAME_BYTES
+        val shortsCount = info.size / BYTES_PER_PCM16_SAMPLE
         val frames = shortsCount / state.sourceChannels
         scratchBuffers.ensureShortCapacity(shortsCount)
         scratchBuffers.ensureMonoCapacity(frames)
@@ -474,18 +473,22 @@ object HardwareAudioConverter {
     }
 
     private fun writeDecodedFrames(monoSamples: FloatArray, frameCount: Int, outputFile: File, state: DecoderState) {
-        val resampled = state.resampler?.process(monoSamples, frameCount)
-        if (resampled != null) {
-            writeFloats(outputFile, state, resampled.second, resampled.first)
-        } else if (state.resampler == null) {
+        val resampler = state.resampler
+        if (resampler != null) {
+            val resampledCount = resampler.process(monoSamples, frameCount)
+            if (resampledCount > 0) {
+                writeFloats(outputFile, state, resampler.outputBuffer, resampledCount)
+            }
+        } else {
             writeFloats(outputFile, state, monoSamples, frameCount)
         }
     }
 
     private fun flushResampler(state: DecoderState, outputFile: File) {
-        state.resampler?.finish()?.let { (flushCount, flushBuffer) ->
+        state.resampler?.let { resampler ->
+            val flushCount = resampler.finish()
             if (flushCount > 0) {
-                writeFloats(outputFile, state, flushBuffer, flushCount)
+                writeFloats(outputFile, state, resampler.outputBuffer, flushCount)
             }
         }
     }
@@ -516,7 +519,6 @@ object HardwareAudioConverter {
         private val kernel: Array<FloatArray>
         private val tail = FloatArray(ntaps)
         private var workBuffer = FloatArray(0)
-        private var outBuffer = FloatArray(0)
         private var totalFramesSeen = 0L
         private var srcPosGlobal = 0.0
 
@@ -539,7 +541,10 @@ object HardwareAudioConverter {
             }
         }
 
-        fun process(input: FloatArray, framesIn: Int): Pair<Int, FloatArray>? {
+        var outputBuffer: FloatArray = FloatArray(0)
+            private set
+
+        fun process(input: FloatArray, framesIn: Int): Int {
             val workFrames = ntaps + framesIn
             ensureWorkCapacity(workFrames)
             System.arraycopy(tail, 0, workBuffer, 0, ntaps)
@@ -566,8 +571,8 @@ object HardwareAudioConverter {
                     if (phase == nphases) phase = 0
                     val filter = kernel[phase]
 
-                    if (outIndex >= outBuffer.size) {
-                        ensureOutCapacity(outBuffer.size * 2)
+                    if (outIndex >= outputBuffer.size) {
+                        ensureOutCapacity(outputBuffer.size * 2)
                     }
 
                     var acc = 0.0f
@@ -576,7 +581,7 @@ object HardwareAudioConverter {
                     while (tap < ntaps) {
                         acc += workBuffer[inputIndex++] * filter[tap++]
                     }
-                    outBuffer[outIndex++] = acc
+                    outputBuffer[outIndex++] = acc
                 }
 
                 posRel += step
@@ -587,11 +592,10 @@ object HardwareAudioConverter {
             System.arraycopy(workBuffer, copyStart, tail, 0, ntaps)
             totalFramesSeen += framesIn
 
-            if (outIndex == 0) return null
-            return outIndex to outBuffer
+            return outIndex
         }
 
-        fun finish(): Pair<Int, FloatArray>? {
+        fun finish(): Int {
             val workFrames = ntaps * 2
             ensureWorkCapacity(workFrames)
             System.arraycopy(tail, 0, workBuffer, 0, ntaps)
@@ -615,8 +619,8 @@ object HardwareAudioConverter {
                     if (phase == nphases) phase = 0
                     val filter = kernel[phase]
 
-                    if (outIndex >= outBuffer.size) {
-                        ensureOutCapacity(outBuffer.size * 2)
+                    if (outIndex >= outputBuffer.size) {
+                        ensureOutCapacity(outputBuffer.size * 2)
                     }
 
                     var acc = 0.0f
@@ -625,15 +629,14 @@ object HardwareAudioConverter {
                     while (tap < ntaps) {
                         acc += workBuffer[inputIndex++] * filter[tap++]
                     }
-                    outBuffer[outIndex++] = acc
+                    outputBuffer[outIndex++] = acc
                 }
 
                 posRel += step
                 srcPosGlobal += step
             }
 
-            if (outIndex == 0) return null
-            return outIndex to outBuffer
+            return outIndex
         }
 
         private fun ensureWorkCapacity(minSize: Int) {
@@ -643,8 +646,8 @@ object HardwareAudioConverter {
         }
 
         private fun ensureOutCapacity(minSize: Int) {
-            if (outBuffer.size < minSize) {
-                outBuffer = FloatArray(max(minSize, outBuffer.size.coerceAtLeast(8192) * 2))
+            if (outputBuffer.size < minSize) {
+                outputBuffer = FloatArray(max(minSize, outputBuffer.size.coerceAtLeast(8192) * 2))
             }
         }
 
@@ -689,7 +692,7 @@ object HardwareAudioConverter {
 
         fun writeMonoFloats(samples: FloatArray, sampleCount: Int) {
             if (sampleCount <= 0) return
-            val byteCount = sampleCount * PCM16_FRAME_BYTES
+            val byteCount = sampleCount * BYTES_PER_PCM16_SAMPLE
             ensureByteCapacity(byteCount)
 
             val bb = byteBuffer!!
