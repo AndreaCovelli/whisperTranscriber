@@ -371,7 +371,7 @@ object HardwareAudioConverter {
     }
 
     private fun canWritePcm16Direct(state: DecoderState): Boolean =
-        state.pcmEncoding != AudioFormat.ENCODING_PCM_FLOAT &&
+        state.pcmEncoding == AudioFormat.ENCODING_PCM_16BIT &&
             state.sampleRate == TARGET_SAMPLE_RATE &&
             state.sourceChannels == TARGET_CHANNELS
 
@@ -439,6 +439,7 @@ object HardwareAudioConverter {
         if (srcChannels == 1) {
             var index = 0
             while (index < frames) {
+                // Preserve mono amplitude. The 0.9f headroom is only for summed downmix paths.
                 destination[index] = shorts[index].toInt() * multiplier
                 index++
             }
