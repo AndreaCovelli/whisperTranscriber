@@ -36,9 +36,9 @@ class HistoryGroupedListInstrumentedTest {
     fun historyRowList_rendersDateHeadersAlongsideCards() {
         val rows = buildHistoryListRows(
             items = listOf(
-                historyItem(id = 1, year = 2026, month = 4, day = 15, hour = 9, displayName = "today.wav"),
-                historyItem(id = 2, year = 2026, month = 4, day = 14, hour = 19, displayName = "yesterday.wav"),
-                historyItem(id = 3, year = 2026, month = 4, day = 10, hour = 11, displayName = "older.wav"),
+                historyItem(id = 1, day = 15, hour = 9, displayName = "today.wav"),
+                historyItem(id = 2, day = 14, hour = 19, displayName = "yesterday.wav"),
+                historyItem(id = 3, day = 10, hour = 11, displayName = "older.wav"),
             ),
             clock = java.time.Clock.fixed(
                 LocalDateTime.of(2026, 4, 15, 10, 0).atZone(zoneId).toInstant(),
@@ -80,15 +80,14 @@ class HistoryGroupedListInstrumentedTest {
         composeRule.onNodeWithText(formatHistoryMonthLabel(YearMonth.of(2026, 4), Locale.getDefault())).assertExists()
     }
 
-    private fun historyItem(id: Int, year: Int, month: Int, day: Int, hour: Int, displayName: String) =
-        TranscriptionHistory(
-            id = id,
-            text = "Transcript $id",
-            language = "en",
-            displayName = displayName,
-            timestamp = LocalDateTime.of(year, month, day, hour, 0)
-                .atZone(zoneId)
-                .toInstant()
-                .toEpochMilli(),
-        )
+    private fun historyItem(id: Int, day: Int, hour: Int, displayName: String) = TranscriptionHistory(
+        id = id,
+        text = "Transcript $id",
+        language = "en",
+        displayName = displayName,
+        timestamp = LocalDateTime.of(2026, 4, day, hour, 0)
+            .atZone(zoneId)
+            .toInstant()
+            .toEpochMilli(),
+    )
 }

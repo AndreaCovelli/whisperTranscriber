@@ -13,6 +13,8 @@ import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
+import java.time.Clock
+import java.time.LocalDate
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -120,11 +122,18 @@ class HistoryViewModel @Inject constructor(
         .distinctUntilChanged()
         .flatMapLatest(historyRepository::getPagedHistory)
         .map { pagingData ->
+            val zoneId = Clock.systemDefaultZone().zone
+            val currentDate = LocalDate.now(zoneId)
             pagingData
                 .map(HistoryListRow::Item)
                 .insertSeparators { before: HistoryListRow.Item?, after: HistoryListRow.Item? ->
                     val nextItem = after?.history ?: return@insertSeparators null
-                    historyDateHeader(before = before?.history, after = nextItem)
+                    historyDateHeader(
+                        before = before?.history,
+                        after = nextItem,
+                        currentDate = currentDate,
+                        zoneId = zoneId,
+                    )
                 }
         }
         .cachedIn(viewModelScope)

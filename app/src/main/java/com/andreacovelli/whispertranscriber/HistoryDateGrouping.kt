@@ -3,9 +3,13 @@ package com.andreacovelli.whispertranscriber
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import java.time.Clock
 import java.time.LocalDate
+import java.time.Month
 import java.time.YearMonth
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
+import java.time.chrono.IsoChronology
+import java.time.format.DateTimeFormatterBuilder
+import java.time.format.FormatStyle
+import java.time.format.TextStyle
 import java.util.Locale
 
 internal sealed interface HistoryDateLabel {
@@ -30,14 +34,8 @@ internal sealed interface HistoryListRow {
     }
 }
 
-internal fun historyDateBucket(
-    timestamp: Long,
-    clock: Clock = Clock.systemDefaultZone(),
-    zoneId: ZoneId = clock.zone,
-): HistoryDateBucket {
-    val currentDate = LocalDate.now(clock.withZone(zoneId))
-
-    return when (val itemDate = java.time.Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate()) {
+internal fun historyDateBucket(timestamp: Long, currentDate: LocalDate, zoneId: ZoneId): HistoryDateBucket =
+    when (val itemDate = java.time.Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate()) {
         currentDate -> HistoryDateBucket(
             key = "day:$itemDate",
             label = HistoryDateLabel.Today,
@@ -56,6 +54,26 @@ internal fun historyDateBucket(
             )
         }
     }
+
+internal fun historyDateBucket(
+    timestamp: Long,
+    clock: Clock = Clock.systemDefaultZone(),
+    zoneId: ZoneId = clock.zone,
+): HistoryDateBucket = historyDateBucket(
+    timestamp = timestamp,
+    currentDate = LocalDate.now(clock.withZone(zoneId)),
+    zoneId = zoneId,
+)
+
+internal fun historyDateHeader(
+    before: TranscriptionHistory?,
+    after: TranscriptionHistory,
+    currentDate: LocalDate,
+    zoneId: ZoneId,
+): HistoryListRow.Header? {
+    val afterBucket = historyDateBucket(after.timestamp, currentDate, zoneId)
+    val beforeBucketKey = before?.let { historyDateBucket(it.timestamp, currentDate, zoneId).key }
+    return if (beforeBucketKey == afterBucket.key) null else HistoryListRow.Header(afterBucket)
 }
 
 internal fun historyDateHeader(
@@ -63,24 +81,44 @@ internal fun historyDateHeader(
     after: TranscriptionHistory,
     clock: Clock = Clock.systemDefaultZone(),
     zoneId: ZoneId = clock.zone,
-): HistoryListRow.Header? {
-    val afterBucket = historyDateBucket(after.timestamp, clock, zoneId)
-    val beforeBucketKey = before?.let { historyDateBucket(it.timestamp, clock, zoneId).key }
-    return if (beforeBucketKey == afterBucket.key) null else HistoryListRow.Header(afterBucket)
-}
+): HistoryListRow.Header? = historyDateHeader(
+    before = before,
+    after = after,
+    currentDate = LocalDate.now(clock.withZone(zoneId)),
+    zoneId = zoneId,
+)
 
 internal fun buildHistoryListRows(
     items: List<TranscriptionHistory>,
     clock: Clock = Clock.systemDefaultZone(),
     zoneId: ZoneId = clock.zone,
 ): List<HistoryListRow> = buildList {
+    val currentDate = LocalDate.now(clock.withZone(zoneId))
     var previousItem: TranscriptionHistory? = null
     items.forEach { item ->
-        historyDateHeader(previousItem, item, clock, zoneId)?.let(::add)
+        historyDateHeader(previousItem, item, currentDate, zoneId)?.let(::add)
         add(HistoryListRow.Item(item))
         previousItem = item
     }
 }
 
-internal fun formatHistoryMonthLabel(yearMonth: YearMonth, locale: Locale = Locale.getDefault()): String =
-    DateTimeFormatter.ofPattern("MMMM yyyy", locale).format(yearMonth.atDay(1))
+internal fun formatHistoryMonthLabel(yearMonth: YearMonth, locale: Locale = Locale.getDefault()): String {
+    val monthName = yearMonth.month.localizedDisplayName(locale)
+    val year = yearMonth.year.toString()
+    return if (monthComesBeforeYear(locale)) "$monthName $year" else "$year $monthName"
+}
+
+private fun Month.localizedDisplayName(locale: Locale): String = getDisplayName(TextStyle.FULL_STANDALONE, locale)
+
+private fun monthComesBeforeYear(locale: Locale): Boolean {
+    val pattern = DateTimeFormatterBuilder.getLocalizedDateTimePattern(
+        FormatStyle.LONG,
+        null,
+        IsoChronology.INSTANCE,
+        locale,
+    )
+    val monthIndex = pattern.indexOfFirst { it == 'M' || it == 'L' }
+    val yearIndex = pattern.indexOfFirst { it == 'y' || it == 'u' || it == 'Y' }
+    if (monthIndex == -1 || yearIndex == -1) return true
+    return monthIndex < yearIndex
+}
