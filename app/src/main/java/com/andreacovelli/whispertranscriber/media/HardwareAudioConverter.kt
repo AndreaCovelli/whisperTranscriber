@@ -363,8 +363,10 @@ object HardwareAudioConverter {
                     processFloatOutput(outputBuffer, info, outputFile, state, scratchBuffers)
                 canWritePcm16Direct(state) ->
                     writePcm16Direct(outputBuffer, info, outputFile, state)
-                else ->
+                state.pcmEncoding == AudioFormat.ENCODING_PCM_16BIT ->
                     processPcm16Output(outputBuffer, info, outputFile, state, scratchBuffers)
+                else ->
+                    error("Unsupported PCM encoding: ${state.pcmEncoding}")
             }
         }
         decoder.releaseOutputBuffer(outputIndex, false)
