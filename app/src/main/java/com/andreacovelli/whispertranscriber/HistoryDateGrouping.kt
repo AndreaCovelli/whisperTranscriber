@@ -3,14 +3,8 @@ package com.andreacovelli.whispertranscriber
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import java.time.Clock
 import java.time.LocalDate
-import java.time.Month
 import java.time.YearMonth
 import java.time.ZoneId
-import java.time.chrono.IsoChronology
-import java.time.format.DateTimeFormatterBuilder
-import java.time.format.FormatStyle
-import java.time.format.TextStyle
-import java.util.Locale
 
 internal sealed interface HistoryDateLabel {
     data object Today : HistoryDateLabel
@@ -100,25 +94,4 @@ internal fun buildHistoryListRows(
         add(HistoryListRow.Item(item))
         previousItem = item
     }
-}
-
-internal fun formatHistoryMonthLabel(yearMonth: YearMonth, locale: Locale = Locale.getDefault()): String {
-    val monthName = yearMonth.month.localizedDisplayName(locale)
-    val year = yearMonth.year.toString()
-    return if (monthComesBeforeYear(locale)) "$monthName $year" else "$year $monthName"
-}
-
-private fun Month.localizedDisplayName(locale: Locale): String = getDisplayName(TextStyle.FULL_STANDALONE, locale)
-
-private fun monthComesBeforeYear(locale: Locale): Boolean {
-    val pattern = DateTimeFormatterBuilder.getLocalizedDateTimePattern(
-        FormatStyle.LONG,
-        null,
-        IsoChronology.INSTANCE,
-        locale,
-    )
-    val monthIndex = pattern.indexOfFirst { it == 'M' || it == 'L' }
-    val yearIndex = pattern.indexOfFirst { it == 'y' || it == 'u' || it == 'Y' }
-    if (monthIndex == -1 || yearIndex == -1) return true
-    return monthIndex < yearIndex
 }

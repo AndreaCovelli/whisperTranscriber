@@ -1,5 +1,6 @@
 package com.andreacovelli.whispertranscriber
 
+import android.text.format.DateUtils
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.width
@@ -18,7 +19,6 @@ import com.andreacovelli.whispertranscriber.ui.screens.HistoryRowList
 import java.time.LocalDateTime
 import java.time.YearMonth
 import java.time.ZoneId
-import java.util.Locale
 import kotlinx.coroutines.flow.flowOf
 import org.junit.Rule
 import org.junit.Test
@@ -77,7 +77,7 @@ class HistoryGroupedListInstrumentedTest {
         composeRule.onNodeWithText("older.wav").assertExists()
         composeRule.onNodeWithText(context.getString(R.string.history_group_today)).assertExists()
         composeRule.onNodeWithText(context.getString(R.string.history_group_yesterday)).assertExists()
-        composeRule.onNodeWithText(formatHistoryMonthLabel(YearMonth.of(2026, 4), Locale.getDefault())).assertExists()
+        composeRule.onNodeWithText(formatHistoryMonthLabel(YearMonth.of(2026, 4))).assertExists()
     }
 
     private fun historyItem(id: Int, day: Int, hour: Int, displayName: String) = TranscriptionHistory(
@@ -89,5 +89,13 @@ class HistoryGroupedListInstrumentedTest {
             .atZone(zoneId)
             .toInstant()
             .toEpochMilli(),
+    )
+
+    private fun formatHistoryMonthLabel(yearMonth: YearMonth): String = DateUtils.formatDateTime(
+        context,
+        yearMonth.atDay(1).atStartOfDay(zoneId).toInstant().toEpochMilli(),
+        DateUtils.FORMAT_SHOW_DATE or
+            DateUtils.FORMAT_NO_MONTH_DAY or
+            DateUtils.FORMAT_SHOW_YEAR,
     )
 }

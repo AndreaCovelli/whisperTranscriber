@@ -2,6 +2,7 @@ package com.andreacovelli.whispertranscriber.ui.screens
 
 import android.content.ClipData
 import android.content.Intent
+import android.text.format.DateUtils
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -64,11 +65,10 @@ import com.andreacovelli.whispertranscriber.HistoryViewModel
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.extractHistorySearchTokens
-import com.andreacovelli.whispertranscriber.formatHistoryMonthLabel
 import com.andreacovelli.whispertranscriber.suggestedHistoryExportFileName
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCard
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCardActions
-import java.util.Locale
+import java.time.ZoneId
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -81,10 +81,8 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
     val searchQuery by historyViewModel.searchQuery.collectAsStateWithLifecycle()
     val expandedIdsSaver = listSaver<Set<Int>, Int>(save = { it.toList() }, restore = { it.toSet() })
     var expandedIds by rememberSaveable(stateSaver = expandedIdsSaver) { mutableStateOf(emptySet()) }
-    val showDeleteAllDialogState = rememberSaveable { mutableStateOf(false) }
-    val showExportDialogState = rememberSaveable { mutableStateOf(false) }
-    val showDeleteAllDialog by showDeleteAllDialogState
-    val showExportDialog by showExportDialogState
+    var showDeleteAllDialog by rememberSaveable { mutableStateOf(false) }
+    var showExportDialog by rememberSaveable { mutableStateOf(false) }
     val searchTokens = remember(searchQuery) { extractHistorySearchTokens(searchQuery) }
     val txtExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument(HistoryExportFormat.TXT.mimeType),
@@ -115,18 +113,18 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
     )
     if (showDeleteAllDialog) {
         DeleteAllHistoryDialog(
-            onDismiss = { showDeleteAllDialogState.value = false },
+            onDismiss = { showDeleteAllDialog = false },
             onConfirm = {
                 historyViewModel.deleteAllHistory()
-                showDeleteAllDialogState.value = false
+                showDeleteAllDialog = false
             },
         )
     }
     if (showExportDialog) {
         ExportHistoryDialog(
-            onDismiss = { showExportDialogState.value = false },
+            onDismiss = { showExportDialog = false },
             onExport = { format ->
-                showExportDialogState.value = false
+                showExportDialog = false
                 historyViewModel.prepareExport(format)
             },
         )
@@ -137,8 +135,8 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
             HistoryTopBar(
                 canDeleteAll = pagedItems.itemCount > 0 || searchQuery.isNotEmpty(),
                 onNavigateBack = onNavigateBack,
-                onExport = { showExportDialogState.value = true },
-                onDeleteAll = { showDeleteAllDialogState.value = true },
+                onExport = { showExportDialog = true },
+                onDeleteAll = { showDeleteAllDialog = true },
             )
         },
     ) { paddingValues ->
@@ -461,12 +459,22 @@ internal fun ColumnScope.HistoryRowList(
 
 @Composable
 private fun HistoryDateHeaderRow(label: HistoryDateLabel) {
-    val locale = Locale.getDefault()
+    val context = LocalContext.current
     val text = when (label) {
         HistoryDateLabel.Today -> stringResource(R.string.history_group_today)
         HistoryDateLabel.Yesterday -> stringResource(R.string.history_group_yesterday)
-        is HistoryDateLabel.Month -> remember(label.yearMonth, locale) {
-            formatHistoryMonthLabel(label.yearMonth, locale)
+        is HistoryDateLabel.Month -> remember(label.yearMonth, context) {
+            DateUtils.formatDateTime(
+                context,
+                label.yearMonth
+                    .atDay(1)
+                    .atStartOfDay(ZoneId.systemDefault())
+                    .toInstant()
+                    .toEpochMilli(),
+                DateUtils.FORMAT_SHOW_DATE or
+                    DateUtils.FORMAT_NO_MONTH_DAY or
+                    DateUtils.FORMAT_SHOW_YEAR,
+            )
         }
     }
     Text(
