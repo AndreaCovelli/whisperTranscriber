@@ -56,14 +56,19 @@ import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
+import com.andreacovelli.whispertranscriber.HistoryDateLabel
 import com.andreacovelli.whispertranscriber.HistoryExportFormat
+import com.andreacovelli.whispertranscriber.HistoryListRow
 import com.andreacovelli.whispertranscriber.HistoryUiEvent
 import com.andreacovelli.whispertranscriber.HistoryViewModel
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.extractHistorySearchTokens
+import com.andreacovelli.whispertranscriber.formatHistoryMonthLabel
 import com.andreacovelli.whispertranscriber.suggestedHistoryExportFileName
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCard
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCardActions
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -76,8 +81,8 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
     val searchQuery by historyViewModel.searchQuery.collectAsStateWithLifecycle()
     val expandedIdsSaver = listSaver<Set<Int>, Int>(save = { it.toList() }, restore = { it.toSet() })
     var expandedIds by rememberSaveable(stateSaver = expandedIdsSaver) { mutableStateOf(emptySet()) }
-    var showDeleteAllDialog by rememberSaveable { mutableStateOf(false) }
-    var showExportDialog by rememberSaveable { mutableStateOf(false) }
+    val showDeleteAllDialog = rememberSaveable { mutableStateOf(false) }
+    val showExportDialog = rememberSaveable { mutableStateOf(false) }
     val searchTokens = remember(searchQuery) { extractHistorySearchTokens(searchQuery) }
     val txtExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument(HistoryExportFormat.TXT.mimeType),
@@ -106,20 +111,20 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
             }
         },
     )
-    if (showDeleteAllDialog) {
+    if (showDeleteAllDialog.value) {
         DeleteAllHistoryDialog(
-            onDismiss = { showDeleteAllDialog = false },
+            onDismiss = { showDeleteAllDialog.value = false },
             onConfirm = {
                 historyViewModel.deleteAllHistory()
-                showDeleteAllDialog = false
+                showDeleteAllDialog.value = false
             },
         )
     }
-    if (showExportDialog) {
+    if (showExportDialog.value) {
         ExportHistoryDialog(
-            onDismiss = { showExportDialog = false },
+            onDismiss = { showExportDialog.value = false },
             onExport = { format ->
-                showExportDialog = false
+                showExportDialog.value = false
                 historyViewModel.prepareExport(format)
             },
         )
@@ -130,8 +135,8 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
             HistoryTopBar(
                 canDeleteAll = pagedItems.itemCount > 0 || searchQuery.isNotEmpty(),
                 onNavigateBack = onNavigateBack,
-                onExport = { showExportDialog = true },
-                onDeleteAll = { showDeleteAllDialog = true },
+                onExport = { showExportDialog.value = true },
+                onDeleteAll = { showDeleteAllDialog.value = true },
             )
         },
     ) { paddingValues ->
@@ -265,7 +270,7 @@ private fun ExportFormatButton(label: String, onClick: () -> Unit) {
 @Composable
 private fun HistoryScreenContent(
     historyViewModel: HistoryViewModel,
-    pagedItems: LazyPagingItems<com.andreacovelli.whispertranscriber.data.TranscriptionHistory>,
+    pagedItems: LazyPagingItems<HistoryListRow>,
     searchQuery: String,
     searchTokens: List<String>,
     expandedIds: Set<Int>,
@@ -329,7 +334,7 @@ private fun HistorySearchField(visible: Boolean, searchQuery: String, onSearchCh
 
 @Composable
 private fun ColumnScope.HistoryContent(
-    pagedItems: LazyPagingItems<com.andreacovelli.whispertranscriber.data.TranscriptionHistory>,
+    pagedItems: LazyPagingItems<HistoryListRow>,
     searchQuery: String,
     searchTokens: List<String>,
     expandedIds: Set<Int>,
@@ -339,18 +344,49 @@ private fun ColumnScope.HistoryContent(
     scope: kotlinx.coroutines.CoroutineScope,
     context: android.content.Context,
 ) {
+    val transcriptLabel = context.getString(R.string.job_transcription_title)
+    val summaryLabel = context.getString(R.string.job_summary_title)
     when {
         pagedItems.isInitialLoad() -> LoadingHistoryState()
         pagedItems.itemCount == 0 -> EmptyHistoryState(searchQuery)
-        else -> HistoryList(
+        else -> HistoryRowList(
             pagedItems = pagedItems,
             searchTokens = searchTokens,
             expandedIds = expandedIds,
             onExpandedIdsChange = onExpandedIdsChange,
-            historyViewModel = historyViewModel,
-            clipboardManager = clipboardManager,
-            scope = scope,
-            context = context,
+            actionFactory = { item ->
+                HistoryItemCardActions(
+                    copyTranscript = {
+                        scope.launch {
+                            clipboardManager.setClipEntry(
+                                ClipEntry(ClipData.newPlainText(transcriptLabel, item.text)),
+                            )
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.main_copied_transcript),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    },
+                    copySummary = {
+                        scope.launch {
+                            clipboardManager.setClipEntry(
+                                ClipEntry(ClipData.newPlainText(summaryLabel, item.summary)),
+                            )
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.main_copied_summary),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    },
+                    clearTranscript = { historyViewModel.clearTranscript(item) },
+                    clearSummary = { historyViewModel.clearSummary(item) },
+                    delete = { historyViewModel.deleteHistoryItem(item) },
+                    shareTranscript = { historyViewModel.prepareShareTranscript(item) },
+                    shareSummary = { historyViewModel.prepareShareSummary(item) },
+                )
+            },
         )
     }
 }
@@ -387,67 +423,55 @@ private fun ColumnScope.EmptyHistoryState(searchQuery: String) {
 }
 
 @Composable
-private fun ColumnScope.HistoryList(
-    pagedItems: LazyPagingItems<com.andreacovelli.whispertranscriber.data.TranscriptionHistory>,
+internal fun ColumnScope.HistoryRowList(
+    pagedItems: LazyPagingItems<HistoryListRow>,
     searchTokens: List<String>,
     expandedIds: Set<Int>,
     onExpandedIdsChange: (Set<Int>) -> Unit,
-    historyViewModel: HistoryViewModel,
-    clipboardManager: androidx.compose.ui.platform.Clipboard,
-    scope: kotlinx.coroutines.CoroutineScope,
-    context: android.content.Context,
+    actionFactory: (TranscriptionHistory) -> HistoryItemCardActions,
 ) {
-    val transcriptLabel = context.getString(R.string.job_transcription_title)
-    val summaryLabel = context.getString(R.string.job_summary_title)
     LazyColumn(
         modifier = Modifier.weight(1f),
         contentPadding = PaddingValues(vertical = 8.dp),
     ) {
-        items(count = pagedItems.itemCount, key = pagedItems.itemKey { it.id }) { index ->
-            val item = pagedItems[index] ?: return@items
-            val actions =
-                remember(item, transcriptLabel, summaryLabel, clipboardManager, scope, context, historyViewModel) {
-                    HistoryItemCardActions(
-                        copyTranscript = {
-                            scope.launch {
-                                clipboardManager.setClipEntry(
-                                    ClipEntry(ClipData.newPlainText(transcriptLabel, item.text)),
-                                )
-                                Toast.makeText(
-                                    context,
-                                    context.getString(R.string.main_copied_transcript),
-                                    Toast.LENGTH_SHORT,
-                                ).show()
-                            }
-                        },
-                        copySummary = {
-                            scope.launch {
-                                clipboardManager.setClipEntry(
-                                    ClipEntry(ClipData.newPlainText(summaryLabel, item.summary)),
-                                )
-                                Toast.makeText(
-                                    context,
-                                    context.getString(R.string.main_copied_summary),
-                                    Toast.LENGTH_SHORT,
-                                ).show()
-                            }
-                        },
-                        clearTranscript = { historyViewModel.clearTranscript(item) },
-                        clearSummary = { historyViewModel.clearSummary(item) },
-                        delete = { historyViewModel.deleteHistoryItem(item) },
-                        shareTranscript = { historyViewModel.prepareShareTranscript(item) },
-                        shareSummary = { historyViewModel.prepareShareSummary(item) },
+        items(count = pagedItems.itemCount, key = pagedItems.itemKey { it.stableKey }) { index ->
+            when (val row = pagedItems[index]) {
+                null -> Unit
+                is HistoryListRow.Header -> HistoryDateHeaderRow(label = row.bucket.label)
+                is HistoryListRow.Item -> {
+                    val item = row.history
+                    val actions = remember(item, actionFactory) { actionFactory(item) }
+                    HistoryItemCard(
+                        item = item,
+                        expanded = expandedIds.contains(item.id),
+                        onToggleExpand = { onExpandedIdsChange(expandedIds.toggle(item.id)) },
+                        actions = actions,
+                        searchTokens = searchTokens,
                     )
                 }
-            HistoryItemCard(
-                item = item,
-                expanded = expandedIds.contains(item.id),
-                onToggleExpand = { onExpandedIdsChange(expandedIds.toggle(item.id)) },
-                actions = actions,
-                searchTokens = searchTokens,
-            )
+            }
         }
     }
+}
+
+@Composable
+private fun HistoryDateHeaderRow(label: HistoryDateLabel) {
+    val locale = Locale.getDefault()
+    val text = when (label) {
+        HistoryDateLabel.Today -> stringResource(R.string.history_group_today)
+        HistoryDateLabel.Yesterday -> stringResource(R.string.history_group_yesterday)
+        is HistoryDateLabel.Month -> remember(label.yearMonth, locale) {
+            formatHistoryMonthLabel(label.yearMonth, locale)
+        }
+    }
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    )
 }
 
 private fun Set<Int>.toggle(id: Int): Set<Int> = if (contains(id)) this - id else this + id

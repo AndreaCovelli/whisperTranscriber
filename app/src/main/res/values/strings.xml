@@ -79,6 +79,8 @@
     <string name="history_clear_search">Clear search</string>
     <string name="history_empty">No history yet.</string>
     <string name="history_no_results">No results for "%1$s"</string>
+    <string name="history_group_today">Today</string>
+    <string name="history_group_yesterday">Yesterday</string>
     <string name="history_item_unknown_model">Unknown</string>
     <string name="history_item_language">Language: %1$s</string>
     <string name="history_item_model">Model: %1$s</string>

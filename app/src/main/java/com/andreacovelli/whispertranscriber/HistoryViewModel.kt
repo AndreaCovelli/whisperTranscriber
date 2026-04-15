@@ -6,6 +6,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
+import androidx.paging.insertSeparators
+import androidx.paging.map
 import com.andreacovelli.whispertranscriber.data.HistoryRepository
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -23,6 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -112,10 +115,18 @@ class HistoryViewModel @Inject constructor(
     }
 
     @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
-    val pagedHistoryItems: Flow<PagingData<TranscriptionHistory>> = _searchQuery
+    internal val pagedHistoryItems: Flow<PagingData<HistoryListRow>> = _searchQuery
         .debounce(250)
         .distinctUntilChanged()
         .flatMapLatest(historyRepository::getPagedHistory)
+        .map { pagingData ->
+            pagingData
+                .map(HistoryListRow::Item)
+                .insertSeparators { before: HistoryListRow.Item?, after: HistoryListRow.Item? ->
+                    val nextItem = after?.history ?: return@insertSeparators null
+                    historyDateHeader(before = before?.history, after = nextItem)
+                }
+        }
         .cachedIn(viewModelScope)
 
     fun clearSummary(item: TranscriptionHistory) {
