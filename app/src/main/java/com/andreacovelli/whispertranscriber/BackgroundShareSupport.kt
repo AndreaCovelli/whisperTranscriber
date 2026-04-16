@@ -83,7 +83,7 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
         notify(
             id = RESULT_NOTIFICATION_OFFSET + jobId,
             builder = NotificationCompat.Builder(context, RESULT_CHANNEL_ID)
-                .setSmallIcon(R.mipmap.my_launcher)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(context.getString(R.string.background_share_summary_ready_title, displayName))
                 .setContentText(summary)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(summary))
@@ -97,7 +97,7 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
         notify(
             id = jobId?.let { RESULT_NOTIFICATION_OFFSET + it } ?: genericFailureNotificationId(),
             builder = NotificationCompat.Builder(context, RESULT_CHANNEL_ID)
-                .setSmallIcon(R.mipmap.my_launcher)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(context.getString(R.string.background_share_summary_failed_title, displayName))
                 .setContentText(message)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(message))

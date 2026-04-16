@@ -4,12 +4,11 @@ import android.content.Intent
 import android.database.SQLException
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.lifecycle.lifecycleScope
 import dagger.hilt.android.AndroidEntryPoint
 import java.io.IOException
 import javax.inject.Inject
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 @AndroidEntryPoint
 class ShareReceiverActivity : ComponentActivity() {
@@ -24,10 +23,10 @@ class ShareReceiverActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        lifecycleScope.launch {
+        runBlocking {
             handleSharedAudio()
-            finish()
         }
+        finish()
     }
 
     private suspend fun handleSharedAudio() {

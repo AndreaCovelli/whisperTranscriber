@@ -114,7 +114,7 @@ class TranscriptionWorker @AssistedInject constructor(
         val notification: Notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setContentTitle("Transcribing Audio")
             .setContentText(progressText)
-            .setSmallIcon(R.mipmap.my_launcher)
+            .setSmallIcon(R.drawable.ic_notification)
             .setOngoing(true)
             .build()
 
