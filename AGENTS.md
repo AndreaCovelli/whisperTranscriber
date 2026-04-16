@@ -13,7 +13,8 @@ $env:JAVA_HOME = Join-Path $env:LOCALAPPDATA "Programs\Android Studio\jbr"
 If `java` is missing from `PATH`, setting `JAVA_HOME` like above is usually sufficient for `.\gradlew.bat`.
 - `./gradlew assembleDebug` builds the debug APK.
 - `./gradlew testDebugUnitTest` runs JVM unit tests.
-- `./gradlew connectedDebugAndroidTest` runs instrumented tests on a device/emulator.
+- `./gradlew pixel6Api34DebugAndroidTest` runs instrumented tests on the repo's managed Pixel 6 / API 34 emulator and is the preferred reproducible option.
+- `./gradlew connectedDebugAndroidTest` runs instrumented tests on a manually connected device/emulator and is useful for device-specific checks.
 - `./gradlew lintDebug` runs Android lint checks.
 - `./gradlew spotlessApply` formats Kotlin and Gradle files.
 - `./gradlew detekt` runs static analysis on `main`, `test`, and `androidTest` sources.
@@ -29,13 +30,13 @@ Use 4-space indentation and standard Kotlin style. Keep composables in `PascalCa
 
 ## Testing Guidelines
 Write unit tests with JUnit4 in `app/src/test/` for pure logic such as query building, view-model helpers, and repository behavior. Use instrumentation tests in `app/src/androidTest/` for Room, WorkManager, or Android framework behavior. Name test files after the class or feature under test, for example `HistorySearchQueryBuilderTest.kt`. Run `./gradlew testDebugUnitTest` before opening a PR; add targeted instrumentation coverage when changing migrations or background work.
-When changing Room schemas or migrations, keep exported schemas under `app/schemas/` in sync and verify the upgrade path with `connectedDebugAndroidTest`.
+When changing Room schemas or migrations, keep exported schemas under `app/schemas/` in sync and verify the upgrade path with `pixel6Api34DebugAndroidTest`. Use `connectedDebugAndroidTest` when you specifically need to validate on a manually connected device/emulator.
 If build corruption appears during a single sequential run, inspect `build/reports/kotlin-build/` and `app/build/kspCaches/*/logs/` before changing toolchain settings.
 Temporary Kotlin/KSP diagnostics are enabled. Kotlin build reports are written under `build/reports/kotlin-build/`, and KSP incremental logs appear under `app/build/kspCaches/*/logs/`. If cache corruption happens again during a single sequential run, use those artifacts to distinguish a real Kotlin/KSP incremental issue from parallel-build contention.
 
 ## Commit & Pull Request Guidelines
 Recent history follows short conventional-style subjects such as `fix: simplify FTS migration` and `ci: consolidate workflows and address review feedback`. Keep commits focused and imperative. PRs should explain user-visible changes, note migrations or queue/worker behavior changes, and link issues with `Closes #<number>` only when fully resolved. Include screenshots for UI changes and list the verification commands you ran.
-If a PR changes search, migrations, or quality tooling, mention the relevant checks explicitly, for example `detekt`, `lintDebug`, `testDebugUnitTest`, and `connectedDebugAndroidTest`.
+If a PR changes search, migrations, or quality tooling, mention the relevant checks explicitly, for example `detekt`, `lintDebug`, `testDebugUnitTest`, and `pixel6Api34DebugAndroidTest`.
 
 ## Security & Configuration Tips
 Do not commit API keys, staged audio, or local build artifacts. Keep secrets in the app’s encrypted storage flow, and review backup-related changes carefully because the app excludes sensitive local data from backup/restore.
