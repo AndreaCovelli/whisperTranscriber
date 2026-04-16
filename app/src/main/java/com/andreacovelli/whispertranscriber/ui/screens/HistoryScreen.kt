@@ -61,6 +61,7 @@ import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
+import com.andreacovelli.whispertranscriber.HistoryDateBucket
 import com.andreacovelli.whispertranscriber.HistoryDateLabel
 import com.andreacovelli.whispertranscriber.HistoryExportFormat
 import com.andreacovelli.whispertranscriber.HistoryListRow
@@ -72,7 +73,6 @@ import com.andreacovelli.whispertranscriber.extractHistorySearchTokens
 import com.andreacovelli.whispertranscriber.suggestedHistoryExportFileName
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCard
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCardActions
-import java.time.ZoneId
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -444,7 +444,7 @@ internal fun ColumnScope.HistoryRowList(
         items(count = pagedItems.itemCount, key = pagedItems.itemKey { it.stableKey }) { index ->
             when (val row = pagedItems[index]) {
                 null -> HistoryItemPlaceholderCard()
-                is HistoryListRow.Header -> HistoryDateHeaderRow(label = row.bucket.label)
+                is HistoryListRow.Header -> HistoryDateHeaderRow(bucket = row.bucket)
                 is HistoryListRow.Item -> {
                     val item = row.history
                     val actions = remember(item, actionFactory) { actionFactory(item) }
@@ -496,17 +496,17 @@ private fun PlaceholderBlock(widthFraction: Float, height: androidx.compose.ui.u
 }
 
 @Composable
-private fun HistoryDateHeaderRow(label: HistoryDateLabel) {
+private fun HistoryDateHeaderRow(bucket: HistoryDateBucket) {
     val context = LocalContext.current
-    val text = when (label) {
+    val text = when (val label = bucket.label) {
         HistoryDateLabel.Today -> stringResource(R.string.history_group_today)
         HistoryDateLabel.Yesterday -> stringResource(R.string.history_group_yesterday)
-        is HistoryDateLabel.Month -> remember(label.yearMonth, context) {
+        is HistoryDateLabel.Month -> remember(label.yearMonth, bucket.zoneId, context) {
             DateUtils.formatDateTime(
                 context,
                 label.yearMonth
                     .atDay(1)
-                    .atStartOfDay(ZoneId.systemDefault())
+                    .atStartOfDay(bucket.zoneId)
                     .toInstant()
                     .toEpochMilli(),
                 DateUtils.FORMAT_SHOW_DATE or

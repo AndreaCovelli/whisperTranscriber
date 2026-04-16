@@ -67,6 +67,7 @@ class HistoryDateGroupingTest {
                 HistoryDateBucket(
                     key = "month:2026-03",
                     label = HistoryDateLabel.Month(YearMonth.of(2026, 3)),
+                    zoneId = zoneId,
                 ),
             ),
             header,
@@ -91,13 +92,13 @@ class HistoryDateGroupingTest {
 
         assertEquals(
             listOf(
-                HistoryListRow.Header(HistoryDateBucket("day:2026-04-15", HistoryDateLabel.Today)),
+                HistoryListRow.Header(HistoryDateBucket("day:2026-04-15", HistoryDateLabel.Today, zoneId)),
                 historyListItem(historyItem(id = 1, year = 2026, month = 4, day = 15, hour = 9), currentDate, zoneId),
                 historyListItem(historyItem(id = 2, year = 2026, month = 4, day = 15, hour = 7), currentDate, zoneId),
-                HistoryListRow.Header(HistoryDateBucket("day:2026-04-14", HistoryDateLabel.Yesterday)),
+                HistoryListRow.Header(HistoryDateBucket("day:2026-04-14", HistoryDateLabel.Yesterday, zoneId)),
                 historyListItem(historyItem(id = 3, year = 2026, month = 4, day = 14, hour = 20), currentDate, zoneId),
                 HistoryListRow.Header(
-                    HistoryDateBucket("month:2026-04", HistoryDateLabel.Month(YearMonth.of(2026, 4))),
+                    HistoryDateBucket("month:2026-04", HistoryDateLabel.Month(YearMonth.of(2026, 4)), zoneId),
                 ),
                 historyListItem(historyItem(id = 4, year = 2026, month = 4, day = 10, hour = 12), currentDate, zoneId),
                 historyListItem(historyItem(id = 5, year = 2026, month = 4, day = 2, hour = 8), currentDate, zoneId),

@@ -14,7 +14,7 @@ internal sealed interface HistoryDateLabel {
     data class Month(val yearMonth: YearMonth) : HistoryDateLabel
 }
 
-internal data class HistoryDateBucket(val key: String, val label: HistoryDateLabel)
+internal data class HistoryDateBucket(val key: String, val label: HistoryDateLabel, val zoneId: ZoneId)
 
 internal sealed interface HistoryListRow {
     val stableKey: String
@@ -33,11 +33,13 @@ internal fun historyDateBucket(timestamp: Long, currentDate: LocalDate, zoneId: 
         currentDate -> HistoryDateBucket(
             key = "day:$itemDate",
             label = HistoryDateLabel.Today,
+            zoneId = zoneId,
         )
 
         currentDate.minusDays(1) -> HistoryDateBucket(
             key = "day:$itemDate",
             label = HistoryDateLabel.Yesterday,
+            zoneId = zoneId,
         )
 
         else -> {
@@ -45,6 +47,7 @@ internal fun historyDateBucket(timestamp: Long, currentDate: LocalDate, zoneId: 
             HistoryDateBucket(
                 key = "month:$yearMonth",
                 label = HistoryDateLabel.Month(yearMonth),
+                zoneId = zoneId,
             )
         }
     }
