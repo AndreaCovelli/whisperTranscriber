@@ -135,25 +135,24 @@ class HistoryViewModel @Inject constructor(
     internal val pagedHistoryItems: Flow<PagingData<HistoryListRow>> = _searchQuery
         .debounce(250)
         .distinctUntilChanged()
-        .flatMapLatest { query ->
-            combine(historyRepository.getPagedHistory(query), historyGroupingContext) { pagingData, groupingContext ->
-                pagingData
-                    .map { history ->
-                        historyListItem(
-                            history = history,
-                            currentDate = groupingContext.currentDate,
-                            zoneId = groupingContext.zoneId,
-                        ) as HistoryListRow
-                    }
-                    .insertSeparators { before: HistoryListRow?, after: HistoryListRow? ->
-                        val previousItem = before as? HistoryListRow.Item
-                        val nextItem = after as? HistoryListRow.Item ?: return@insertSeparators null
-                        historyDateHeader(
-                            previousBucket = previousItem?.bucket,
-                            currentBucket = nextItem.bucket,
-                        )
-                    }
-            }
+        .flatMapLatest(historyRepository::getPagedHistory)
+        .combine(historyGroupingContext) { pagingData, groupingContext ->
+            pagingData
+                .map { history ->
+                    historyListItem(
+                        history = history,
+                        currentDate = groupingContext.currentDate,
+                        zoneId = groupingContext.zoneId,
+                    ) as HistoryListRow
+                }
+                .insertSeparators { before: HistoryListRow?, after: HistoryListRow? ->
+                    val previousItem = before as? HistoryListRow.Item
+                    val nextItem = after as? HistoryListRow.Item ?: return@insertSeparators null
+                    historyDateHeader(
+                        previousBucket = previousItem?.bucket,
+                        currentBucket = nextItem.bucket,
+                    )
+                }
         }
         .cachedIn(viewModelScope)
 
