@@ -10,6 +10,13 @@ plugins {
 }
 
 val ktlintVersion = "1.7.1"
+val hostArch = System.getProperty("os.arch").lowercase()
+val managedDeviceTestAbi =
+    if (hostArch.contains("aarch64") || hostArch.contains("arm64")) {
+        "arm64-v8a"
+    } else {
+        "x86_64"
+    }
 
 android {
     val roomSchemaDir = "$projectDir/schemas"
@@ -78,7 +85,7 @@ android {
                     device = "Pixel 6"
                     apiLevel = 34
                     systemImageSource = "aosp-atd"
-                    testedAbi = "x86_64"
+                    testedAbi = managedDeviceTestAbi
                 }
             }
         }
