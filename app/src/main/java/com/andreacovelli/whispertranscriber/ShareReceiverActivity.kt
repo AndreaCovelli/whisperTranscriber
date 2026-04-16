@@ -48,10 +48,12 @@ class ShareReceiverActivity : ComponentActivity() {
         }
 
         try {
+            // Share URI grants are tied to this activity lifecycle, so stage the inputs before finish().
+            val preparedAudio = queueService.prepareSharedAudio(sharedUris)
             val queueSettings = settings.getTranscriptionQueueSettings()
             val summarizationSettings = settings.getSummarizationSettings()
-            queueService.enqueueSharedAudio(
-                uris = sharedUris,
+            queueService.enqueuePreparedSharedAudio(
+                preparedAudio = preparedAudio,
                 provider = queueSettings.provider,
                 customModelName = queueSettings.customModelName,
                 speakerDiarizationEnabled = queueSettings.speakerDiarizationEnabled,
@@ -62,25 +64,20 @@ class ShareReceiverActivity : ComponentActivity() {
                 ),
             )
         } catch (e: IOException) {
-            backgroundShareNotifier.showFailure(
-                displayName = getString(R.string.background_share_generic_audio_label),
-                message = e.message ?: getString(R.string.background_share_queue_failed_body),
-            )
+            showBackgroundShareQueueFailure(e)
         } catch (e: IllegalArgumentException) {
-            backgroundShareNotifier.showFailure(
-                displayName = getString(R.string.background_share_generic_audio_label),
-                message = e.message ?: getString(R.string.background_share_queue_failed_body),
-            )
+            showBackgroundShareQueueFailure(e)
         } catch (e: IllegalStateException) {
-            backgroundShareNotifier.showFailure(
-                displayName = getString(R.string.background_share_generic_audio_label),
-                message = e.message ?: getString(R.string.background_share_queue_failed_body),
-            )
+            showBackgroundShareQueueFailure(e)
         } catch (e: SecurityException) {
-            backgroundShareNotifier.showFailure(
-                displayName = getString(R.string.background_share_generic_audio_label),
-                message = e.message ?: getString(R.string.background_share_queue_failed_body),
-            )
+            showBackgroundShareQueueFailure(e)
         }
+    }
+
+    private fun showBackgroundShareQueueFailure(exception: Exception) {
+        backgroundShareNotifier.showFailure(
+            displayName = getString(R.string.background_share_generic_audio_label),
+            message = exception.message ?: getString(R.string.background_share_queue_failed_body),
+        )
     }
 }

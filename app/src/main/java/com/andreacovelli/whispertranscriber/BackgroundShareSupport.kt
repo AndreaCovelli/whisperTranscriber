@@ -17,6 +17,7 @@ import androidx.work.workDataOf
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.random.Random
 
 data class BackgroundShareWorkSpec(
     val summarizeAfterTranscription: Boolean,
@@ -129,6 +130,5 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
         )
     }
 
-    private fun genericFailureNotificationId(): Int =
-        RESULT_NOTIFICATION_OFFSET + (System.currentTimeMillis() % 10_000).toInt()
+    private fun genericFailureNotificationId(): Int = RESULT_NOTIFICATION_OFFSET + Random.nextInt(10_000)
 }

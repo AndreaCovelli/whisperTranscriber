@@ -37,6 +37,13 @@ import retrofit2.HttpException
 
 data class QueuedShareResult(val jobsCreated: Int, val statusMessage: String)
 
+data class PreparedSharedAudio(
+    val originalUri: Uri,
+    val displayName: String,
+    val stagedFile: File,
+    val mimeType: String?,
+)
+
 @Singleton
 class TranscriptionQueueService @Inject constructor(
     @param:ApplicationContext private val context: Context,
@@ -59,8 +66,47 @@ class TranscriptionQueueService @Inject constructor(
         customModelName: String,
         speakerDiarizationEnabled: Boolean,
         backgroundShareWorkSpec: BackgroundShareWorkSpec? = null,
+    ): QueuedShareResult = enqueuePreparedSharedAudio(
+        preparedAudio = prepareSharedAudio(uris),
+        provider = provider,
+        customModelName = customModelName,
+        speakerDiarizationEnabled = speakerDiarizationEnabled,
+        backgroundShareWorkSpec = backgroundShareWorkSpec,
+    )
+
+    suspend fun prepareSharedAudio(uris: List<Uri>): List<PreparedSharedAudio> {
+        if (uris.isEmpty()) return emptyList()
+
+        val preparedAudio = mutableListOf<PreparedSharedAudio>()
+        try {
+            uris.forEachIndexed { index, uri ->
+                val displayName = resolveDisplayName(uri).ifBlank { uri.lastPathSegment ?: "Audio ${index + 1}" }
+                val (stagedFile, mimeType) = stageSharedAudio(uri, index)
+                preparedAudio += PreparedSharedAudio(
+                    originalUri = uri,
+                    displayName = displayName,
+                    stagedFile = stagedFile,
+                    mimeType = mimeType,
+                )
+            }
+            return preparedAudio
+        } catch (e: IOException) {
+            preparedAudio.forEach { deleteQuietly(it.stagedFile) }
+            throw e
+        } catch (e: SecurityException) {
+            preparedAudio.forEach { deleteQuietly(it.stagedFile) }
+            throw e
+        }
+    }
+
+    suspend fun enqueuePreparedSharedAudio(
+        preparedAudio: List<PreparedSharedAudio>,
+        provider: TranscriptionProvider,
+        customModelName: String,
+        speakerDiarizationEnabled: Boolean,
+        backgroundShareWorkSpec: BackgroundShareWorkSpec? = null,
     ): QueuedShareResult {
-        if (uris.isEmpty()) {
+        if (preparedAudio.isEmpty()) {
             return QueuedShareResult(0, context.getString(R.string.main_waiting_for_audios))
         }
 
@@ -68,15 +114,13 @@ class TranscriptionQueueService @Inject constructor(
         val speakerLabelPrefix = context.getString(R.string.speaker_label_prefix)
         val requestedModel = resolveRequestedModel(provider, customModelName)
 
-        uris.forEachIndexed { index, uri ->
-            val displayName = resolveDisplayName(uri).ifBlank { uri.lastPathSegment ?: "Audio ${index + 1}" }
-            val (stagedFile, mimeType) = stageSharedAudio(uri, index)
+        preparedAudio.forEach { prepared ->
             val jobId = repository.addJob(
                 TranscriptionJob(
-                    uri = uri.toString(),
-                    displayName = displayName,
-                    sourceMimeType = mimeType,
-                    stagedFilePath = stagedFile.absolutePath,
+                    uri = prepared.originalUri.toString(),
+                    displayName = prepared.displayName,
+                    sourceMimeType = prepared.mimeType,
+                    stagedFilePath = prepared.stagedFile.absolutePath,
                     providerName = provider.name,
                     requestedModel = requestedModel,
                     batchId = batchId,
@@ -89,7 +133,10 @@ class TranscriptionQueueService @Inject constructor(
             enqueueWorker(jobId, speakerLabelPrefix, backgroundShareWorkSpec)
         }
 
-        return QueuedShareResult(uris.size, context.getString(R.string.main_queued_files, uris.size))
+        return QueuedShareResult(
+            preparedAudio.size,
+            context.getString(R.string.main_queued_files, preparedAudio.size),
+        )
     }
 
     suspend fun cancelJob(jobId: Int) {
