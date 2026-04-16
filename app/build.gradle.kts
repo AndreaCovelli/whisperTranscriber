@@ -1,3 +1,5 @@
+@file:Suppress("UnstableApiUsage")
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.hilt.android)
@@ -8,6 +10,13 @@ plugins {
 }
 
 val ktlintVersion = "1.7.1"
+val hostArch = System.getProperty("os.arch").lowercase()
+val managedDeviceTestAbi =
+    if (hostArch.contains("aarch64") || hostArch.contains("arm64")) {
+        "arm64-v8a"
+    } else {
+        "x86_64"
+    }
 
 android {
     val roomSchemaDir = "$projectDir/schemas"
@@ -66,6 +75,20 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+    testOptions {
+        animationsDisabled = true
+
+        managedDevices {
+            localDevices {
+                create("pixel6Api34") {
+                    device = "Pixel 6"
+                    apiLevel = 34
+                    systemImageSource = "aosp-atd"
+                    testedAbi = managedDeviceTestAbi
+                }
+            }
+        }
     }
     packaging {
         resources {
