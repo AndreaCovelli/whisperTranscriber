@@ -48,12 +48,10 @@ class ShareReceiverActivity : ComponentActivity() {
         }
 
         try {
-            // Share URI grants are tied to this activity lifecycle, so stage the inputs before finish().
-            val preparedAudio = queueService.prepareSharedAudio(sharedUris)
             val queueSettings = settings.getTranscriptionQueueSettings()
             val summarizationSettings = settings.getSummarizationSettings()
-            queueService.enqueuePreparedSharedAudio(
-                preparedAudio = preparedAudio,
+            queueService.enqueueSharedAudio(
+                uris = sharedUris,
                 provider = queueSettings.provider,
                 customModelName = queueSettings.customModelName,
                 speakerDiarizationEnabled = queueSettings.speakerDiarizationEnabled,

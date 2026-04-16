@@ -68,6 +68,12 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
         private const val RESULT_NOTIFICATION_OFFSET = 20_000
     }
 
+    private val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+    init {
+        ensureResultChannel()
+    }
+
     fun canPostNotifications(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
         PackageManager.PERMISSION_GRANTED
@@ -103,13 +109,11 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
     @SuppressLint("MissingPermission")
     private fun notify(id: Int, builder: NotificationCompat.Builder) {
         if (!canPostNotifications()) return
-        ensureResultChannel()
         NotificationManagerCompat.from(context).notify(id, builder.build())
     }
 
     private fun ensureResultChannel() {
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.createNotificationChannel(
+        notificationManager.createNotificationChannel(
             NotificationChannel(
                 RESULT_CHANNEL_ID,
                 RESULT_CHANNEL_NAME,

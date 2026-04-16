@@ -1,6 +1,7 @@
 package com.andreacovelli.whispertranscriber
 
 import android.content.Context
+import android.database.SQLException
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
@@ -66,15 +67,35 @@ class TranscriptionQueueService @Inject constructor(
         customModelName: String,
         speakerDiarizationEnabled: Boolean,
         backgroundShareWorkSpec: BackgroundShareWorkSpec? = null,
-    ): QueuedShareResult = enqueuePreparedSharedAudio(
-        preparedAudio = prepareSharedAudio(uris),
-        provider = provider,
-        customModelName = customModelName,
-        speakerDiarizationEnabled = speakerDiarizationEnabled,
-        backgroundShareWorkSpec = backgroundShareWorkSpec,
-    )
+    ): QueuedShareResult {
+        val preparedAudio = prepareSharedAudio(uris)
+        return try {
+            enqueuePreparedSharedAudio(
+                preparedAudio = preparedAudio,
+                provider = provider,
+                customModelName = customModelName,
+                speakerDiarizationEnabled = speakerDiarizationEnabled,
+                backgroundShareWorkSpec = backgroundShareWorkSpec,
+            )
+        } catch (e: IOException) {
+            deleteStagedFiles(preparedAudio)
+            throw e
+        } catch (e: SecurityException) {
+            deleteStagedFiles(preparedAudio)
+            throw e
+        } catch (e: IllegalArgumentException) {
+            deleteStagedFiles(preparedAudio)
+            throw e
+        } catch (e: IllegalStateException) {
+            deleteStagedFiles(preparedAudio)
+            throw e
+        } catch (e: SQLException) {
+            deleteStagedFiles(preparedAudio)
+            throw e
+        }
+    }
 
-    suspend fun prepareSharedAudio(uris: List<Uri>): List<PreparedSharedAudio> {
+    private suspend fun prepareSharedAudio(uris: List<Uri>): List<PreparedSharedAudio> {
         if (uris.isEmpty()) return emptyList()
 
         val preparedAudio = mutableListOf<PreparedSharedAudio>()
@@ -91,15 +112,15 @@ class TranscriptionQueueService @Inject constructor(
             }
             return preparedAudio
         } catch (e: IOException) {
-            preparedAudio.forEach { deleteQuietly(it.stagedFile) }
+            deleteStagedFiles(preparedAudio)
             throw e
         } catch (e: SecurityException) {
-            preparedAudio.forEach { deleteQuietly(it.stagedFile) }
+            deleteStagedFiles(preparedAudio)
             throw e
         }
     }
 
-    suspend fun enqueuePreparedSharedAudio(
+    private suspend fun enqueuePreparedSharedAudio(
         preparedAudio: List<PreparedSharedAudio>,
         provider: TranscriptionProvider,
         customModelName: String,
@@ -275,6 +296,10 @@ class TranscriptionQueueService @Inject constructor(
     private fun deleteStagedFile(path: String?) {
         if (path.isNullOrBlank()) return
         deleteQuietly(File(path))
+    }
+
+    private fun deleteStagedFiles(preparedAudio: List<PreparedSharedAudio>) {
+        preparedAudio.forEach { deleteQuietly(it.stagedFile) }
     }
 
     private fun deleteQuietly(file: File) {
