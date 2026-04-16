@@ -2,6 +2,7 @@ package com.andreacovelli.whispertranscriber
 
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import java.time.Clock
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.YearMonth
 import java.time.ZoneId
@@ -16,8 +17,9 @@ class HistoryDateGroupingTest {
     @Test
     fun historyDateBucket_returnsToday_forItemsOnCurrentLocalDate() {
         val clock = fixedClock(month = 4, day = 15)
+        val currentDate = LocalDate.now(clock.withZone(zoneId))
 
-        val bucket = historyDateBucket(timestamp = millisAt(2026, 4, 15, 8, 30), clock = clock, zoneId = zoneId)
+        val bucket = historyDateBucket(timestamp = millisAt(2026, 4, 15, 8, 30), currentDate = currentDate, zoneId = zoneId)
 
         assertEquals("day:2026-04-15", bucket.key)
         assertEquals(HistoryDateLabel.Today, bucket.label)
@@ -26,8 +28,9 @@ class HistoryDateGroupingTest {
     @Test
     fun historyDateBucket_returnsYesterday_forItemsOnPreviousLocalDate() {
         val clock = fixedClock(month = 4, day = 15)
+        val currentDate = LocalDate.now(clock.withZone(zoneId))
 
-        val bucket = historyDateBucket(timestamp = millisAt(2026, 4, 14, 23, 45), clock = clock, zoneId = zoneId)
+        val bucket = historyDateBucket(timestamp = millisAt(2026, 4, 14, 23, 45), currentDate = currentDate, zoneId = zoneId)
 
         assertEquals("day:2026-04-14", bucket.key)
         assertEquals(HistoryDateLabel.Yesterday, bucket.label)
@@ -36,8 +39,9 @@ class HistoryDateGroupingTest {
     @Test
     fun historyDateBucket_returnsMonthBucket_forOlderItemsInSameMonth() {
         val clock = fixedClock(month = 4, day = 15)
+        val currentDate = LocalDate.now(clock.withZone(zoneId))
 
-        val bucket = historyDateBucket(timestamp = millisAt(2026, 4, 10, 9, 0), clock = clock, zoneId = zoneId)
+        val bucket = historyDateBucket(timestamp = millisAt(2026, 4, 10, 9, 0), currentDate = currentDate, zoneId = zoneId)
 
         assertEquals("month:2026-04", bucket.key)
         assertEquals(HistoryDateLabel.Month(YearMonth.of(2026, 4)), bucket.label)
@@ -46,8 +50,9 @@ class HistoryDateGroupingTest {
     @Test
     fun historyDateHeader_returnsNull_whenAdjacentItemsShareTheSameBucket() {
         val clock = fixedClock(month = 4, day = 15)
-        val beforeBucket = historyDateBucket(timestamp = millisAt(2026, 4, 15, 9, 0), clock = clock, zoneId = zoneId)
-        val afterBucket = historyDateBucket(timestamp = millisAt(2026, 4, 15, 8, 0), clock = clock, zoneId = zoneId)
+        val currentDate = LocalDate.now(clock.withZone(zoneId))
+        val beforeBucket = historyDateBucket(timestamp = millisAt(2026, 4, 15, 9, 0), currentDate = currentDate, zoneId = zoneId)
+        val afterBucket = historyDateBucket(timestamp = millisAt(2026, 4, 15, 8, 0), currentDate = currentDate, zoneId = zoneId)
 
         val header = historyDateHeader(previousBucket = beforeBucket, currentBucket = afterBucket)
 
@@ -57,8 +62,9 @@ class HistoryDateGroupingTest {
     @Test
     fun historyDateHeader_returnsMonthHeader_whenMonthChanges() {
         val clock = fixedClock(month = 5, day = 3)
-        val beforeBucket = historyDateBucket(timestamp = millisAt(2026, 4, 30, 18, 0), clock = clock, zoneId = zoneId)
-        val afterBucket = historyDateBucket(timestamp = millisAt(2026, 3, 31, 21, 0), clock = clock, zoneId = zoneId)
+        val currentDate = LocalDate.now(clock.withZone(zoneId))
+        val beforeBucket = historyDateBucket(timestamp = millisAt(2026, 4, 30, 18, 0), currentDate = currentDate, zoneId = zoneId)
+        val afterBucket = historyDateBucket(timestamp = millisAt(2026, 3, 31, 21, 0), currentDate = currentDate, zoneId = zoneId)
 
         val header = historyDateHeader(previousBucket = beforeBucket, currentBucket = afterBucket)
 
@@ -77,8 +83,8 @@ class HistoryDateGroupingTest {
     @Test
     fun buildHistoryListRows_addsOneHeaderPerBucket_forDescendingResults() {
         val clock = fixedClock(month = 4, day = 15)
-        val currentDate = java.time.LocalDate.of(2026, 4, 15)
-        val rows = buildHistoryListRows(
+        val currentDate = LocalDate.now(clock.withZone(zoneId))
+        val rows = buildRowsForTest(
             items = listOf(
                 historyItem(id = 1, year = 2026, month = 4, day = 15, hour = 9),
                 historyItem(id = 2, year = 2026, month = 4, day = 15, hour = 7),
@@ -86,7 +92,7 @@ class HistoryDateGroupingTest {
                 historyItem(id = 4, year = 2026, month = 4, day = 10, hour = 12),
                 historyItem(id = 5, year = 2026, month = 4, day = 2, hour = 8),
             ),
-            clock = clock,
+            currentDate = currentDate,
             zoneId = zoneId,
         )
 
@@ -114,10 +120,11 @@ class HistoryDateGroupingTest {
             ZonedDateTime.of(2026, 1, 1, 0, 15, 0, 0, losAngeles).toInstant(),
             losAngeles,
         )
+        val currentDate = LocalDate.now(clock.withZone(losAngeles))
 
         val bucket = historyDateBucket(
             timestamp = millisAt(2025, 12, 31, 23, 45, losAngeles),
-            clock = clock,
+            currentDate = currentDate,
             zoneId = losAngeles,
         )
 
@@ -129,6 +136,20 @@ class HistoryDateGroupingTest {
         ZonedDateTime.of(2026, month, day, 10, 0, 0, 0, zoneId).toInstant(),
         zoneId,
     )
+
+    private fun buildRowsForTest(
+        items: List<TranscriptionHistory>,
+        currentDate: LocalDate,
+        zoneId: ZoneId,
+    ): List<HistoryListRow> = buildList {
+        var previousBucket: HistoryDateBucket? = null
+        items.forEach { history ->
+            val item = historyListItem(history, currentDate, zoneId)
+            historyDateHeader(previousBucket, item.bucket)?.let(::add)
+            add(item)
+            previousBucket = item.bucket
+        }
+    }
 
     private fun historyItem(id: Int, year: Int, month: Int, day: Int, hour: Int, minute: Int = 0) =
         TranscriptionHistory(

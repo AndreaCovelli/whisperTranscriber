@@ -16,6 +16,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCardActions
 import com.andreacovelli.whispertranscriber.ui.screens.HistoryRowList
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.YearMonth
 import java.time.ZoneId
@@ -34,16 +35,14 @@ class HistoryGroupedListInstrumentedTest {
 
     @Test
     fun historyRowList_rendersDateHeadersAlongsideCards() {
-        val rows = buildHistoryListRows(
+        val currentDate = LocalDate.of(2026, 4, 15)
+        val rows = buildRowsForTest(
             items = listOf(
                 historyItem(id = 1, day = 15, hour = 9, displayName = "today.wav"),
                 historyItem(id = 2, day = 14, hour = 19, displayName = "yesterday.wav"),
                 historyItem(id = 3, day = 10, hour = 11, displayName = "older.wav"),
             ),
-            clock = java.time.Clock.fixed(
-                LocalDateTime.of(2026, 4, 15, 10, 0).atZone(zoneId).toInstant(),
-                zoneId,
-            ),
+            currentDate = currentDate,
             zoneId = zoneId,
         )
 
@@ -90,6 +89,20 @@ class HistoryGroupedListInstrumentedTest {
             .toInstant()
             .toEpochMilli(),
     )
+
+    private fun buildRowsForTest(
+        items: List<TranscriptionHistory>,
+        currentDate: LocalDate,
+        zoneId: ZoneId,
+    ): List<HistoryListRow> = buildList {
+        var previousBucket: HistoryDateBucket? = null
+        items.forEach { history ->
+            val item = historyListItem(history, currentDate, zoneId)
+            historyDateHeader(previousBucket, item.bucket)?.let(::add)
+            add(item)
+            previousBucket = item.bucket
+        }
+    }
 
     private fun formatHistoryMonthLabel(yearMonth: YearMonth): String = DateUtils.formatDateTime(
         context,
