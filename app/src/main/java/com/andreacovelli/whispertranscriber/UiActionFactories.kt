@@ -15,6 +15,7 @@ data class SettingsScreenActions(
     val setProvider: (TranscriptionProvider) -> Unit,
     val setSummarizerProvider: (TranscriptionProvider) -> Unit,
     val setAutomaticSummarization: (Boolean) -> Unit,
+    val setBackgroundShareSummaryNotificationsEnabled: (Boolean) -> Unit,
     val setSpeakerDiarization: (Boolean) -> Unit,
     val loadElevenLabsKey: suspend () -> String?,
     val loadGeminiKey: suspend () -> String?,

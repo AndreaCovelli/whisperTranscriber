@@ -45,6 +45,8 @@ data class TranscriptionQueueSettings(
     val speakerDiarizationEnabled: Boolean,
 )
 
+data class SummarizationSettings(val provider: TranscriptionProvider, val customModelName: String)
+
 internal fun decodeStoredTranscriptionProvider(name: String?): TranscriptionProvider = when (name) {
     null -> TranscriptionProvider.ELEVEN_LABS
     "GEMINI_25_FLASH" -> TranscriptionProvider.GEMINI_FLASH
@@ -63,6 +65,8 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
         private val SELECTED_PROVIDER = stringPreferencesKey("transcription_provider")
         private val SELECTED_SUMMARIZER_PROVIDER = stringPreferencesKey("summarizer_provider")
         private val AUTOMATIC_SUMMARIZATION_ENABLED = booleanPreferencesKey("automatic_summarization_enabled")
+        private val BACKGROUND_SHARE_SUMMARY_NOTIFICATIONS_ENABLED =
+            booleanPreferencesKey("background_share_summary_notifications_enabled")
         private val SPEAKER_DIARIZATION_ENABLED = booleanPreferencesKey("speaker_diarization_enabled")
     }
 
@@ -70,8 +74,16 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
         p[AUTOMATIC_SUMMARIZATION_ENABLED] ?: false
     }
 
+    val backgroundShareSummaryNotificationsEnabledFlow: Flow<Boolean> = context.dataStore.data.map { p ->
+        p[BACKGROUND_SHARE_SUMMARY_NOTIFICATIONS_ENABLED] ?: false
+    }
+
     suspend fun saveAutomaticSummarization(enabled: Boolean) {
         context.dataStore.edit { it[AUTOMATIC_SUMMARIZATION_ENABLED] = enabled }
+    }
+
+    suspend fun saveBackgroundShareSummaryNotificationsEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[BACKGROUND_SHARE_SUMMARY_NOTIFICATIONS_ENABLED] = enabled }
     }
 
     suspend fun saveSpeakerDiarization(enabled: Boolean) {
@@ -196,6 +208,15 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
             ?: TranscriptionProvider.GEMINI_FLASH
     }
 
+    val summarizationSettingsFlow: Flow<SummarizationSettings> = context.dataStore.data.map { prefs ->
+        SummarizationSettings(
+            provider = prefs[SELECTED_SUMMARIZER_PROVIDER]
+                ?.let { runCatching { TranscriptionProvider.valueOf(it) }.getOrNull() }
+                ?: TranscriptionProvider.GEMINI_FLASH,
+            customModelName = prefs[GEMINI_SUMMARIZER_CUSTOM_MODEL_NAME].orEmpty(),
+        )
+    }.distinctUntilChanged()
+
     val transcriptionQueueSettingsFlow: Flow<TranscriptionQueueSettings> = context.dataStore.data.map { prefs ->
         TranscriptionQueueSettings(
             provider = decodeStoredTranscriptionProvider(prefs[SELECTED_PROVIDER]),
@@ -205,4 +226,6 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
     }.distinctUntilChanged()
 
     suspend fun getTranscriptionQueueSettings(): TranscriptionQueueSettings = transcriptionQueueSettingsFlow.first()
+
+    suspend fun getSummarizationSettings(): SummarizationSettings = summarizationSettingsFlow.first()
 }

@@ -20,6 +20,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -50,6 +51,7 @@ data class UiState(
     val transcriptionCustomModelValidation: CustomModelValidation = CustomModelValidation.Idle,
     val summarizerCustomModelValidation: CustomModelValidation = CustomModelValidation.Idle,
     val automaticSummarizationEnabled: Boolean = false,
+    val backgroundShareSummaryNotificationsEnabled: Boolean = false,
     val speakerDiarizationEnabled: Boolean = false,
     val jobs: List<TranscriptionJobState> = emptyList(),
     val batchProgressState: BatchProgressState? = null,
@@ -135,6 +137,20 @@ internal fun UiState.toTranscriptionQueueSettings(): TranscriptionQueueSettings 
     speakerDiarizationEnabled = speakerDiarizationEnabled,
 )
 
+internal fun UiState.toSummarizationSettings(): SummarizationSettings = SummarizationSettings(
+    provider = summarizerProvider,
+    customModelName = summarizerCustomGeminiModelName,
+)
+
+internal fun UiState.toAutomaticSummarizationWorkSpec(): PostTranscriptionWorkSpec? {
+    if (!automaticSummarizationEnabled || geminiApiKeyState !is ApiKeyState.Present) return null
+    return PostTranscriptionWorkSpec(
+        summarizeAfterTranscription = true,
+        notifyResult = false,
+        summarizationSettings = toSummarizationSettings(),
+    )
+}
+
 internal fun resolveShareQueueSettings(
     uiState: UiState,
     transcriptionSettingsHydrated: Boolean,
@@ -203,6 +219,7 @@ class MainViewModel @Inject constructor(
                     jobId,
                     _uiState.value.provider,
                     _uiState.value.transcriptionCustomGeminiModelName,
+                    resolveAutomaticSummarizationWorkSpecForQueue(),
                 )
             }
         },
@@ -267,6 +284,11 @@ class MainViewModel @Inject constructor(
                 }
             }
             launch {
+                settings.backgroundShareSummaryNotificationsEnabledFlow.collect { enabled ->
+                    _uiState.update { it.copy(backgroundShareSummaryNotificationsEnabled = enabled) }
+                }
+            }
+            launch {
                 repository.jobsState.collect { jobsList ->
                     val presentationState = withContext(ioDispatcher) {
                         buildJobPresentationState(jobsList)
@@ -310,6 +332,7 @@ class MainViewModel @Inject constructor(
                 provider = queueSettings.provider,
                 customModelName = queueSettings.customModelName,
                 speakerDiarizationEnabled = queueSettings.speakerDiarizationEnabled,
+                postTranscriptionWorkSpec = resolveAutomaticSummarizationWorkSpecForQueue(),
             )
             _uiState.update { it.copy(status = result.statusMessage) }
         }
@@ -318,7 +341,13 @@ class MainViewModel @Inject constructor(
     private fun runSummarization(jobId: Int, allowResummarize: Boolean) {
         summaryJobs[jobId]?.cancel()
         summaryJobs[jobId] = viewModelScope.launch {
-            val result = summarizationService.summarize(jobId, _uiState.value, allowResummarize)
+            val currentState = _uiState.value
+            val result = summarizationService.summarize(
+                jobId = jobId,
+                settings = currentState.toSummarizationSettings(),
+                allowResummarize = allowResummarize,
+                fallbackStatusMessage = currentState.status,
+            )
             _uiState.update { state ->
                 state.copy(status = result.statusMessage)
             }
@@ -356,6 +385,25 @@ class MainViewModel @Inject constructor(
             } else {
                 settings.getTranscriptionQueueSettings()
             },
+        )
+    }
+
+    private suspend fun resolveAutomaticSummarizationWorkSpecForQueue(): PostTranscriptionWorkSpec? {
+        _uiState.value.toAutomaticSummarizationWorkSpec()?.let { return it }
+
+        if (!settings.automaticSummarizationFlow.first()) return null
+        val keyChars = settings.getGeminiApiKey() ?: return null
+        val hasGeminiKey = try {
+            keyChars.isNotEmpty()
+        } finally {
+            keyChars.fill('\u0000')
+        }
+        if (!hasGeminiKey) return null
+
+        return PostTranscriptionWorkSpec(
+            summarizeAfterTranscription = true,
+            notifyResult = false,
+            summarizationSettings = settings.getSummarizationSettings(),
         )
     }
 }

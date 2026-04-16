@@ -31,6 +31,7 @@ internal class MainSettingsDelegate(
         setProvider = ::updateProviderSelection,
         setSummarizerProvider = ::updateSummarizerProviderSelection,
         setAutomaticSummarization = ::updateAutomaticSummarization,
+        setBackgroundShareSummaryNotificationsEnabled = ::updateBackgroundShareSummaryNotificationsEnabled,
         setSpeakerDiarization = ::updateSpeakerDiarization,
         loadElevenLabsKey = { loadKeyForDisplay(settings::getElevenLabsApiKey) },
         loadGeminiKey = { loadKeyForDisplay(settings::getGeminiApiKey) },
@@ -101,6 +102,13 @@ internal class MainSettingsDelegate(
         uiState.update { it.copy(automaticSummarizationEnabled = enabled) }
         scope.launch {
             settings.saveAutomaticSummarization(enabled)
+        }
+    }
+
+    private fun updateBackgroundShareSummaryNotificationsEnabled(enabled: Boolean) {
+        uiState.update { it.copy(backgroundShareSummaryNotificationsEnabled = enabled) }
+        scope.launch {
+            settings.saveBackgroundShareSummaryNotificationsEnabled(enabled)
         }
     }
 

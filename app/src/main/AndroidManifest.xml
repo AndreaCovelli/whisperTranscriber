@@ -26,7 +26,14 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
 
+        <activity
+            android:name=".ShareReceiverActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.WhisperTranscriber.ShareReceiver">
             <!-- Single share -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

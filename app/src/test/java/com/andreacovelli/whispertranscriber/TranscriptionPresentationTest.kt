@@ -81,6 +81,68 @@ class TranscriptionPresentationTest {
     }
 
     @Test
+    fun uiStateToSummarizationSettings_preservesCurrentSelection() {
+        assertEquals(
+            SummarizationSettings(
+                provider = TranscriptionProvider.GEMINI_CUSTOM,
+                customModelName = "gemini-custom-summary",
+            ),
+            UiState(
+                summarizerProvider = TranscriptionProvider.GEMINI_CUSTOM,
+                summarizerCustomGeminiModelName = "gemini-custom-summary",
+            ).toSummarizationSettings(),
+        )
+    }
+
+    @Test
+    fun postTranscriptionWorkSpec_roundTripsThroughWorkerInputData() {
+        val spec = PostTranscriptionWorkSpec(
+            summarizeAfterTranscription = true,
+            notifyResult = true,
+            summarizationSettings = SummarizationSettings(
+                provider = TranscriptionProvider.GEMINI_CUSTOM,
+                customModelName = "gemini-custom-summary",
+            ),
+        )
+
+        val restored = PostTranscriptionWorkSpec.fromInputData(
+            spec.toInputData(jobId = 42, speakerLabelPrefix = "Speaker"),
+        )
+
+        assertEquals(spec, restored)
+    }
+
+    @Test
+    fun uiStateToAutomaticSummarizationWorkSpec_returnsNullWhenAutomaticSummarizationDisabled() {
+        assertNull(
+            UiState(
+                automaticSummarizationEnabled = false,
+                geminiApiKeyState = ApiKeyState.Present,
+            ).toAutomaticSummarizationWorkSpec(),
+        )
+    }
+
+    @Test
+    fun uiStateToAutomaticSummarizationWorkSpec_returnsSilentWorkerSpecWhenEnabled() {
+        assertEquals(
+            PostTranscriptionWorkSpec(
+                summarizeAfterTranscription = true,
+                notifyResult = false,
+                summarizationSettings = SummarizationSettings(
+                    provider = TranscriptionProvider.GEMINI_CUSTOM,
+                    customModelName = "gemini-custom-summary",
+                ),
+            ),
+            UiState(
+                automaticSummarizationEnabled = true,
+                geminiApiKeyState = ApiKeyState.Present,
+                summarizerProvider = TranscriptionProvider.GEMINI_CUSTOM,
+                summarizerCustomGeminiModelName = "gemini-custom-summary",
+            ).toAutomaticSummarizationWorkSpec(),
+        )
+    }
+
+    @Test
     fun decodeStoredTranscriptionProvider_mapsLegacyGemini25FlashValue() {
         assertEquals(
             TranscriptionProvider.GEMINI_FLASH,

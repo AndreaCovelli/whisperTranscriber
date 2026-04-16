@@ -42,7 +42,11 @@ import com.andreacovelli.whispertranscriber.ui.components.ProviderSelector
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(viewModel: MainViewModel, onNavigateBack: () -> Unit) {
+fun SettingsScreen(
+    viewModel: MainViewModel,
+    onNavigateBack: () -> Unit,
+    onBackgroundShareSummaryNotificationsChange: (Boolean) -> Unit,
+) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val actions = viewModel.settingsScreenActions
     val focusManager = LocalFocusManager.current
@@ -77,6 +81,10 @@ fun SettingsScreen(viewModel: MainViewModel, onNavigateBack: () -> Unit) {
             SpeakerDiarizationCard(uiState = uiState, actions = actions)
             SummarizerProviderCard(uiState = uiState, actions = actions)
             AutomaticSummarizationCard(uiState = uiState, actions = actions)
+            BackgroundShareSummaryNotificationsCard(
+                uiState = uiState,
+                onCheckedChange = onBackgroundShareSummaryNotificationsChange,
+            )
 
             ApiKeyCard(
                 title = stringResource(R.string.settings_elevenlabs_api_key_title),
@@ -167,6 +175,16 @@ private fun AutomaticSummarizationCard(uiState: UiState, actions: SettingsScreen
         body = stringResource(R.string.settings_automatic_summarization_body),
         checked = uiState.automaticSummarizationEnabled,
         onCheckedChange = actions.setAutomaticSummarization,
+    )
+}
+
+@Composable
+private fun BackgroundShareSummaryNotificationsCard(uiState: UiState, onCheckedChange: (Boolean) -> Unit) {
+    SettingsToggleCard(
+        title = stringResource(R.string.settings_background_share_summary_notifications),
+        body = stringResource(R.string.settings_background_share_summary_notifications_body),
+        checked = uiState.backgroundShareSummaryNotificationsEnabled,
+        onCheckedChange = onCheckedChange,
     )
 }
 
