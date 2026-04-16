@@ -13,20 +13,25 @@ import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
+import java.time.Duration
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
@@ -49,11 +54,20 @@ class HistoryViewModel @Inject constructor(
         const val EXPORT_PAGE_SIZE = 100
     }
 
+    private data class HistoryGroupingContext(val currentDate: LocalDate, val zoneId: ZoneId)
+
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
     private val _uiEvents = Channel<HistoryUiEvent>()
     val uiEvents = _uiEvents.receiveAsFlow()
+    private val historyGroupingContext: Flow<HistoryGroupingContext> = flow {
+        while (true) {
+            val zoneId = ZoneId.systemDefault()
+            emit(HistoryGroupingContext(currentDate = LocalDate.now(zoneId), zoneId = zoneId))
+            delay(millisUntilNextLocalDateChange(zoneId))
+        }
+    }.distinctUntilChanged()
 
     fun prepareShareTranscript(item: TranscriptionHistory) {
         viewModelScope.launch {
@@ -120,21 +134,24 @@ class HistoryViewModel @Inject constructor(
     internal val pagedHistoryItems: Flow<PagingData<HistoryListRow>> = _searchQuery
         .debounce(250)
         .distinctUntilChanged()
-        .flatMapLatest(historyRepository::getPagedHistory)
-        .map { pagingData ->
-            val zoneId = ZoneId.systemDefault()
-            val currentDate = LocalDate.now(zoneId)
-            pagingData
-                .map(HistoryListRow::Item)
-                .insertSeparators { before: HistoryListRow.Item?, after: HistoryListRow.Item? ->
-                    val nextItem = after?.history ?: return@insertSeparators null
-                    historyDateHeader(
-                        before = before?.history,
-                        after = nextItem,
-                        currentDate = currentDate,
-                        zoneId = zoneId,
-                    )
-                }
+        .flatMapLatest { query ->
+            combine(historyRepository.getPagedHistory(query), historyGroupingContext) { pagingData, groupingContext ->
+                pagingData
+                    .map { history ->
+                        historyListItem(
+                            history = history,
+                            currentDate = groupingContext.currentDate,
+                            zoneId = groupingContext.zoneId,
+                        )
+                    }
+                    .insertSeparators { before: HistoryListRow.Item?, after: HistoryListRow.Item? ->
+                        val nextItem = after ?: return@insertSeparators null
+                        historyDateHeader(
+                            previousBucket = before?.bucket,
+                            currentBucket = nextItem.bucket,
+                        )
+                    }
+            }
         }
         .cachedIn(viewModelScope)
 
@@ -160,5 +177,11 @@ class HistoryViewModel @Inject constructor(
         viewModelScope.launch {
             historyRepository.deleteAll()
         }
+    }
+
+    private fun millisUntilNextLocalDateChange(zoneId: ZoneId): Long {
+        val now = ZonedDateTime.now(zoneId)
+        val nextLocalMidnight = now.toLocalDate().plusDays(1).atStartOfDay(zoneId)
+        return Duration.between(now, nextLocalMidnight).toMillis().coerceAtLeast(1L)
     }
 }

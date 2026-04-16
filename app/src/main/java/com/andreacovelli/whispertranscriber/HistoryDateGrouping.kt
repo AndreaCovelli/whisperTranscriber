@@ -23,7 +23,7 @@ internal sealed interface HistoryListRow {
         override val stableKey: String = "header:${bucket.key}"
     }
 
-    data class Item(val history: TranscriptionHistory) : HistoryListRow {
+    data class Item(val history: TranscriptionHistory, val bucket: HistoryDateBucket) : HistoryListRow {
         override val stableKey: String = "item:${history.id}"
     }
 }
@@ -60,24 +60,25 @@ internal fun historyDateBucket(
 )
 
 internal fun historyDateHeader(
-    before: TranscriptionHistory?,
-    after: TranscriptionHistory,
+    previousBucket: HistoryDateBucket?,
+    currentBucket: HistoryDateBucket,
+): HistoryListRow.Header? = if (previousBucket?.key == currentBucket.key) null else HistoryListRow.Header(currentBucket)
+
+internal fun historyListItem(
+    history: TranscriptionHistory,
     currentDate: LocalDate,
     zoneId: ZoneId,
-): HistoryListRow.Header? {
-    val afterBucket = historyDateBucket(after.timestamp, currentDate, zoneId)
-    val beforeBucketKey = before?.let { historyDateBucket(it.timestamp, currentDate, zoneId).key }
-    return if (beforeBucketKey == afterBucket.key) null else HistoryListRow.Header(afterBucket)
-}
+): HistoryListRow.Item = HistoryListRow.Item(
+    history = history,
+    bucket = historyDateBucket(history.timestamp, currentDate, zoneId),
+)
 
-internal fun historyDateHeader(
-    before: TranscriptionHistory?,
-    after: TranscriptionHistory,
+internal fun historyListItem(
+    history: TranscriptionHistory,
     clock: Clock = Clock.systemDefaultZone(),
     zoneId: ZoneId = clock.zone,
-): HistoryListRow.Header? = historyDateHeader(
-    before = before,
-    after = after,
+): HistoryListRow.Item = historyListItem(
+    history = history,
     currentDate = LocalDate.now(clock.withZone(zoneId)),
     zoneId = zoneId,
 )
@@ -88,10 +89,11 @@ internal fun buildHistoryListRows(
     zoneId: ZoneId = clock.zone,
 ): List<HistoryListRow> = buildList {
     val currentDate = LocalDate.now(clock.withZone(zoneId))
-    var previousItem: TranscriptionHistory? = null
-    items.forEach { item ->
-        historyDateHeader(previousItem, item, currentDate, zoneId)?.let(::add)
-        add(HistoryListRow.Item(item))
-        previousItem = item
+    var previousBucket: HistoryDateBucket? = null
+    items.forEach { history ->
+        val item = historyListItem(history, currentDate, zoneId)
+        historyDateHeader(previousBucket, item.bucket)?.let(::add)
+        add(item)
+        previousBucket = item.bucket
     }
 }
