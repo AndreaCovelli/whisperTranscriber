@@ -69,8 +69,15 @@ internal object SharedAudioIntentHandler {
 class MainActivity : ComponentActivity() {
 
     private val mainViewModel: MainViewModel by viewModels()
+    private var pendingEnableBackgroundShareSummaryNotifications = false
     private val notificationPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (pendingEnableBackgroundShareSummaryNotifications) {
+                mainViewModel.settingsScreenActions
+                    .setBackgroundShareSummaryNotificationsEnabled(granted)
+                pendingEnableBackgroundShareSummaryNotifications = false
+            }
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -157,6 +164,8 @@ class MainActivity : ComponentActivity() {
                         SettingsScreen(
                             viewModel = mainViewModel,
                             onNavigateBack = { navController.popBackStack() },
+                            onBackgroundShareSummaryNotificationsChange =
+                            ::handleBackgroundShareSummaryNotificationsToggle,
                         )
                     }
                 }
@@ -191,6 +200,25 @@ class MainActivity : ComponentActivity() {
         ) {
             return
         }
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    private fun handleBackgroundShareSummaryNotificationsToggle(enabled: Boolean) {
+        if (!enabled) {
+            pendingEnableBackgroundShareSummaryNotifications = false
+            mainViewModel.settingsScreenActions.setBackgroundShareSummaryNotificationsEnabled(false)
+            return
+        }
+        if (
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingEnableBackgroundShareSummaryNotifications = false
+            mainViewModel.settingsScreenActions.setBackgroundShareSummaryNotificationsEnabled(true)
+            return
+        }
+        pendingEnableBackgroundShareSummaryNotifications = true
         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 }

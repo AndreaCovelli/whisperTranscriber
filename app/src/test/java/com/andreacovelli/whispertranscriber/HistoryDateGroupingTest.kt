@@ -19,7 +19,8 @@ class HistoryDateGroupingTest {
         val clock = fixedClock(month = 4, day = 15)
         val currentDate = LocalDate.now(clock.withZone(zoneId))
 
-        val bucket = historyDateBucket(timestamp = millisAt(2026, 4, 15, 8, 30), currentDate = currentDate, zoneId = zoneId)
+        val bucket =
+            historyDateBucket(timestamp = millisAt(2026, 4, 15, 8, 30), currentDate = currentDate, zoneId = zoneId)
 
         assertEquals("day:2026-04-15", bucket.key)
         assertEquals(HistoryDateLabel.Today, bucket.label)
@@ -30,7 +31,8 @@ class HistoryDateGroupingTest {
         val clock = fixedClock(month = 4, day = 15)
         val currentDate = LocalDate.now(clock.withZone(zoneId))
 
-        val bucket = historyDateBucket(timestamp = millisAt(2026, 4, 14, 23, 45), currentDate = currentDate, zoneId = zoneId)
+        val bucket =
+            historyDateBucket(timestamp = millisAt(2026, 4, 14, 23, 45), currentDate = currentDate, zoneId = zoneId)
 
         assertEquals("day:2026-04-14", bucket.key)
         assertEquals(HistoryDateLabel.Yesterday, bucket.label)
@@ -41,7 +43,8 @@ class HistoryDateGroupingTest {
         val clock = fixedClock(month = 4, day = 15)
         val currentDate = LocalDate.now(clock.withZone(zoneId))
 
-        val bucket = historyDateBucket(timestamp = millisAt(2026, 4, 10, 9, 0), currentDate = currentDate, zoneId = zoneId)
+        val bucket =
+            historyDateBucket(timestamp = millisAt(2026, 4, 10, 9, 0), currentDate = currentDate, zoneId = zoneId)
 
         assertEquals("month:2026-04", bucket.key)
         assertEquals(HistoryDateLabel.Month(YearMonth.of(2026, 4)), bucket.label)
@@ -51,8 +54,10 @@ class HistoryDateGroupingTest {
     fun historyDateHeader_returnsNull_whenAdjacentItemsShareTheSameBucket() {
         val clock = fixedClock(month = 4, day = 15)
         val currentDate = LocalDate.now(clock.withZone(zoneId))
-        val beforeBucket = historyDateBucket(timestamp = millisAt(2026, 4, 15, 9, 0), currentDate = currentDate, zoneId = zoneId)
-        val afterBucket = historyDateBucket(timestamp = millisAt(2026, 4, 15, 8, 0), currentDate = currentDate, zoneId = zoneId)
+        val beforeBucket =
+            historyDateBucket(timestamp = millisAt(2026, 4, 15, 9, 0), currentDate = currentDate, zoneId = zoneId)
+        val afterBucket =
+            historyDateBucket(timestamp = millisAt(2026, 4, 15, 8, 0), currentDate = currentDate, zoneId = zoneId)
 
         val header = historyDateHeader(previousBucket = beforeBucket, currentBucket = afterBucket)
 
@@ -63,8 +68,10 @@ class HistoryDateGroupingTest {
     fun historyDateHeader_returnsMonthHeader_whenMonthChanges() {
         val clock = fixedClock(month = 5, day = 3)
         val currentDate = LocalDate.now(clock.withZone(zoneId))
-        val beforeBucket = historyDateBucket(timestamp = millisAt(2026, 4, 30, 18, 0), currentDate = currentDate, zoneId = zoneId)
-        val afterBucket = historyDateBucket(timestamp = millisAt(2026, 3, 31, 21, 0), currentDate = currentDate, zoneId = zoneId)
+        val beforeBucket =
+            historyDateBucket(timestamp = millisAt(2026, 4, 30, 18, 0), currentDate = currentDate, zoneId = zoneId)
+        val afterBucket =
+            historyDateBucket(timestamp = millisAt(2026, 3, 31, 21, 0), currentDate = currentDate, zoneId = zoneId)
 
         val header = historyDateHeader(previousBucket = beforeBucket, currentBucket = afterBucket)
 

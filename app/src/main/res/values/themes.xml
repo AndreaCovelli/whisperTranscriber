@@ -2,4 +2,5 @@
 <resources>
 
     <style name="Theme.WhisperTranscriber" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.WhisperTranscriber.NoDisplay" parent="@android:style/Theme.NoDisplay" />
 </resources>

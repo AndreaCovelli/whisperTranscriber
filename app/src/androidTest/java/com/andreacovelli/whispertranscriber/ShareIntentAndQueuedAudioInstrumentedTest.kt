@@ -82,6 +82,19 @@ class ShareIntentAndQueuedAudioInstrumentedTest {
     }
 
     @Test
+    fun audioShareIntent_resolvesToShareReceiverActivity() {
+        val resolved = context.packageManager.resolveActivity(
+            Intent(Intent.ACTION_SEND).apply {
+                setPackage(context.packageName)
+                type = "audio/wav"
+            },
+            PackageManager.MATCH_DEFAULT_ONLY,
+        )
+
+        assertEquals(ShareReceiverActivity::class.java.name, resolved?.activityInfo?.name)
+    }
+
+    @Test
     fun queuedAudioResolver_usesLegacyJobUriWhenNoStagedFileExistsField() {
         val originalUri = "content://test/legacy.wav"
         val resolution = QueuedAudioInputResolver.resolve(

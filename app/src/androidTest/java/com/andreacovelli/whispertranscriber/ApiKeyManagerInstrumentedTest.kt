@@ -2,6 +2,7 @@ package com.andreacovelli.whispertranscriber
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -57,9 +58,36 @@ class ApiKeyManagerInstrumentedTest {
         )
     }
 
+    @Test
+    fun getSummarizationSettings_returnsSavedCustomGeminiSelection() = runBlocking {
+        apiKeyManager.saveSummarizerProvider(TranscriptionProvider.GEMINI_CUSTOM)
+        apiKeyManager.saveSummarizerCustomGeminiModelName("gemini-custom-summary-model")
+
+        assertEquals(
+            SummarizationSettings(
+                provider = TranscriptionProvider.GEMINI_CUSTOM,
+                customModelName = "gemini-custom-summary-model",
+            ),
+            apiKeyManager.getSummarizationSettings(),
+        )
+    }
+
+    @Test
+    fun backgroundShareSummaryNotificationsEnabledFlow_returnsSavedValue() = runBlocking {
+        apiKeyManager.saveBackgroundShareSummaryNotificationsEnabled(true)
+
+        assertEquals(
+            true,
+            apiKeyManager.backgroundShareSummaryNotificationsEnabledFlow.first(),
+        )
+    }
+
     private suspend fun resetTranscriptionSettings() {
         apiKeyManager.saveProvider(TranscriptionProvider.ELEVEN_LABS)
         apiKeyManager.saveTranscriptionCustomGeminiModelName("")
+        apiKeyManager.saveSummarizerProvider(TranscriptionProvider.GEMINI_FLASH)
+        apiKeyManager.saveSummarizerCustomGeminiModelName("")
+        apiKeyManager.saveBackgroundShareSummaryNotificationsEnabled(false)
         apiKeyManager.saveSpeakerDiarization(false)
     }
 }

@@ -50,6 +50,7 @@ data class UiState(
     val transcriptionCustomModelValidation: CustomModelValidation = CustomModelValidation.Idle,
     val summarizerCustomModelValidation: CustomModelValidation = CustomModelValidation.Idle,
     val automaticSummarizationEnabled: Boolean = false,
+    val backgroundShareSummaryNotificationsEnabled: Boolean = false,
     val speakerDiarizationEnabled: Boolean = false,
     val jobs: List<TranscriptionJobState> = emptyList(),
     val batchProgressState: BatchProgressState? = null,
@@ -133,6 +134,11 @@ internal fun UiState.toTranscriptionQueueSettings(): TranscriptionQueueSettings 
     provider = provider,
     customModelName = transcriptionCustomGeminiModelName,
     speakerDiarizationEnabled = speakerDiarizationEnabled,
+)
+
+internal fun UiState.toSummarizationSettings(): SummarizationSettings = SummarizationSettings(
+    provider = summarizerProvider,
+    customModelName = summarizerCustomGeminiModelName,
 )
 
 internal fun resolveShareQueueSettings(
@@ -267,6 +273,11 @@ class MainViewModel @Inject constructor(
                 }
             }
             launch {
+                settings.backgroundShareSummaryNotificationsEnabledFlow.collect { enabled ->
+                    _uiState.update { it.copy(backgroundShareSummaryNotificationsEnabled = enabled) }
+                }
+            }
+            launch {
                 repository.jobsState.collect { jobsList ->
                     val presentationState = withContext(ioDispatcher) {
                         buildJobPresentationState(jobsList)
@@ -318,7 +329,13 @@ class MainViewModel @Inject constructor(
     private fun runSummarization(jobId: Int, allowResummarize: Boolean) {
         summaryJobs[jobId]?.cancel()
         summaryJobs[jobId] = viewModelScope.launch {
-            val result = summarizationService.summarize(jobId, _uiState.value, allowResummarize)
+            val currentState = _uiState.value
+            val result = summarizationService.summarize(
+                jobId = jobId,
+                settings = currentState.toSummarizationSettings(),
+                allowResummarize = allowResummarize,
+                fallbackStatusMessage = currentState.status,
+            )
             _uiState.update { state ->
                 state.copy(status = result.statusMessage)
             }

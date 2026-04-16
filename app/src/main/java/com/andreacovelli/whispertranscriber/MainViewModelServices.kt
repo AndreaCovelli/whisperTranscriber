@@ -58,6 +58,7 @@ class TranscriptionQueueService @Inject constructor(
         provider: TranscriptionProvider,
         customModelName: String,
         speakerDiarizationEnabled: Boolean,
+        backgroundShareWorkSpec: BackgroundShareWorkSpec? = null,
     ): QueuedShareResult {
         if (uris.isEmpty()) {
             return QueuedShareResult(0, context.getString(R.string.main_waiting_for_audios))
@@ -85,7 +86,7 @@ class TranscriptionQueueService @Inject constructor(
                     isRunning = false,
                 ),
             ).toInt()
-            enqueueWorker(jobId, speakerLabelPrefix)
+            enqueueWorker(jobId, speakerLabelPrefix, backgroundShareWorkSpec)
         }
 
         return QueuedShareResult(uris.size, context.getString(R.string.main_queued_files, uris.size))
@@ -119,7 +120,7 @@ class TranscriptionQueueService @Inject constructor(
         workManager.cancelAllWorkByTag(jobTag(jobId))
         val requestedModel = resolveRequestedModel(provider, customModelName)
         if (repository.retryJob(jobId, provider.name, requestedModel)) {
-            enqueueWorker(jobId, context.getString(R.string.speaker_label_prefix))
+            enqueueWorker(jobId, context.getString(R.string.speaker_label_prefix), backgroundShareWorkSpec = null)
         }
     }
 
@@ -133,7 +134,7 @@ class TranscriptionQueueService @Inject constructor(
     private suspend fun restartQueuedJobs() {
         val speakerLabelPrefix = context.getString(R.string.speaker_label_prefix)
         repository.getQueuedJobs().forEach { queuedJob ->
-            enqueueWorker(queuedJob.id, speakerLabelPrefix)
+            enqueueWorker(queuedJob.id, speakerLabelPrefix, backgroundShareWorkSpec = null)
         }
     }
 
@@ -160,10 +161,14 @@ class TranscriptionQueueService @Inject constructor(
             .forEach(::deleteQuietly)
     }
 
-    private fun enqueueWorker(jobId: Int, speakerLabelPrefix: String) {
+    private fun enqueueWorker(
+        jobId: Int,
+        speakerLabelPrefix: String,
+        backgroundShareWorkSpec: BackgroundShareWorkSpec?,
+    ) {
         val workRequest = OneTimeWorkRequestBuilder<TranscriptionWorker>()
             .setInputData(
-                workDataOf(
+                backgroundShareWorkSpec?.toInputData(jobId, speakerLabelPrefix) ?: workDataOf(
                     "jobId" to jobId,
                     SPEAKER_LABEL_PREFIX_INPUT to speakerLabelPrefix,
                 ),
@@ -361,9 +366,14 @@ class SummarizationService @Inject constructor(
     private val repository: TranscriptionRepository,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
-    suspend fun summarize(jobId: Int, state: UiState, allowResummarize: Boolean): SummarizationResult {
+    suspend fun summarize(
+        jobId: Int,
+        settings: SummarizationSettings,
+        allowResummarize: Boolean,
+        fallbackStatusMessage: String = "",
+    ): SummarizationResult {
         val summarizerSelection = try {
-            resolveSummarizerSelection(state)
+            resolveSummarizerSelection(settings)
         } catch (e: IllegalStateException) {
             return SummarizationResult(statusMessage = "Error: ${e.message}", errorMessage = e.message)
         }
@@ -373,7 +383,7 @@ class SummarizationService @Inject constructor(
         } else {
             repository.claimAutoSummary(jobId, summarizerSelection.provider.name, summarizerSelection.modelName)
         }
-        if (!claimed) return SummarizationResult(statusMessage = state.status)
+        if (!claimed) return SummarizationResult(statusMessage = fallbackStatusMessage)
 
         var summarizingCleared = false
         return try {
@@ -381,7 +391,7 @@ class SummarizationService @Inject constructor(
             if (job == null) {
                 repository.setSummarizing(jobId, false)
                 summarizingCleared = true
-                return SummarizationResult(statusMessage = state.status)
+                return SummarizationResult(statusMessage = fallbackStatusMessage)
             }
 
             val text = job.transcript
@@ -446,11 +456,11 @@ class SummarizationService @Inject constructor(
         return keyChars
     }
 
-    private fun resolveSummarizerSelection(state: UiState): SummarizerSelection {
-        val provider = state.summarizerProvider
+    private fun resolveSummarizerSelection(settings: SummarizationSettings): SummarizerSelection {
+        val provider = settings.provider
         return when {
             provider == TranscriptionProvider.GEMINI_CUSTOM -> {
-                val modelName = state.summarizerCustomGeminiModelName.ifBlank {
+                val modelName = settings.customModelName.ifBlank {
                     throw IllegalStateException("No custom Gemini model set for summarization.")
                 }
                 SummarizerSelection(provider = provider, modelName = modelName)

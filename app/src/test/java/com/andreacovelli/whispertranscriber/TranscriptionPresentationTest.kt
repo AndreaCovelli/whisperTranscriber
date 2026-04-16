@@ -81,6 +81,38 @@ class TranscriptionPresentationTest {
     }
 
     @Test
+    fun uiStateToSummarizationSettings_preservesCurrentSelection() {
+        assertEquals(
+            SummarizationSettings(
+                provider = TranscriptionProvider.GEMINI_CUSTOM,
+                customModelName = "gemini-custom-summary",
+            ),
+            UiState(
+                summarizerProvider = TranscriptionProvider.GEMINI_CUSTOM,
+                summarizerCustomGeminiModelName = "gemini-custom-summary",
+            ).toSummarizationSettings(),
+        )
+    }
+
+    @Test
+    fun backgroundShareWorkSpec_roundTripsThroughWorkerInputData() {
+        val spec = BackgroundShareWorkSpec(
+            summarizeAfterTranscription = true,
+            notifyResult = true,
+            summarizationSettings = SummarizationSettings(
+                provider = TranscriptionProvider.GEMINI_CUSTOM,
+                customModelName = "gemini-custom-summary",
+            ),
+        )
+
+        val restored = BackgroundShareWorkSpec.fromInputData(
+            spec.toInputData(jobId = 42, speakerLabelPrefix = "Speaker"),
+        )
+
+        assertEquals(spec, restored)
+    }
+
+    @Test
     fun decodeStoredTranscriptionProvider_mapsLegacyGemini25FlashValue() {
         assertEquals(
             TranscriptionProvider.GEMINI_FLASH,
