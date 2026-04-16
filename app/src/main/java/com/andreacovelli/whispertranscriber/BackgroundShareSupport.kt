@@ -66,6 +66,7 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
         private const val RESULT_CHANNEL_NAME = "Shared audio results"
         private const val RESULT_GROUP_KEY = "background_share_result_group"
         private const val RESULT_NOTIFICATION_OFFSET = 20_000
+        private const val GENERIC_FAILURE_NOTIFICATION_OFFSET = 40_000
     }
 
     private val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -134,5 +135,5 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
         )
     }
 
-    private fun genericFailureNotificationId(): Int = RESULT_NOTIFICATION_OFFSET + Random.nextInt(10_000)
+    private fun genericFailureNotificationId(): Int = GENERIC_FAILURE_NOTIFICATION_OFFSET + Random.nextInt(10_000)
 }

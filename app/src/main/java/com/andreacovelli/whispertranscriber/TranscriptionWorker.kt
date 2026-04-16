@@ -6,6 +6,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.ServiceInfo
+import android.database.SQLException
 import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -65,6 +66,7 @@ private sealed interface PreparedAudioInput {
     data class Gemini(val file: File, val mimeType: String, override val tempFileToClean: File?) : PreparedAudioInput
 }
 
+@Suppress("unused")
 @HiltWorker
 class TranscriptionWorker @AssistedInject constructor(
     @Assisted appContext: Context,
@@ -184,6 +186,11 @@ class TranscriptionWorker @AssistedInject constructor(
             notifyBackgroundShareFailure(backgroundShareWorkSpec, jobId, job.displayName, message)
             return Result.failure()
         } catch (e: IllegalArgumentException) {
+            val message = e.message ?: e::class.java.simpleName
+            repository.updateError(jobId, message, false, "Error")
+            notifyBackgroundShareFailure(backgroundShareWorkSpec, jobId, job.displayName, message)
+            return Result.failure()
+        } catch (e: SQLException) {
             val message = e.message ?: e::class.java.simpleName
             repository.updateError(jobId, message, false, "Error")
             notifyBackgroundShareFailure(backgroundShareWorkSpec, jobId, job.displayName, message)

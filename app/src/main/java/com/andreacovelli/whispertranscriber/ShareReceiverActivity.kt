@@ -1,6 +1,7 @@
 package com.andreacovelli.whispertranscriber
 
 import android.content.Intent
+import android.database.SQLException
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
@@ -68,6 +69,8 @@ class ShareReceiverActivity : ComponentActivity() {
         } catch (e: IllegalStateException) {
             showBackgroundShareQueueFailure(e)
         } catch (e: SecurityException) {
+            showBackgroundShareQueueFailure(e)
+        } catch (e: SQLException) {
             showBackgroundShareQueueFailure(e)
         }
     }

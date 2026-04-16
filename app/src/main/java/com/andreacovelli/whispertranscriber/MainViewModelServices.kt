@@ -117,6 +117,9 @@ class TranscriptionQueueService @Inject constructor(
         } catch (e: SecurityException) {
             deleteStagedFiles(preparedAudio)
             throw e
+        } catch (e: SQLException) {
+            deleteStagedFiles(preparedAudio)
+            throw e
         }
     }
 
