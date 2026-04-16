@@ -31,7 +31,9 @@
         <activity
             android:name=".ShareReceiverActivity"
             android:exported="true"
-            android:theme="@style/Theme.WhisperTranscriber.NoDisplay">
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.WhisperTranscriber.ShareReceiver">
             <!-- Single share -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

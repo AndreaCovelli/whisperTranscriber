@@ -70,30 +70,13 @@ class TranscriptionQueueService @Inject constructor(
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec? = null,
     ): QueuedShareResult {
         val preparedAudio = prepareSharedAudio(uris)
-        return try {
-            enqueuePreparedSharedAudio(
-                preparedAudio = preparedAudio,
-                provider = provider,
-                customModelName = customModelName,
-                speakerDiarizationEnabled = speakerDiarizationEnabled,
-                postTranscriptionWorkSpec = postTranscriptionWorkSpec,
-            )
-        } catch (e: IOException) {
-            deleteStagedFiles(preparedAudio)
-            throw e
-        } catch (e: SecurityException) {
-            deleteStagedFiles(preparedAudio)
-            throw e
-        } catch (e: IllegalArgumentException) {
-            deleteStagedFiles(preparedAudio)
-            throw e
-        } catch (e: IllegalStateException) {
-            deleteStagedFiles(preparedAudio)
-            throw e
-        } catch (e: SQLException) {
-            deleteStagedFiles(preparedAudio)
-            throw e
-        }
+        return enqueuePreparedSharedAudio(
+            preparedAudio = preparedAudio,
+            provider = provider,
+            customModelName = customModelName,
+            speakerDiarizationEnabled = speakerDiarizationEnabled,
+            postTranscriptionWorkSpec = postTranscriptionWorkSpec,
+        )
     }
 
     private suspend fun prepareSharedAudio(uris: List<Uri>): List<PreparedSharedAudio> {
@@ -138,24 +121,43 @@ class TranscriptionQueueService @Inject constructor(
         val batchId = UUID.randomUUID().toString()
         val speakerLabelPrefix = context.getString(R.string.speaker_label_prefix)
         val requestedModel = resolveRequestedModel(provider, customModelName)
+        val pendingPreparedAudio = preparedAudio.toMutableList()
 
-        preparedAudio.forEach { prepared ->
-            val jobId = repository.addJob(
-                TranscriptionJob(
-                    uri = prepared.originalUri.toString(),
-                    displayName = prepared.displayName,
-                    sourceMimeType = prepared.mimeType,
-                    stagedFilePath = prepared.stagedFile.absolutePath,
-                    providerName = provider.name,
-                    requestedModel = requestedModel,
-                    batchId = batchId,
-                    speakerDiarizationEnabled = speakerDiarizationEnabled,
-                    status = "Queued",
-                    progress = 0f,
-                    isRunning = false,
-                ),
-            ).toInt()
-            enqueueWorker(jobId, speakerLabelPrefix, postTranscriptionWorkSpec)
+        try {
+            preparedAudio.forEach { prepared ->
+                val jobId = repository.addJob(
+                    TranscriptionJob(
+                        uri = prepared.originalUri.toString(),
+                        displayName = prepared.displayName,
+                        sourceMimeType = prepared.mimeType,
+                        stagedFilePath = prepared.stagedFile.absolutePath,
+                        providerName = provider.name,
+                        requestedModel = requestedModel,
+                        batchId = batchId,
+                        speakerDiarizationEnabled = speakerDiarizationEnabled,
+                        status = "Queued",
+                        progress = 0f,
+                        isRunning = false,
+                    ),
+                ).toInt()
+                pendingPreparedAudio.remove(prepared)
+                enqueueWorker(jobId, speakerLabelPrefix, postTranscriptionWorkSpec)
+            }
+        } catch (e: IOException) {
+            deleteStagedFiles(pendingPreparedAudio)
+            throw e
+        } catch (e: SecurityException) {
+            deleteStagedFiles(pendingPreparedAudio)
+            throw e
+        } catch (e: IllegalArgumentException) {
+            deleteStagedFiles(pendingPreparedAudio)
+            throw e
+        } catch (e: IllegalStateException) {
+            deleteStagedFiles(pendingPreparedAudio)
+            throw e
+        } catch (e: SQLException) {
+            deleteStagedFiles(pendingPreparedAudio)
+            throw e
         }
 
         return QueuedShareResult(
