@@ -19,7 +19,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.random.Random
 
-data class BackgroundShareWorkSpec(
+data class PostTranscriptionWorkSpec(
     val summarizeAfterTranscription: Boolean,
     val notifyResult: Boolean,
     val summarizationSettings: SummarizationSettings,
@@ -42,12 +42,12 @@ data class BackgroundShareWorkSpec(
         private const val KEY_SUMMARIZER_PROVIDER = "backgroundShareSummarizerProvider"
         private const val KEY_SUMMARIZER_CUSTOM_MODEL_NAME = "backgroundShareSummarizerCustomModelName"
 
-        fun fromInputData(inputData: Data): BackgroundShareWorkSpec? {
+        fun fromInputData(inputData: Data): PostTranscriptionWorkSpec? {
             if (!inputData.getBoolean(KEY_BACKGROUND_SHARE, false)) return null
             val provider = inputData.getString(KEY_SUMMARIZER_PROVIDER)
                 ?.let { runCatching { TranscriptionProvider.valueOf(it) }.getOrNull() }
                 ?: TranscriptionProvider.GEMINI_FLASH
-            return BackgroundShareWorkSpec(
+            return PostTranscriptionWorkSpec(
                 summarizeAfterTranscription = inputData.getBoolean(KEY_SUMMARIZE_AFTER_TRANSCRIPTION, false),
                 notifyResult = inputData.getBoolean(KEY_NOTIFY_RESULT, false),
                 summarizationSettings = SummarizationSettings(

@@ -48,6 +48,7 @@ data class PreparedSharedAudio(
 @Singleton
 class TranscriptionQueueService @Inject constructor(
     @param:ApplicationContext private val context: Context,
+    private val settings: ApiKeyManager,
     private val repository: TranscriptionRepository,
     private val workManager: WorkManager,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
@@ -66,7 +67,7 @@ class TranscriptionQueueService @Inject constructor(
         provider: TranscriptionProvider,
         customModelName: String,
         speakerDiarizationEnabled: Boolean,
-        backgroundShareWorkSpec: BackgroundShareWorkSpec? = null,
+        postTranscriptionWorkSpec: PostTranscriptionWorkSpec? = null,
     ): QueuedShareResult {
         val preparedAudio = prepareSharedAudio(uris)
         return try {
@@ -75,7 +76,7 @@ class TranscriptionQueueService @Inject constructor(
                 provider = provider,
                 customModelName = customModelName,
                 speakerDiarizationEnabled = speakerDiarizationEnabled,
-                backgroundShareWorkSpec = backgroundShareWorkSpec,
+                postTranscriptionWorkSpec = postTranscriptionWorkSpec,
             )
         } catch (e: IOException) {
             deleteStagedFiles(preparedAudio)
@@ -128,7 +129,7 @@ class TranscriptionQueueService @Inject constructor(
         provider: TranscriptionProvider,
         customModelName: String,
         speakerDiarizationEnabled: Boolean,
-        backgroundShareWorkSpec: BackgroundShareWorkSpec? = null,
+        postTranscriptionWorkSpec: PostTranscriptionWorkSpec? = null,
     ): QueuedShareResult {
         if (preparedAudio.isEmpty()) {
             return QueuedShareResult(0, context.getString(R.string.main_waiting_for_audios))
@@ -154,7 +155,7 @@ class TranscriptionQueueService @Inject constructor(
                     isRunning = false,
                 ),
             ).toInt()
-            enqueueWorker(jobId, speakerLabelPrefix, backgroundShareWorkSpec)
+            enqueueWorker(jobId, speakerLabelPrefix, postTranscriptionWorkSpec)
         }
 
         return QueuedShareResult(
@@ -187,11 +188,20 @@ class TranscriptionQueueService @Inject constructor(
         }
     }
 
-    suspend fun retryJob(jobId: Int, provider: TranscriptionProvider, customModelName: String) {
+    suspend fun retryJob(
+        jobId: Int,
+        provider: TranscriptionProvider,
+        customModelName: String,
+        postTranscriptionWorkSpec: PostTranscriptionWorkSpec? = null,
+    ) {
         workManager.cancelAllWorkByTag(jobTag(jobId))
         val requestedModel = resolveRequestedModel(provider, customModelName)
         if (repository.retryJob(jobId, provider.name, requestedModel)) {
-            enqueueWorker(jobId, context.getString(R.string.speaker_label_prefix), backgroundShareWorkSpec = null)
+            enqueueWorker(
+                jobId,
+                context.getString(R.string.speaker_label_prefix),
+                postTranscriptionWorkSpec ?: resolveAutomaticSummarizationWorkSpec(),
+            )
         }
     }
 
@@ -204,9 +214,28 @@ class TranscriptionQueueService @Inject constructor(
 
     private suspend fun restartQueuedJobs() {
         val speakerLabelPrefix = context.getString(R.string.speaker_label_prefix)
+        val automaticSummarizationWorkSpec = resolveAutomaticSummarizationWorkSpec()
         repository.getQueuedJobs().forEach { queuedJob ->
-            enqueueWorker(queuedJob.id, speakerLabelPrefix, backgroundShareWorkSpec = null)
+            enqueueWorker(queuedJob.id, speakerLabelPrefix, automaticSummarizationWorkSpec)
         }
+    }
+
+    private suspend fun resolveAutomaticSummarizationWorkSpec(): PostTranscriptionWorkSpec? {
+        if (!settings.automaticSummarizationFlow.first()) return null
+
+        val keyChars = settings.getGeminiApiKey() ?: return null
+        val hasGeminiKey = try {
+            keyChars.isNotEmpty()
+        } finally {
+            keyChars.fill('\u0000')
+        }
+        if (!hasGeminiKey) return null
+
+        return PostTranscriptionWorkSpec(
+            summarizeAfterTranscription = true,
+            notifyResult = false,
+            summarizationSettings = settings.getSummarizationSettings(),
+        )
     }
 
     suspend fun cleanupOldTempFiles(
@@ -235,11 +264,11 @@ class TranscriptionQueueService @Inject constructor(
     private fun enqueueWorker(
         jobId: Int,
         speakerLabelPrefix: String,
-        backgroundShareWorkSpec: BackgroundShareWorkSpec?,
+        postTranscriptionWorkSpec: PostTranscriptionWorkSpec?,
     ) {
         val workRequest = OneTimeWorkRequestBuilder<TranscriptionWorker>()
             .setInputData(
-                backgroundShareWorkSpec?.toInputData(jobId, speakerLabelPrefix) ?: workDataOf(
+                postTranscriptionWorkSpec?.toInputData(jobId, speakerLabelPrefix) ?: workDataOf(
                     "jobId" to jobId,
                     SPEAKER_LABEL_PREFIX_INPUT to speakerLabelPrefix,
                 ),

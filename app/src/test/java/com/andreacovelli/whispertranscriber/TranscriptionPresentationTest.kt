@@ -95,8 +95,8 @@ class TranscriptionPresentationTest {
     }
 
     @Test
-    fun backgroundShareWorkSpec_roundTripsThroughWorkerInputData() {
-        val spec = BackgroundShareWorkSpec(
+    fun postTranscriptionWorkSpec_roundTripsThroughWorkerInputData() {
+        val spec = PostTranscriptionWorkSpec(
             summarizeAfterTranscription = true,
             notifyResult = true,
             summarizationSettings = SummarizationSettings(
@@ -105,11 +105,41 @@ class TranscriptionPresentationTest {
             ),
         )
 
-        val restored = BackgroundShareWorkSpec.fromInputData(
+        val restored = PostTranscriptionWorkSpec.fromInputData(
             spec.toInputData(jobId = 42, speakerLabelPrefix = "Speaker"),
         )
 
         assertEquals(spec, restored)
+    }
+
+    @Test
+    fun uiStateToAutomaticSummarizationWorkSpec_returnsNullWhenAutomaticSummarizationDisabled() {
+        assertNull(
+            UiState(
+                automaticSummarizationEnabled = false,
+                geminiApiKeyState = ApiKeyState.Present,
+            ).toAutomaticSummarizationWorkSpec(),
+        )
+    }
+
+    @Test
+    fun uiStateToAutomaticSummarizationWorkSpec_returnsSilentWorkerSpecWhenEnabled() {
+        assertEquals(
+            PostTranscriptionWorkSpec(
+                summarizeAfterTranscription = true,
+                notifyResult = false,
+                summarizationSettings = SummarizationSettings(
+                    provider = TranscriptionProvider.GEMINI_CUSTOM,
+                    customModelName = "gemini-custom-summary",
+                ),
+            ),
+            UiState(
+                automaticSummarizationEnabled = true,
+                geminiApiKeyState = ApiKeyState.Present,
+                summarizerProvider = TranscriptionProvider.GEMINI_CUSTOM,
+                summarizerCustomGeminiModelName = "gemini-custom-summary",
+            ).toAutomaticSummarizationWorkSpec(),
+        )
     }
 
     @Test

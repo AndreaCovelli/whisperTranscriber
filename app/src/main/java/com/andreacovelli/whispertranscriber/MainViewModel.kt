@@ -20,6 +20,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -141,6 +142,15 @@ internal fun UiState.toSummarizationSettings(): SummarizationSettings = Summariz
     customModelName = summarizerCustomGeminiModelName,
 )
 
+internal fun UiState.toAutomaticSummarizationWorkSpec(): PostTranscriptionWorkSpec? {
+    if (!automaticSummarizationEnabled || geminiApiKeyState !is ApiKeyState.Present) return null
+    return PostTranscriptionWorkSpec(
+        summarizeAfterTranscription = true,
+        notifyResult = false,
+        summarizationSettings = toSummarizationSettings(),
+    )
+}
+
 internal fun resolveShareQueueSettings(
     uiState: UiState,
     transcriptionSettingsHydrated: Boolean,
@@ -209,6 +219,7 @@ class MainViewModel @Inject constructor(
                     jobId,
                     _uiState.value.provider,
                     _uiState.value.transcriptionCustomGeminiModelName,
+                    resolveAutomaticSummarizationWorkSpecForQueue(),
                 )
             }
         },
@@ -321,6 +332,7 @@ class MainViewModel @Inject constructor(
                 provider = queueSettings.provider,
                 customModelName = queueSettings.customModelName,
                 speakerDiarizationEnabled = queueSettings.speakerDiarizationEnabled,
+                postTranscriptionWorkSpec = resolveAutomaticSummarizationWorkSpecForQueue(),
             )
             _uiState.update { it.copy(status = result.statusMessage) }
         }
@@ -373,6 +385,25 @@ class MainViewModel @Inject constructor(
             } else {
                 settings.getTranscriptionQueueSettings()
             },
+        )
+    }
+
+    private suspend fun resolveAutomaticSummarizationWorkSpecForQueue(): PostTranscriptionWorkSpec? {
+        _uiState.value.toAutomaticSummarizationWorkSpec()?.let { return it }
+
+        if (!settings.automaticSummarizationFlow.first()) return null
+        val keyChars = settings.getGeminiApiKey() ?: return null
+        val hasGeminiKey = try {
+            keyChars.isNotEmpty()
+        } finally {
+            keyChars.fill('\u0000')
+        }
+        if (!hasGeminiKey) return null
+
+        return PostTranscriptionWorkSpec(
+            summarizeAfterTranscription = true,
+            notifyResult = false,
+            summarizationSettings = settings.getSummarizationSettings(),
         )
     }
 }

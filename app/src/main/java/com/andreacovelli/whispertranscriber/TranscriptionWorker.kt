@@ -135,7 +135,7 @@ class TranscriptionWorker @AssistedInject constructor(
 
         val job = repository.getJob(jobId) ?: return Result.failure()
         if (job.status == "Cancelled") return Result.success()
-        val backgroundShareWorkSpec = BackgroundShareWorkSpec.fromInputData(inputData)
+        val postTranscriptionWorkSpec = PostTranscriptionWorkSpec.fromInputData(inputData)
 
         try {
             setForeground(getForegroundInfo())
@@ -154,7 +154,12 @@ class TranscriptionWorker @AssistedInject constructor(
                 is QueuedAudioInputResolution.Ready -> resolution.uri
                 is QueuedAudioInputResolution.MissingStagedFile -> {
                     repository.updateError(jobId, resolution.message, false, "Error")
-                    notifyBackgroundShareFailure(backgroundShareWorkSpec, jobId, job.displayName, resolution.message)
+                    notifyPostTranscriptionFailure(
+                        postTranscriptionWorkSpec,
+                        jobId,
+                        job.displayName,
+                        resolution.message,
+                    )
                     return Result.failure()
                 }
             }
@@ -167,7 +172,7 @@ class TranscriptionWorker @AssistedInject constructor(
                 usingElevenLabs = usingElevenLabs,
                 geminiModel = geminiModelName,
                 speakerDiarizationEnabled = job.speakerDiarizationEnabled,
-                backgroundShareWorkSpec = backgroundShareWorkSpec,
+                postTranscriptionWorkSpec = postTranscriptionWorkSpec,
             )
             return Result.success()
         } catch (e: CancellationException) {
@@ -178,22 +183,22 @@ class TranscriptionWorker @AssistedInject constructor(
         } catch (e: IOException) {
             val message = e.message ?: e::class.java.simpleName
             repository.updateError(jobId, message, false, "Error")
-            notifyBackgroundShareFailure(backgroundShareWorkSpec, jobId, job.displayName, message)
+            notifyPostTranscriptionFailure(postTranscriptionWorkSpec, jobId, job.displayName, message)
             return Result.failure()
         } catch (e: IllegalStateException) {
             val message = e.message ?: e::class.java.simpleName
             repository.updateError(jobId, message, false, "Error")
-            notifyBackgroundShareFailure(backgroundShareWorkSpec, jobId, job.displayName, message)
+            notifyPostTranscriptionFailure(postTranscriptionWorkSpec, jobId, job.displayName, message)
             return Result.failure()
         } catch (e: IllegalArgumentException) {
             val message = e.message ?: e::class.java.simpleName
             repository.updateError(jobId, message, false, "Error")
-            notifyBackgroundShareFailure(backgroundShareWorkSpec, jobId, job.displayName, message)
+            notifyPostTranscriptionFailure(postTranscriptionWorkSpec, jobId, job.displayName, message)
             return Result.failure()
         } catch (e: SQLException) {
             val message = e.message ?: e::class.java.simpleName
             repository.updateError(jobId, message, false, "Error")
-            notifyBackgroundShareFailure(backgroundShareWorkSpec, jobId, job.displayName, message)
+            notifyPostTranscriptionFailure(postTranscriptionWorkSpec, jobId, job.displayName, message)
             return Result.failure()
         }
     }
@@ -206,7 +211,7 @@ class TranscriptionWorker @AssistedInject constructor(
         usingElevenLabs: Boolean,
         geminiModel: String?,
         speakerDiarizationEnabled: Boolean,
-        backgroundShareWorkSpec: BackgroundShareWorkSpec?,
+        postTranscriptionWorkSpec: PostTranscriptionWorkSpec?,
     ) {
         val preparedInput = prepareAudioInput(jobId, uri, inputMimeType, usingElevenLabs)
         try {
@@ -218,14 +223,14 @@ class TranscriptionWorker @AssistedInject constructor(
                 speakerDiarizationEnabled = speakerDiarizationEnabled,
             )
             persistCompletedTranscription(jobId, displayName, result)
-            if (backgroundShareWorkSpec?.summarizeAfterTranscription == true) {
+            if (postTranscriptionWorkSpec?.summarizeAfterTranscription == true) {
                 val summarizationResult = summarizationService.summarize(
                     jobId = jobId,
-                    settings = backgroundShareWorkSpec.summarizationSettings,
+                    settings = postTranscriptionWorkSpec.summarizationSettings,
                     allowResummarize = false,
                     fallbackStatusMessage = "Completed",
                 )
-                if (backgroundShareWorkSpec.notifyResult) {
+                if (postTranscriptionWorkSpec.notifyResult) {
                     if (summarizationResult.errorMessage == null) {
                         val completedJob = repository.getJob(jobId)
                         backgroundShareNotifier.showSummary(
@@ -427,13 +432,13 @@ class TranscriptionWorker @AssistedInject constructor(
         )
     }
 
-    private fun notifyBackgroundShareFailure(
-        backgroundShareWorkSpec: BackgroundShareWorkSpec?,
+    private fun notifyPostTranscriptionFailure(
+        postTranscriptionWorkSpec: PostTranscriptionWorkSpec?,
         jobId: Int,
         displayName: String,
         message: String,
     ) {
-        if (backgroundShareWorkSpec?.notifyResult != true) return
+        if (postTranscriptionWorkSpec?.notifyResult != true) return
         backgroundShareNotifier.showFailure(
             jobId = jobId,
             displayName = displayName,
