@@ -52,6 +52,7 @@ class HistoryViewModel @Inject constructor(
 ) : ViewModel() {
     private companion object {
         const val EXPORT_PAGE_SIZE = 100
+        const val DATE_CHANGE_BUFFER_MILLIS = 500L
     }
 
     private data class HistoryGroupingContext(val currentDate: LocalDate, val zoneId: ZoneId)
@@ -142,12 +143,13 @@ class HistoryViewModel @Inject constructor(
                             history = history,
                             currentDate = groupingContext.currentDate,
                             zoneId = groupingContext.zoneId,
-                        )
+                        ) as HistoryListRow
                     }
-                    .insertSeparators { before: HistoryListRow.Item?, after: HistoryListRow.Item? ->
-                        val nextItem = after ?: return@insertSeparators null
+                    .insertSeparators { before: HistoryListRow?, after: HistoryListRow? ->
+                        val previousItem = before as? HistoryListRow.Item
+                        val nextItem = after as? HistoryListRow.Item ?: return@insertSeparators null
                         historyDateHeader(
-                            previousBucket = before?.bucket,
+                            previousBucket = previousItem?.bucket,
                             currentBucket = nextItem.bucket,
                         )
                     }
@@ -182,6 +184,6 @@ class HistoryViewModel @Inject constructor(
     private fun millisUntilNextLocalDateChange(zoneId: ZoneId): Long {
         val now = ZonedDateTime.now(zoneId)
         val nextLocalMidnight = now.toLocalDate().plusDays(1).atStartOfDay(zoneId)
-        return Duration.between(now, nextLocalMidnight).toMillis().coerceAtLeast(1L)
+        return Duration.between(now, nextLocalMidnight).toMillis().coerceAtLeast(1L) + DATE_CHANGE_BUFFER_MILLIS
     }
 }
