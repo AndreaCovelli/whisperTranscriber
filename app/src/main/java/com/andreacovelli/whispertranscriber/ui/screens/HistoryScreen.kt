@@ -2,17 +2,21 @@ package com.andreacovelli.whispertranscriber.ui.screens
 
 import android.content.ClipData
 import android.content.Intent
+import android.text.format.DateUtils
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -20,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -56,10 +61,14 @@ import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
+import com.andreacovelli.whispertranscriber.HistoryDateBucket
+import com.andreacovelli.whispertranscriber.HistoryDateLabel
 import com.andreacovelli.whispertranscriber.HistoryExportFormat
+import com.andreacovelli.whispertranscriber.HistoryListRow
 import com.andreacovelli.whispertranscriber.HistoryUiEvent
 import com.andreacovelli.whispertranscriber.HistoryViewModel
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.extractHistorySearchTokens
 import com.andreacovelli.whispertranscriber.suggestedHistoryExportFileName
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCard
@@ -265,7 +274,7 @@ private fun ExportFormatButton(label: String, onClick: () -> Unit) {
 @Composable
 private fun HistoryScreenContent(
     historyViewModel: HistoryViewModel,
-    pagedItems: LazyPagingItems<com.andreacovelli.whispertranscriber.data.TranscriptionHistory>,
+    pagedItems: LazyPagingItems<HistoryListRow>,
     searchQuery: String,
     searchTokens: List<String>,
     expandedIds: Set<Int>,
@@ -329,7 +338,7 @@ private fun HistorySearchField(visible: Boolean, searchQuery: String, onSearchCh
 
 @Composable
 private fun ColumnScope.HistoryContent(
-    pagedItems: LazyPagingItems<com.andreacovelli.whispertranscriber.data.TranscriptionHistory>,
+    pagedItems: LazyPagingItems<HistoryListRow>,
     searchQuery: String,
     searchTokens: List<String>,
     expandedIds: Set<Int>,
@@ -339,18 +348,52 @@ private fun ColumnScope.HistoryContent(
     scope: kotlinx.coroutines.CoroutineScope,
     context: android.content.Context,
 ) {
+    val transcriptLabel = context.getString(R.string.job_transcription_title)
+    val summaryLabel = context.getString(R.string.job_summary_title)
+    val actionFactory = remember(historyViewModel, clipboardManager, scope, context, transcriptLabel, summaryLabel) {
+        { item: TranscriptionHistory ->
+            HistoryItemCardActions(
+                copyTranscript = {
+                    scope.launch {
+                        clipboardManager.setClipEntry(
+                            ClipEntry(ClipData.newPlainText(transcriptLabel, item.text)),
+                        )
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.main_copied_transcript),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                },
+                copySummary = {
+                    scope.launch {
+                        clipboardManager.setClipEntry(
+                            ClipEntry(ClipData.newPlainText(summaryLabel, item.summary)),
+                        )
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.main_copied_summary),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                },
+                clearTranscript = { historyViewModel.clearTranscript(item) },
+                clearSummary = { historyViewModel.clearSummary(item) },
+                delete = { historyViewModel.deleteHistoryItem(item) },
+                shareTranscript = { historyViewModel.prepareShareTranscript(item) },
+                shareSummary = { historyViewModel.prepareShareSummary(item) },
+            )
+        }
+    }
     when {
         pagedItems.isInitialLoad() -> LoadingHistoryState()
         pagedItems.itemCount == 0 -> EmptyHistoryState(searchQuery)
-        else -> HistoryList(
+        else -> HistoryRowList(
             pagedItems = pagedItems,
             searchTokens = searchTokens,
             expandedIds = expandedIds,
             onExpandedIdsChange = onExpandedIdsChange,
-            historyViewModel = historyViewModel,
-            clipboardManager = clipboardManager,
-            scope = scope,
-            context = context,
+            actionFactory = actionFactory,
         )
     }
 }
@@ -387,67 +430,99 @@ private fun ColumnScope.EmptyHistoryState(searchQuery: String) {
 }
 
 @Composable
-private fun ColumnScope.HistoryList(
-    pagedItems: LazyPagingItems<com.andreacovelli.whispertranscriber.data.TranscriptionHistory>,
+internal fun ColumnScope.HistoryRowList(
+    pagedItems: LazyPagingItems<HistoryListRow>,
     searchTokens: List<String>,
     expandedIds: Set<Int>,
     onExpandedIdsChange: (Set<Int>) -> Unit,
-    historyViewModel: HistoryViewModel,
-    clipboardManager: androidx.compose.ui.platform.Clipboard,
-    scope: kotlinx.coroutines.CoroutineScope,
-    context: android.content.Context,
+    actionFactory: (TranscriptionHistory) -> HistoryItemCardActions,
 ) {
-    val transcriptLabel = context.getString(R.string.job_transcription_title)
-    val summaryLabel = context.getString(R.string.job_summary_title)
     LazyColumn(
         modifier = Modifier.weight(1f),
         contentPadding = PaddingValues(vertical = 8.dp),
     ) {
-        items(count = pagedItems.itemCount, key = pagedItems.itemKey { it.id }) { index ->
-            val item = pagedItems[index] ?: return@items
-            val actions =
-                remember(item, transcriptLabel, summaryLabel, clipboardManager, scope, context, historyViewModel) {
-                    HistoryItemCardActions(
-                        copyTranscript = {
-                            scope.launch {
-                                clipboardManager.setClipEntry(
-                                    ClipEntry(ClipData.newPlainText(transcriptLabel, item.text)),
-                                )
-                                Toast.makeText(
-                                    context,
-                                    context.getString(R.string.main_copied_transcript),
-                                    Toast.LENGTH_SHORT,
-                                ).show()
-                            }
-                        },
-                        copySummary = {
-                            scope.launch {
-                                clipboardManager.setClipEntry(
-                                    ClipEntry(ClipData.newPlainText(summaryLabel, item.summary)),
-                                )
-                                Toast.makeText(
-                                    context,
-                                    context.getString(R.string.main_copied_summary),
-                                    Toast.LENGTH_SHORT,
-                                ).show()
-                            }
-                        },
-                        clearTranscript = { historyViewModel.clearTranscript(item) },
-                        clearSummary = { historyViewModel.clearSummary(item) },
-                        delete = { historyViewModel.deleteHistoryItem(item) },
-                        shareTranscript = { historyViewModel.prepareShareTranscript(item) },
-                        shareSummary = { historyViewModel.prepareShareSummary(item) },
+        items(count = pagedItems.itemCount, key = pagedItems.itemKey { it.stableKey }) { index ->
+            when (val row = pagedItems[index]) {
+                null -> HistoryItemPlaceholderCard()
+                is HistoryListRow.Header -> HistoryDateHeaderRow(bucket = row.bucket)
+                is HistoryListRow.Item -> {
+                    val item = row.history
+                    val actions = remember(item, actionFactory) { actionFactory(item) }
+                    HistoryItemCard(
+                        item = item,
+                        expanded = expandedIds.contains(item.id),
+                        onToggleExpand = { onExpandedIdsChange(expandedIds.toggle(item.id)) },
+                        actions = actions,
+                        searchTokens = searchTokens,
                     )
                 }
-            HistoryItemCard(
-                item = item,
-                expanded = expandedIds.contains(item.id),
-                onToggleExpand = { onExpandedIdsChange(expandedIds.toggle(item.id)) },
-                actions = actions,
-                searchTokens = searchTokens,
+            }
+        }
+    }
+}
+
+@Composable
+private fun HistoryItemPlaceholderCard() {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            PlaceholderBlock(widthFraction = 0.55f, height = 20.dp)
+            Spacer(Modifier.height(8.dp))
+            PlaceholderBlock(widthFraction = 0.4f, height = 12.dp)
+            Spacer(Modifier.height(4.dp))
+            PlaceholderBlock(widthFraction = 0.3f, height = 12.dp)
+            Spacer(Modifier.height(12.dp))
+            PlaceholderBlock(widthFraction = 1f, height = 16.dp)
+            Spacer(Modifier.height(6.dp))
+            PlaceholderBlock(widthFraction = 0.92f, height = 16.dp)
+        }
+    }
+}
+
+@Composable
+private fun PlaceholderBlock(widthFraction: Float, height: androidx.compose.ui.unit.Dp) {
+    Spacer(
+        modifier = Modifier
+            .fillMaxWidth(widthFraction)
+            .height(height)
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = MaterialTheme.shapes.extraSmall,
+            ),
+    )
+}
+
+@Composable
+private fun HistoryDateHeaderRow(bucket: HistoryDateBucket) {
+    val context = LocalContext.current
+    val text = when (val label = bucket.label) {
+        HistoryDateLabel.Today -> stringResource(R.string.history_group_today)
+        HistoryDateLabel.Yesterday -> stringResource(R.string.history_group_yesterday)
+        is HistoryDateLabel.Month -> remember(label.yearMonth, bucket.zoneId, context) {
+            DateUtils.formatDateTime(
+                context,
+                label.yearMonth
+                    .atDay(1)
+                    .atStartOfDay(bucket.zoneId)
+                    .toInstant()
+                    .toEpochMilli(),
+                DateUtils.FORMAT_SHOW_DATE or
+                    DateUtils.FORMAT_NO_MONTH_DAY or
+                    DateUtils.FORMAT_SHOW_YEAR,
             )
         }
     }
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    )
 }
 
 private fun Set<Int>.toggle(id: Int): Set<Int> = if (contains(id)) this - id else this + id
