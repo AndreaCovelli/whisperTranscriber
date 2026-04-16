@@ -76,10 +76,9 @@ android {
             localDevices {
                 create("pixel6Api34") {
                     device = "Pixel 6"
-                    // Keep API 34 here because app and instrumentation code exercise API 33/34 paths.
-                    // Android's ATD images are faster, but currently support only API 30.
                     apiLevel = 34
-                    systemImageSource = "aosp"
+                    systemImageSource = "aosp-atd"
+                    testedAbi = "x86_64"
                 }
             }
         }
