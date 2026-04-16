@@ -6,14 +6,17 @@ import android.text.format.DateUtils
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -21,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -439,7 +443,7 @@ internal fun ColumnScope.HistoryRowList(
     ) {
         items(count = pagedItems.itemCount, key = pagedItems.itemKey { it.stableKey }) { index ->
             when (val row = pagedItems[index]) {
-                null -> Unit
+                null -> HistoryItemPlaceholderCard()
                 is HistoryListRow.Header -> HistoryDateHeaderRow(label = row.bucket.label)
                 is HistoryListRow.Item -> {
                     val item = row.history
@@ -455,6 +459,40 @@ internal fun ColumnScope.HistoryRowList(
             }
         }
     }
+}
+
+@Composable
+private fun HistoryItemPlaceholderCard() {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            PlaceholderBlock(widthFraction = 0.55f, height = 20.dp)
+            Spacer(Modifier.height(8.dp))
+            PlaceholderBlock(widthFraction = 0.4f, height = 12.dp)
+            Spacer(Modifier.height(4.dp))
+            PlaceholderBlock(widthFraction = 0.3f, height = 12.dp)
+            Spacer(Modifier.height(12.dp))
+            PlaceholderBlock(widthFraction = 1f, height = 16.dp)
+            Spacer(Modifier.height(6.dp))
+            PlaceholderBlock(widthFraction = 0.92f, height = 16.dp)
+        }
+    }
+}
+
+@Composable
+private fun PlaceholderBlock(widthFraction: Float, height: androidx.compose.ui.unit.Dp) {
+    Spacer(
+        modifier = Modifier
+            .fillMaxWidth(widthFraction)
+            .height(height)
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = MaterialTheme.shapes.extraSmall,
+            ),
+    )
 }
 
 @Composable
