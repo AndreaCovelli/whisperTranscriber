@@ -64,6 +64,23 @@ private sealed interface PreparedAudioInput {
     data class Gemini(val file: File, val mimeType: String, override val tempFileToClean: File?) : PreparedAudioInput
 }
 
+internal val SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES = setOf(
+    "audio/mp3",
+    "audio/mpeg",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/wave",
+    "audio/flac",
+    "audio/x-flac",
+    "audio/m4a",
+    "audio/x-m4a",
+    "audio/mp4",
+    "audio/aac",
+    "audio/ogg",
+    "audio/opus",
+    "audio/webm",
+)
+
 @Suppress("unused")
 @HiltWorker
 class TranscriptionWorker @AssistedInject constructor(
@@ -90,16 +107,6 @@ class TranscriptionWorker @AssistedInject constructor(
         private val SUPPORTED_GEMINI_MIME_TYPES = setOf(
             "audio/wav", "audio/x-wav", "audio/mp3", "audio/mpeg", "audio/aiff", "audio/x-aiff",
             "audio/aac", "audio/ogg", "audio/vorbis", "audio/flac", "audio/x-flac",
-        )
-
-        private val SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES = setOf(
-            "audio/mp3",
-            "audio/mpeg",
-            "audio/wav",
-            "audio/x-wav",
-            "audio/wave",
-            "audio/flac",
-            "audio/x-flac",
         )
     }
 

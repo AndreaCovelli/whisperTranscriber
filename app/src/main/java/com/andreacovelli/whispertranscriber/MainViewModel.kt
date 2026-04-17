@@ -173,7 +173,7 @@ class MainViewModel @Inject constructor(
     private val settings: ApiKeyManager,
     private val repository: TranscriptionRepository,
     private val queueService: TranscriptionQueueService,
-    private val validationService: GeminiValidationService,
+    private val validationService: ValidationService,
     private val summarizationService: SummarizationService,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : ViewModel() {

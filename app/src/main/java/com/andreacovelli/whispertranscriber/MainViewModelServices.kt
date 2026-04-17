@@ -30,6 +30,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONException
@@ -358,8 +359,15 @@ data class CustomModelValidationResult(val displayName: String? = null, val erro
     val isValid: Boolean get() = errorMessage == null
 }
 
+internal fun resolveMicrosoftSpeechKeyValidationResult(code: Int): KeyValidationResult = when (code) {
+    200, 201, 202, 204, 400, 415, 422, 429 -> KeyValidationResult()
+    401, 403 -> KeyValidationResult("Invalid Microsoft Speech API key")
+    404 -> KeyValidationResult("Microsoft Speech endpoint not found. Check the configured region.")
+    else -> KeyValidationResult("Validation failed: HTTP $code")
+}
+
 @Singleton
-class GeminiValidationService @Inject constructor(
+class ValidationService @Inject constructor(
     private val settings: ApiKeyManager,
     private val okHttpClient: OkHttpClient,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
@@ -368,6 +376,8 @@ class GeminiValidationService @Inject constructor(
         private const val GEMINI_MODELS_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
         private const val GEMINI_API_KEY_HEADER = "x-goog-api-key"
         private const val ERR_ENTER_GEMINI_KEY = "Enter your Gemini API key first"
+        private const val MICROSOFT_SPEECH_KEY_HEADER = "Ocp-Apim-Subscription-Key"
+        private const val MICROSOFT_SPEECH_API_VERSION = "2025-10-15"
     }
 
     suspend fun validateGeminiKey(rawKey: String): KeyValidationResult = try {
@@ -442,6 +452,35 @@ class GeminiValidationService @Inject constructor(
         JSONObject(bodyText).optString("displayName", fallback)
     } catch (_: JSONException) {
         fallback
+    }
+
+    suspend fun validateMicrosoftSpeechKey(rawKey: String, region: String): KeyValidationResult {
+        val normalizedRegion = region.trim().lowercase()
+        if (normalizedRegion.isBlank()) {
+            return KeyValidationResult("Enter a Microsoft Speech region first")
+        }
+
+        return try {
+            val request = Request.Builder()
+                .url(
+                    "https://$normalizedRegion.api.cognitive.microsoft.com/speechtotext/transcriptions:transcribe" +
+                        "?api-version=$MICROSOFT_SPEECH_API_VERSION",
+                )
+                .header(MICROSOFT_SPEECH_KEY_HEADER, rawKey)
+                .post(
+                    MultipartBody.Builder()
+                        .setType(MultipartBody.FORM)
+                        .addFormDataPart("definition", "{}")
+                        .build(),
+                )
+                .build()
+            val code = withContext(ioDispatcher) {
+                okHttpClient.newCall(request).execute().use { response -> response.code }
+            }
+            resolveMicrosoftSpeechKeyValidationResult(code)
+        } catch (e: IOException) {
+            KeyValidationResult(e.message ?: "Validation failed")
+        }
     }
 }
 

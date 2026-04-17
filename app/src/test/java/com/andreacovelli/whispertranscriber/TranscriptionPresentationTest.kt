@@ -341,6 +341,27 @@ class TranscriptionPresentationTest {
     }
 
     @Test
+    fun resolveMicrosoftSpeechKeyValidationResult_acceptsBadRequestAsReachableAuthenticatedEndpoint() {
+        assertEquals(true, resolveMicrosoftSpeechKeyValidationResult(400).isValid)
+    }
+
+    @Test
+    fun resolveMicrosoftSpeechKeyValidationResult_rejectsUnauthorizedKey() {
+        assertEquals(
+            "Invalid Microsoft Speech API key",
+            resolveMicrosoftSpeechKeyValidationResult(401).errorMessage,
+        )
+    }
+
+    @Test
+    fun supportedMicrosoftSpeechMimeTypes_includeCommonMobileFormats() {
+        assertEquals(true, "audio/mp4" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
+        assertEquals(true, "audio/aac" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
+        assertEquals(true, "audio/ogg" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
+        assertEquals(true, "audio/webm" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
+    }
+
+    @Test
     fun parseMicrosoftSpeechTranscriptText_readsCombinedPhrasesFromJsonPayload() {
         val response = JSONObject(
             """

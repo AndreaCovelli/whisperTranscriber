@@ -2,11 +2,11 @@ package com.andreacovelli.whispertranscriber.ui.viewmodel
 
 import com.andreacovelli.whispertranscriber.ApiKeyManager
 import com.andreacovelli.whispertranscriber.CustomModelValidation
-import com.andreacovelli.whispertranscriber.GeminiValidationService
 import com.andreacovelli.whispertranscriber.KeyValidationState
 import com.andreacovelli.whispertranscriber.SettingsScreenActions
 import com.andreacovelli.whispertranscriber.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.UiState
+import com.andreacovelli.whispertranscriber.ValidationService
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -18,10 +18,11 @@ import kotlinx.coroutines.withContext
 internal class MainSettingsDelegate(
     private val uiState: MutableStateFlow<UiState>,
     private val settings: ApiKeyManager,
-    private val validationService: GeminiValidationService,
+    private val validationService: ValidationService,
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher,
 ) {
+    private var microsoftValidationJob: Job? = null
     private var geminiValidationJob: Job? = null
     private var transcriptionModelValidationJob: Job? = null
     private var summarizerModelValidationJob: Job? = null
@@ -48,13 +49,7 @@ internal class MainSettingsDelegate(
     )
 
     private fun setMicrosoftSpeechKey(key: String) {
-        val trimmed = key.trim()
-        if (trimmed.isBlank()) return
-
-        scope.launch {
-            settings.saveMicrosoftSpeechApiKey(trimmed)
-            updateApiKeyValidationState(isGemini = false, validation = KeyValidationState.Idle)
-        }
+        validateAndSaveMicrosoftSpeechKey(key)
     }
 
     private fun setGeminiKey(key: String) {
@@ -75,6 +70,29 @@ internal class MainSettingsDelegate(
             } else {
                 updateApiKeyValidationState(
                     isGemini = true,
+                    validation = KeyValidationState.Error(result.errorMessage ?: "Validation failed"),
+                )
+            }
+        }
+    }
+
+    private fun validateAndSaveMicrosoftSpeechKey(key: String) {
+        val trimmed = key.trim()
+        if (trimmed.isBlank()) return
+
+        microsoftValidationJob?.cancel()
+        updateApiKeyValidationState(isGemini = false, validation = KeyValidationState.Validating)
+        microsoftValidationJob = scope.launch {
+            val result = validationService.validateMicrosoftSpeechKey(
+                rawKey = trimmed,
+                region = uiState.value.microsoftSpeechRegion,
+            )
+            if (result.isValid) {
+                settings.saveMicrosoftSpeechApiKey(trimmed)
+                updateApiKeyValidationState(isGemini = false, validation = KeyValidationState.Idle)
+            } else {
+                updateApiKeyValidationState(
+                    isGemini = false,
                     validation = KeyValidationState.Error(result.errorMessage ?: "Validation failed"),
                 )
             }
@@ -128,6 +146,7 @@ internal class MainSettingsDelegate(
 
     private fun updateMicrosoftSpeechRegion(region: String) {
         uiState.update { it.copy(microsoftSpeechRegion = region) }
+        updateApiKeyValidationState(isGemini = false, validation = KeyValidationState.Idle)
         scope.launch {
             settings.saveMicrosoftSpeechRegion(region)
         }
