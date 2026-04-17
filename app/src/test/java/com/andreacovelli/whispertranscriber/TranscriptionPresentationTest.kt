@@ -6,6 +6,7 @@ import com.andreacovelli.whispertranscriber.ui.components.providerFamilyLabelFor
 import com.andreacovelli.whispertranscriber.ui.components.shouldShowRetranscribeAction
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 import com.andreacovelli.whispertranscriber.ui.screens.buildBatchProgressState
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -327,6 +328,43 @@ class TranscriptionPresentationTest {
             "Microsoft Speech endpoint not found. Check the configured region.",
             resolveMicrosoftSpeechErrorMessage(404, """{"error":{"message":"Resource not found"}}"""),
         )
+    }
+
+    @Test
+    fun parseMicrosoftSpeechTranscriptText_readsCombinedPhrasesFromJsonPayload() {
+        val response = JSONObject(
+            """
+            {
+              "combinedPhrases": [
+                { "text": "Hello from MAI" },
+                { "text": "Second line" }
+              ],
+              "phrases": [
+                { "text": "Ignored fallback", "locale": "en-US" }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals("Hello from MAI\nSecond line", parseMicrosoftSpeechTranscriptText(response))
+        assertEquals("en-US", parseMicrosoftSpeechLanguage(response))
+    }
+
+    @Test
+    fun parseMicrosoftSpeechTranscriptText_fallsBackToPhrasesWhenCombinedPhrasesMissing() {
+        val response = JSONObject(
+            """
+            {
+              "phrases": [
+                { "text": "Ciao mondo", "locale": "it-IT" },
+                { "text": "Seconda riga" }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals("Ciao mondo\nSeconda riga", parseMicrosoftSpeechTranscriptText(response))
+        assertEquals("it-IT", parseMicrosoftSpeechLanguage(response))
     }
 
     @Test
