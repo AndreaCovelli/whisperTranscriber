@@ -28,13 +28,15 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONException
 import org.json.JSONObject
-import retrofit2.HttpException
 
 data class QueuedShareResult(val jobsCreated: Int, val statusMessage: String)
 
@@ -209,9 +211,13 @@ class TranscriptionQueueService @Inject constructor(
 
     private fun resolveRequestedModel(provider: TranscriptionProvider, customModelName: String): String? =
         when (provider) {
-            TranscriptionProvider.ELEVEN_LABS -> null
+            TranscriptionProvider.ELEVEN_LABS,
+            TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
+            TranscriptionProvider.GEMINI_FLASH_LITE,
+            TranscriptionProvider.GEMINI_FLASH,
+            TranscriptionProvider.GEMINI_PRO,
+            -> provider.modelName
             TranscriptionProvider.GEMINI_CUSTOM -> customModelName.ifBlank { null }
-            else -> provider.modelName
         }
 
     private suspend fun restartQueuedJobs() {
@@ -355,10 +361,30 @@ data class CustomModelValidationResult(val displayName: String? = null, val erro
     val isValid: Boolean get() = errorMessage == null
 }
 
+internal fun resolveMicrosoftSpeechKeyValidationResult(code: Int): KeyValidationResult = when (code) {
+    200 -> KeyValidationResult()
+    401, 403 -> KeyValidationResult(
+        "Invalid key for Microsoft MAI Transcribe. Use the Speech resource key from your Foundry resource, not a project API key.",
+    )
+    404 -> KeyValidationResult("Microsoft MAI Transcribe endpoint not found. Check the configured Speech region.")
+    else -> KeyValidationResult("Validation failed: HTTP $code")
+}
+
+internal fun resolveMicrosoftSpeechKeyValidationResults(codes: List<Int>): KeyValidationResult {
+    if (codes.isEmpty()) return KeyValidationResult("Validation failed")
+    if (codes.any { it == 200 }) return KeyValidationResult()
+
+    val authCode = codes.firstOrNull { it == 401 || it == 403 }
+    if (authCode != null) return resolveMicrosoftSpeechKeyValidationResult(authCode)
+
+    val reportedCode = codes.firstOrNull { it == 404 || it == 405 || it == 400 || it == 429 || it in 500..599 }
+        ?: codes.first()
+    return KeyValidationResult("Validation failed: HTTP $reportedCode")
+}
+
 @Singleton
-class GeminiValidationService @Inject constructor(
+class ValidationService @Inject constructor(
     private val settings: ApiKeyManager,
-    private val elevenLabsApi: ElevenLabsApi,
     private val okHttpClient: OkHttpClient,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
@@ -366,21 +392,9 @@ class GeminiValidationService @Inject constructor(
         private const val GEMINI_MODELS_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
         private const val GEMINI_API_KEY_HEADER = "x-goog-api-key"
         private const val ERR_ENTER_GEMINI_KEY = "Enter your Gemini API key first"
-    }
-
-    suspend fun validateElevenLabsKey(rawKey: String): KeyValidationResult = try {
-        val response = withContext(ioDispatcher) { elevenLabsApi.getUser(rawKey) }
-        if (response.isSuccessful) {
-            KeyValidationResult()
-        } else {
-            KeyValidationResult(
-                if (response.code() == 401) "Invalid API key" else "Validation failed: HTTP ${response.code()}",
-            )
-        }
-    } catch (e: IOException) {
-        KeyValidationResult(e.message ?: "Validation failed")
-    } catch (e: HttpException) {
-        KeyValidationResult("Validation failed: HTTP ${e.code()}")
+        private const val MICROSOFT_SPEECH_KEY_HEADER = "Ocp-Apim-Subscription-Key"
+        private const val MICROSOFT_SPEECH_LOCALES_API_VERSION = "2025-10-15"
+        private const val MICROSOFT_SPEECH_LOCALES_FALLBACK_API_VERSION = "2024-11-15"
     }
 
     suspend fun validateGeminiKey(rawKey: String): KeyValidationResult = try {
@@ -446,8 +460,6 @@ class GeminiValidationService @Inject constructor(
             throw e
         } catch (e: IOException) {
             CustomModelValidationResult(errorMessage = e.message ?: "Validation failed")
-        } catch (e: HttpException) {
-            CustomModelValidationResult(errorMessage = "HTTP ${e.code()}: could not verify model")
         } finally {
             keyChars.fill('\u0000')
         }
@@ -457,6 +469,40 @@ class GeminiValidationService @Inject constructor(
         JSONObject(bodyText).optString("displayName", fallback)
     } catch (_: JSONException) {
         fallback
+    }
+
+    suspend fun validateMicrosoftSpeechKey(rawKey: String, region: String): KeyValidationResult {
+        val normalizedRegion = region.trim().lowercase()
+        if (normalizedRegion.isBlank()) {
+            return KeyValidationResult("Enter an Azure Speech region first")
+        }
+
+        return try {
+            val validationUrls = listOf(
+                "https://$normalizedRegion.api.cognitive.microsoft.com/speechtotext/transcriptions/locales" +
+                    "?api-version=$MICROSOFT_SPEECH_LOCALES_API_VERSION",
+                "https://$normalizedRegion.api.cognitive.microsoft.com/speechtotext/transcriptions/locales" +
+                    "?api-version=$MICROSOFT_SPEECH_LOCALES_FALLBACK_API_VERSION",
+                "https://$normalizedRegion.api.cognitive.microsoft.com/speechtotext/v3.2-preview.2/transcriptions/locales",
+            )
+            val codes = withContext(ioDispatcher) {
+                coroutineScope {
+                    validationUrls.map { url ->
+                        async {
+                            val request = Request.Builder()
+                                .url(url)
+                                .header(MICROSOFT_SPEECH_KEY_HEADER, rawKey)
+                                .get()
+                                .build()
+                            okHttpClient.newCall(request).execute().use { response -> response.code }
+                        }
+                    }.awaitAll()
+                }
+            }
+            resolveMicrosoftSpeechKeyValidationResults(codes)
+        } catch (e: IOException) {
+            KeyValidationResult(e.message ?: "Validation failed")
+        }
     }
 }
 

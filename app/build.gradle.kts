@@ -91,6 +91,15 @@ android {
         }
     }
     packaging {
+        jniLibs {
+            // These AndroidX-provided JNI libs are already packaged in a form AGP cannot strip.
+            // Keeping debug symbols for them suppresses noisy strip warnings without changing inclusion.
+            keepDebugSymbols +=
+                setOf(
+                    "**/libandroidx.graphics.path.so",
+                    "**/libdatastore_shared_counter.so",
+                )
+        }
         resources {
             pickFirsts +=
                 setOf(
@@ -173,8 +182,10 @@ dependencies {
     // DataStore - use a single, consistent artifact
     implementation(libs.androidx.datastore.preferences)
 
-    implementation(libs.retrofit)
-    implementation(libs.retrofit.converter.gson)
+    // Used by HistoryExportFormat for JSON export serialization.
+    implementation(libs.gson)
+    // Required to satisfy the google-genai runtime service entry and avoid release-time R8 warnings.
+    implementation(libs.jackson.module.kotlin)
     implementation(libs.okhttp.logging.interceptor)
 
     // FFmpeg - align with com.arthenica package used in imports
@@ -204,6 +215,7 @@ dependencies {
     // WorkManager
     implementation(libs.androidx.work.runtime.ktx)
     testImplementation(libs.junit)
+    testImplementation(libs.org.json)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

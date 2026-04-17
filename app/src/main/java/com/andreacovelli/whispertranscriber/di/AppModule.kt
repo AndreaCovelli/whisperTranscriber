@@ -4,7 +4,6 @@ package com.andreacovelli.whispertranscriber.di
 
 import android.content.Context
 import androidx.work.WorkManager
-import com.andreacovelli.whispertranscriber.ElevenLabsApi
 import com.andreacovelli.whispertranscriber.data.AppDatabase
 import com.andreacovelli.whispertranscriber.data.HistoryRepository
 import com.andreacovelli.whispertranscriber.data.RoomHistoryRepository
@@ -24,8 +23,6 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
 
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
@@ -34,8 +31,6 @@ annotation class IoDispatcher
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
-    private const val ELEVEN_LABS_BASE_URL = "https://api.elevenlabs.io/"
-
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase = AppDatabase.getDatabase(context)
@@ -60,7 +55,7 @@ object AppModule {
     fun provideOkHttpClient(): OkHttpClient {
         val logging = HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.NONE
-            redactHeader("xi-api-key")
+            redactHeader("Ocp-Apim-Subscription-Key")
             redactHeader("x-goog-api-key")
         }
 
@@ -72,18 +67,6 @@ object AppModule {
             .addInterceptor(logging)
             .build()
     }
-
-    @Provides
-    @Singleton
-    fun provideRetrofit(okHttpClient: OkHttpClient): Retrofit = Retrofit.Builder()
-        .baseUrl(ELEVEN_LABS_BASE_URL)
-        .client(okHttpClient)
-        .addConverterFactory(GsonConverterFactory.create())
-        .build()
-
-    @Provides
-    @Singleton
-    fun provideElevenLabsApi(retrofit: Retrofit): ElevenLabsApi = retrofit.create(ElevenLabsApi::class.java)
 
     @Provides
     @IoDispatcher

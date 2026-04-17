@@ -49,7 +49,7 @@ data class TranscriptionJob(
     val displayName: String,
     val sourceMimeType: String? = null,
     val stagedFilePath: String? = null,
-    val providerName: String = "ELEVEN_LABS",
+    val providerName: String = "MICROSOFT_MAI_TRANSCRIBE",
     val requestedModel: String? = null,
     val status: String = "Queued",
     val progress: Float = 0f,

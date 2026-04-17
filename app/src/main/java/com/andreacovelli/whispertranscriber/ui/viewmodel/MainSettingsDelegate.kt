@@ -2,11 +2,11 @@ package com.andreacovelli.whispertranscriber.ui.viewmodel
 
 import com.andreacovelli.whispertranscriber.ApiKeyManager
 import com.andreacovelli.whispertranscriber.CustomModelValidation
-import com.andreacovelli.whispertranscriber.GeminiValidationService
 import com.andreacovelli.whispertranscriber.KeyValidationState
 import com.andreacovelli.whispertranscriber.SettingsScreenActions
 import com.andreacovelli.whispertranscriber.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.UiState
+import com.andreacovelli.whispertranscriber.ValidationService
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -18,11 +18,11 @@ import kotlinx.coroutines.withContext
 internal class MainSettingsDelegate(
     private val uiState: MutableStateFlow<UiState>,
     private val settings: ApiKeyManager,
-    private val validationService: GeminiValidationService,
+    private val validationService: ValidationService,
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher,
 ) {
-    private var elevenLabsValidationJob: Job? = null
+    private var microsoftValidationJob: Job? = null
     private var geminiValidationJob: Job? = null
     private var transcriptionModelValidationJob: Job? = null
     private var summarizerModelValidationJob: Job? = null
@@ -33,61 +33,85 @@ internal class MainSettingsDelegate(
         setAutomaticSummarization = ::updateAutomaticSummarization,
         setBackgroundShareSummaryNotificationsEnabled = ::updateBackgroundShareSummaryNotificationsEnabled,
         setSpeakerDiarization = ::updateSpeakerDiarization,
-        loadElevenLabsKey = { loadKeyForDisplay(settings::getElevenLabsApiKey) },
+        setMicrosoftSpeechRegion = ::updateMicrosoftSpeechRegion,
+        loadMicrosoftSpeechKey = { loadKeyForDisplay(settings::getMicrosoftSpeechApiKey) },
         loadGeminiKey = { loadKeyForDisplay(settings::getGeminiApiKey) },
-        saveElevenLabsKey = ::setElevenLabsKey,
+        saveMicrosoftSpeechKey = ::setMicrosoftSpeechKey,
         saveGeminiKey = ::setGeminiKey,
         validateTranscriptionModel = { validateCustomGeminiModel(it, isSummarizer = false) },
         validateSummarizerModel = { validateCustomGeminiModel(it, isSummarizer = true) },
         resetTranscriptionModelValidation = ::resetTranscriptionModelValidation,
         resetSummarizerModelValidation = ::resetSummarizerModelValidation,
-        resetElevenLabsKeyValidation = ::resetElevenLabsKeyValidation,
+        resetMicrosoftSpeechKeyValidation = ::resetMicrosoftSpeechKeyValidation,
         resetGeminiKeyValidation = ::resetGeminiKeyValidation,
-        forgetElevenLabsKey = ::forgetElevenLabsKey,
+        forgetMicrosoftSpeechKey = ::forgetMicrosoftSpeechKey,
         forgetGeminiKey = ::forgetGeminiKey,
     )
 
-    private fun setElevenLabsKey(key: String) {
-        validateAndSaveApiKey(key = key, isGemini = false)
+    private fun setMicrosoftSpeechKey(key: String) {
+        validateAndSaveMicrosoftSpeechKey(key)
     }
 
     private fun setGeminiKey(key: String) {
-        validateAndSaveApiKey(key = key, isGemini = true)
+        validateAndSaveGeminiKey(key)
     }
 
-    private fun validateAndSaveApiKey(key: String, isGemini: Boolean) {
+    private fun validateAndSaveGeminiKey(key: String) {
         val trimmed = key.trim()
         if (trimmed.isBlank()) return
 
-        validationJob(isGemini)?.cancel()
-        updateApiKeyValidationState(isGemini = isGemini, validation = KeyValidationState.Validating)
-        val job = scope.launch {
-            val result = if (isGemini) {
-                validationService.validateGeminiKey(trimmed)
-            } else {
-                validationService.validateElevenLabsKey(trimmed)
-            }
+        geminiValidationJob?.cancel()
+        updateApiKeyValidationState(isGemini = true, validation = KeyValidationState.Validating)
+        geminiValidationJob = scope.launch {
+            val result = validationService.validateGeminiKey(trimmed)
             if (result.isValid) {
-                if (isGemini) {
-                    settings.saveGeminiApiKey(trimmed)
-                } else {
-                    settings.saveElevenLabsApiKey(trimmed)
-                }
-                updateApiKeyValidationState(isGemini = isGemini, validation = KeyValidationState.Idle)
+                settings.saveGeminiApiKey(trimmed)
+                updateApiKeyValidationState(isGemini = true, validation = KeyValidationState.Idle)
             } else {
                 updateApiKeyValidationState(
-                    isGemini = isGemini,
+                    isGemini = true,
                     validation = KeyValidationState.Error(result.errorMessage ?: "Validation failed"),
                 )
             }
         }
-        assignValidationJob(isGemini, job)
+    }
+
+    private fun validateAndSaveMicrosoftSpeechKey(key: String) {
+        val trimmed = key.trim()
+        if (trimmed.isBlank()) return
+
+        microsoftValidationJob?.cancel()
+        updateApiKeyValidationState(isGemini = false, validation = KeyValidationState.Validating)
+        microsoftValidationJob = scope.launch {
+            val result = validationService.validateMicrosoftSpeechKey(
+                rawKey = trimmed,
+                region = uiState.value.microsoftSpeechRegion,
+            )
+            if (result.isValid) {
+                settings.saveMicrosoftSpeechApiKey(trimmed)
+                updateApiKeyValidationState(isGemini = false, validation = KeyValidationState.Idle)
+            } else {
+                updateApiKeyValidationState(
+                    isGemini = false,
+                    validation = KeyValidationState.Error(result.errorMessage ?: "Validation failed"),
+                )
+            }
+        }
     }
 
     private fun updateProviderSelection(provider: TranscriptionProvider) {
-        uiState.update { it.copy(provider = provider) }
+        val speakerDiarizationEnabled = provider.isGemini() && uiState.value.speakerDiarizationEnabled
+        uiState.update {
+            it.copy(
+                provider = provider,
+                speakerDiarizationEnabled = speakerDiarizationEnabled,
+            )
+        }
         scope.launch {
             settings.saveProvider(provider)
+            if (!provider.isGemini()) {
+                settings.saveSpeakerDiarization(false)
+            }
         }
     }
 
@@ -113,9 +137,17 @@ internal class MainSettingsDelegate(
     }
 
     private fun updateSpeakerDiarization(enabled: Boolean) {
-        uiState.update { it.copy(speakerDiarizationEnabled = enabled) }
+        val normalized = uiState.value.provider.isGemini() && enabled
+        uiState.update { it.copy(speakerDiarizationEnabled = normalized) }
         scope.launch {
-            settings.saveSpeakerDiarization(enabled)
+            settings.saveSpeakerDiarization(normalized)
+        }
+    }
+
+    private fun updateMicrosoftSpeechRegion(region: String) {
+        updateApiKeyValidationState(isGemini = false, validation = KeyValidationState.Idle)
+        scope.launch {
+            settings.saveMicrosoftSpeechRegion(region)
         }
     }
 
@@ -127,7 +159,7 @@ internal class MainSettingsDelegate(
         updateModelValidationState(isSummarizer = true, validation = CustomModelValidation.Idle)
     }
 
-    private fun resetElevenLabsKeyValidation() {
+    private fun resetMicrosoftSpeechKeyValidation() {
         updateApiKeyValidationState(isGemini = false, validation = KeyValidationState.Idle)
     }
 
@@ -135,7 +167,7 @@ internal class MainSettingsDelegate(
         updateApiKeyValidationState(isGemini = true, validation = KeyValidationState.Idle)
     }
 
-    private fun forgetElevenLabsKey() {
+    private fun forgetMicrosoftSpeechKey() {
         forgetApiKey(isGemini = false)
     }
 
@@ -148,7 +180,7 @@ internal class MainSettingsDelegate(
             if (isGemini) {
                 settings.forgetGeminiApiKey()
             } else {
-                settings.forgetElevenLabsApiKey()
+                settings.forgetMicrosoftSpeechApiKey()
             }
             updateApiKeyValidationState(isGemini = isGemini, validation = KeyValidationState.Idle)
         }
@@ -184,20 +216,6 @@ internal class MainSettingsDelegate(
         assignModelValidationJob(isSummarizer, job)
     }
 
-    private fun validationJob(isGemini: Boolean): Job? = if (isGemini) {
-        geminiValidationJob
-    } else {
-        elevenLabsValidationJob
-    }
-
-    private fun assignValidationJob(isGemini: Boolean, job: Job) {
-        if (isGemini) {
-            geminiValidationJob = job
-        } else {
-            elevenLabsValidationJob = job
-        }
-    }
-
     private fun modelValidationJob(isSummarizer: Boolean): Job? = if (isSummarizer) {
         summarizerModelValidationJob
     } else {
@@ -217,7 +235,7 @@ internal class MainSettingsDelegate(
             if (isGemini) {
                 it.copy(geminiKeyValidation = validation)
             } else {
-                it.copy(elevenLabsKeyValidation = validation)
+                it.copy(microsoftSpeechKeyValidation = validation)
             }
         }
     }

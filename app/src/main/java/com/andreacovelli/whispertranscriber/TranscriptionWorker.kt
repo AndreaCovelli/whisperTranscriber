@@ -25,12 +25,9 @@ import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody
-import okio.BufferedSink
-import okio.source
+import okhttp3.OkHttpClient
 
 internal class TransientWorkException(message: String, cause: Throwable? = null) : IOException(message, cause)
 
@@ -61,10 +58,21 @@ internal object QueuedAudioInputResolver {
 private sealed interface PreparedAudioInput {
     val tempFileToClean: File?
 
-    data class ElevenLabs(val source: Any, override val tempFileToClean: File?) : PreparedAudioInput
+    data class MicrosoftSpeech(val file: File, val mimeType: String, override val tempFileToClean: File?) :
+        PreparedAudioInput
 
     data class Gemini(val file: File, val mimeType: String, override val tempFileToClean: File?) : PreparedAudioInput
 }
+
+internal val SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES = setOf(
+    "audio/mp3",
+    "audio/mpeg",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/wave",
+    "audio/flac",
+    "audio/x-flac",
+)
 
 @Suppress("unused")
 @HiltWorker
@@ -73,9 +81,9 @@ class TranscriptionWorker @AssistedInject constructor(
     @Assisted workerParams: WorkerParameters,
     private val settings: ApiKeyManager,
     private val repository: TranscriptionRepository,
-    private val elevenLabsApi: ElevenLabsApi,
     private val summarizationService: SummarizationService,
     private val backgroundShareNotifier: BackgroundShareNotifier,
+    private val okHttpClient: OkHttpClient,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : CoroutineWorker(appContext, workerParams) {
 
@@ -92,12 +100,6 @@ class TranscriptionWorker @AssistedInject constructor(
         private val SUPPORTED_GEMINI_MIME_TYPES = setOf(
             "audio/wav", "audio/x-wav", "audio/mp3", "audio/mpeg", "audio/aiff", "audio/x-aiff",
             "audio/aac", "audio/ogg", "audio/vorbis", "audio/flac", "audio/x-flac",
-        )
-
-        private val SUPPORTED_ELEVENLABS_MIME_TYPES = setOf(
-            "audio/mp3", "audio/mpeg", "audio/wav", "audio/x-wav", "audio/x-m4a", "audio/m4a",
-            "audio/flac", "audio/x-flac", "audio/ogg", "audio/vorbis", "audio/opus", "audio/webm",
-            "audio/aac", "audio/aiff", "audio/x-aiff",
         )
     }
 
@@ -142,11 +144,10 @@ class TranscriptionWorker @AssistedInject constructor(
             repository.updateRunning(jobId, true, "Starting...")
             updateNotification("Processing: ${job.displayName}")
 
-            val requestedProvider = runCatching { TranscriptionProvider.valueOf(job.providerName) }
-                .getOrDefault(TranscriptionProvider.ELEVEN_LABS)
-            val usingElevenLabs = requestedProvider == TranscriptionProvider.ELEVEN_LABS
+            val requestedProvider = decodeStoredTranscriptionProvider(job.providerName)
+            val usingMicrosoftSpeech = requestedProvider == TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE
             val geminiModelName = when (requestedProvider) {
-                TranscriptionProvider.ELEVEN_LABS -> null
+                TranscriptionProvider.ELEVEN_LABS, TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE -> null
                 else -> job.requestedModel ?: requestedProvider.modelName
             }
 
@@ -169,7 +170,7 @@ class TranscriptionWorker @AssistedInject constructor(
                 uri = stagedUri,
                 displayName = job.displayName,
                 inputMimeType = job.sourceMimeType?.lowercase(),
-                usingElevenLabs = usingElevenLabs,
+                usingMicrosoftSpeech = usingMicrosoftSpeech,
                 geminiModel = geminiModelName,
                 speakerDiarizationEnabled = job.speakerDiarizationEnabled,
                 postTranscriptionWorkSpec = postTranscriptionWorkSpec,
@@ -208,17 +209,17 @@ class TranscriptionWorker @AssistedInject constructor(
         uri: Uri,
         displayName: String,
         inputMimeType: String?,
-        usingElevenLabs: Boolean,
+        usingMicrosoftSpeech: Boolean,
         geminiModel: String?,
         speakerDiarizationEnabled: Boolean,
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec?,
     ) {
-        val preparedInput = prepareAudioInput(jobId, uri, inputMimeType, usingElevenLabs)
+        val preparedInput = prepareAudioInput(jobId, uri, inputMimeType, usingMicrosoftSpeech)
         try {
             val result = runProviderTranscription(
                 jobId = jobId,
                 preparedInput = preparedInput,
-                usingElevenLabs = usingElevenLabs,
+                usingMicrosoftSpeech = usingMicrosoftSpeech,
                 geminiModel = geminiModel,
                 speakerDiarizationEnabled = speakerDiarizationEnabled,
             )
@@ -267,16 +268,16 @@ class TranscriptionWorker @AssistedInject constructor(
         jobId: Int,
         uri: Uri,
         inputMimeType: String?,
-        usingElevenLabs: Boolean,
+        usingMicrosoftSpeech: Boolean,
     ): PreparedAudioInput {
         val app = applicationContext as Application
         val conversionNeeded = inputMimeType == null ||
-            (usingElevenLabs && inputMimeType !in SUPPORTED_ELEVENLABS_MIME_TYPES) ||
-            (!usingElevenLabs && inputMimeType !in SUPPORTED_GEMINI_MIME_TYPES)
+            (usingMicrosoftSpeech && inputMimeType !in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES) ||
+            (!usingMicrosoftSpeech && inputMimeType !in SUPPORTED_GEMINI_MIME_TYPES)
         return if (conversionNeeded) {
-            prepareConvertedAudio(app, jobId, uri, inputMimeType, usingElevenLabs)
+            prepareConvertedAudio(app, jobId, uri, inputMimeType, usingMicrosoftSpeech)
         } else {
-            prepareNativeAudio(app, jobId, uri, inputMimeType, usingElevenLabs)
+            prepareNativeAudio(app, jobId, uri, inputMimeType, usingMicrosoftSpeech)
         }
     }
 
@@ -285,10 +286,10 @@ class TranscriptionWorker @AssistedInject constructor(
         jobId: Int,
         uri: Uri,
         inputMimeType: String?,
-        usingElevenLabs: Boolean,
+        usingMicrosoftSpeech: Boolean,
     ): PreparedAudioInput {
         val reasonSuffix = inputMimeType?.let { "($it)" } ?: "(Unknown format)"
-        val providerName = if (usingElevenLabs) "ElevenLabs" else "Gemini"
+        val providerName = if (usingMicrosoftSpeech) "Microsoft Speech" else "Gemini"
         repository.updateStatusAndProgress(
             jobId,
             "Format not natively supported by $providerName $reasonSuffix. Converting to 16 kHz WAV...",
@@ -310,8 +311,9 @@ class TranscriptionWorker @AssistedInject constructor(
                 )
             },
         )
-        return if (usingElevenLabs) {
-            PreparedAudioInput.ElevenLabs(source = outputFile, tempFileToClean = outputFile)
+        return if (usingMicrosoftSpeech) {
+            repository.updateStatus(jobId, "Converted audio ready for Microsoft Speech...")
+            PreparedAudioInput.MicrosoftSpeech(file = outputFile, mimeType = "audio/wav", tempFileToClean = outputFile)
         } else {
             repository.updateStatus(jobId, "Converted audio ready for Gemini...")
             PreparedAudioInput.Gemini(file = outputFile, mimeType = "audio/wav", tempFileToClean = outputFile)
@@ -323,14 +325,27 @@ class TranscriptionWorker @AssistedInject constructor(
         jobId: Int,
         uri: Uri,
         inputMimeType: String,
-        usingElevenLabs: Boolean,
-    ): PreparedAudioInput = if (usingElevenLabs) {
-        repository.updateStatusAndProgress(
-            jobId,
-            "Format supported ($inputMimeType). Preparing for direct upload...",
-            1f,
-        )
-        PreparedAudioInput.ElevenLabs(source = uri, tempFileToClean = null)
+        usingMicrosoftSpeech: Boolean,
+    ): PreparedAudioInput = if (usingMicrosoftSpeech) {
+        val reusableLocalFile = reusableLocalFileForUri(uri)
+        if (reusableLocalFile != null) {
+            repository.updateStatusAndProgress(jobId, "Preparing local audio for Microsoft Speech upload...", 1f)
+            PreparedAudioInput.MicrosoftSpeech(
+                file = reusableLocalFile,
+                mimeType = inputMimeType,
+                tempFileToClean = null,
+            )
+        } else {
+            repository.updateStatusAndProgress(
+                jobId,
+                "Format supported ($inputMimeType). Copying audio for Microsoft Speech...",
+                0.5f,
+            )
+            updateNotification("Copying audio...")
+            val tempFile = copyInputToTempFile(app, jobId, uri)
+            repository.updateStatusAndProgress(jobId, "Preparing for Microsoft Speech upload...", 1f)
+            PreparedAudioInput.MicrosoftSpeech(file = tempFile, mimeType = inputMimeType, tempFileToClean = tempFile)
+        }
     } else {
         repository.updateStatusAndProgress(
             jobId,
@@ -352,19 +367,27 @@ class TranscriptionWorker @AssistedInject constructor(
         } ?: error("Failed to read input audio file.")
     }
 
+    private fun reusableLocalFileForUri(uri: Uri): File? {
+        if (!uri.scheme.equals("file", ignoreCase = true)) return null
+
+        val path = uri.path?.takeIf(String::isNotBlank) ?: return null
+        val candidate = File(path)
+        return candidate.takeIf { it.isAbsolute && it.exists() && it.canRead() }
+    }
+
     private suspend fun runProviderTranscription(
         jobId: Int,
         preparedInput: PreparedAudioInput,
-        usingElevenLabs: Boolean,
+        usingMicrosoftSpeech: Boolean,
         geminiModel: String?,
         speakerDiarizationEnabled: Boolean,
     ): TranscriptionData {
-        val transcriber = buildTranscriber(preparedInput, usingElevenLabs, geminiModel, speakerDiarizationEnabled)
+        val transcriber = buildTranscriber(preparedInput, usingMicrosoftSpeech, geminiModel, speakerDiarizationEnabled)
         var resultData: TranscriptionData? = null
         transcriber.transcribe().collect { result ->
             when (result) {
                 is TranscriptionResult.Loading -> {
-                    val providerPrefix = if (usingElevenLabs) "ElevenLabs" else "Gemini"
+                    val providerPrefix = if (usingMicrosoftSpeech) "Microsoft Speech" else "Gemini"
                     val providerMessage = "$providerPrefix: ${result.message}"
                     repository.updateStatus(jobId, providerMessage)
                     updateNotification(providerMessage)
@@ -378,21 +401,27 @@ class TranscriptionWorker @AssistedInject constructor(
 
     private suspend fun buildTranscriber(
         preparedInput: PreparedAudioInput,
-        usingElevenLabs: Boolean,
+        usingMicrosoftSpeech: Boolean,
         geminiModel: String?,
         speakerDiarizationEnabled: Boolean,
-    ): ProviderTranscriber = if (usingElevenLabs) {
-        val source = checkNotNull((preparedInput as? PreparedAudioInput.ElevenLabs)?.source) {
-            "Internal error: ElevenLabs source is missing."
+    ): ProviderTranscriber = if (usingMicrosoftSpeech) {
+        check(!speakerDiarizationEnabled) { "Speaker diarization is not supported by Microsoft MAI Transcribe." }
+        val microsoftSpeechInput = checkNotNull(preparedInput as? PreparedAudioInput.MicrosoftSpeech) {
+            "Internal error: Microsoft Speech audio data missing."
         }
-        val keyChars = requireNotNull(settings.getElevenLabsApiKey()) { "API key missing or corrupted" }
-        ElevenLabsTranscriber(
-            api = elevenLabsApi,
-            source = source,
+        val keyChars = requireNotNull(settings.getMicrosoftSpeechApiKey()) {
+            "Azure Speech key for Microsoft MAI Transcribe missing or corrupted."
+        }
+        val region = settings.microsoftSpeechRegionFlow.first()
+            .takeIf(String::isNotBlank)
+            ?: error("Azure Speech region for Microsoft MAI Transcribe is not set.")
+        MicrosoftSpeechTranscriber(
             apiKey = keyChars,
-            createRequestBodyFromUri = ::createRequestBodyFromUri,
-            speakerDiarizationEnabled = speakerDiarizationEnabled,
-            speakerLabelPrefix = inputData.getString(SPEAKER_LABEL_PREFIX_INPUT).orEmpty().ifBlank { "Speaker" },
+            audioFile = microsoftSpeechInput.file,
+            mimeType = microsoftSpeechInput.mimeType,
+            region = region,
+            okHttpClient = okHttpClient,
+            ioDispatcher = ioDispatcher,
         )
     } else {
         val geminiInput = checkNotNull(preparedInput as? PreparedAudioInput.Gemini) {
@@ -444,30 +473,5 @@ class TranscriptionWorker @AssistedInject constructor(
             displayName = displayName,
             message = message,
         )
-    }
-
-    private fun createRequestBodyFromUri(uri: Uri): RequestBody {
-        val app = applicationContext as Application
-        val contentResolver = app.contentResolver
-        val contentType = contentResolver.getType(uri)?.let { mime ->
-            try {
-                mime.toMediaType()
-            } catch (_: IllegalArgumentException) {
-                "application/octet-stream".toMediaType()
-            }
-        } ?: "application/octet-stream".toMediaType()
-
-        return object : RequestBody() {
-            override fun contentType(): MediaType = contentType
-            override fun contentLength(): Long = try {
-                contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
-            } catch (_: Exception) {
-                -1L
-            }
-            override fun writeTo(sink: BufferedSink) {
-                contentResolver.openInputStream(uri)?.use { sink.writeAll(it.source()) }
-                    ?: error("Could not open input stream for Uri: $uri")
-            }
-        }
     }
 }

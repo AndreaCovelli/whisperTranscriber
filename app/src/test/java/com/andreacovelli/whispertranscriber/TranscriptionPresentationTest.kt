@@ -1,12 +1,12 @@
 package com.andreacovelli.whispertranscriber
 
-import com.andreacovelli.whispertranscriber.media.formatElevenLabsSpeakerTranscript
 import com.andreacovelli.whispertranscriber.ui.components.providerDisplayLabel
 import com.andreacovelli.whispertranscriber.ui.components.providerFamilyLabel
 import com.andreacovelli.whispertranscriber.ui.components.providerFamilyLabelForModel
 import com.andreacovelli.whispertranscriber.ui.components.shouldShowRetranscribeAction
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 import com.andreacovelli.whispertranscriber.ui.screens.buildBatchProgressState
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -16,7 +16,7 @@ class TranscriptionPresentationTest {
     fun resolveShareQueueSettings_usesPersistedSettingsBeforeHydration() {
         val resolved = resolveShareQueueSettings(
             uiState = UiState(
-                provider = TranscriptionProvider.ELEVEN_LABS,
+                provider = TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
                 transcriptionCustomGeminiModelName = "",
                 speakerDiarizationEnabled = false,
             ),
@@ -48,7 +48,7 @@ class TranscriptionPresentationTest {
             ),
             transcriptionSettingsHydrated = true,
             persistedSettings = TranscriptionQueueSettings(
-                provider = TranscriptionProvider.ELEVEN_LABS,
+                provider = TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
                 customModelName = "",
                 speakerDiarizationEnabled = false,
             ),
@@ -151,8 +151,44 @@ class TranscriptionPresentationTest {
     }
 
     @Test
+    fun decodeStoredTranscriptionProvider_mapsLegacyElevenLabsSelectionToMicrosoft() {
+        assertEquals(
+            TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
+            decodeStoredTranscriptionProvider("ELEVEN_LABS"),
+        )
+    }
+
+    @Test
+    fun decodeHistoricalTranscriptionProvider_preservesLegacyElevenLabsForDisplay() {
+        assertEquals(
+            TranscriptionProvider.ELEVEN_LABS,
+            decodeHistoricalTranscriptionProvider("ELEVEN_LABS"),
+        )
+    }
+
+    @Test
+    fun decodeHistoricalSummarizerProvider_returnsNullForLegacyTranscriptionOnlyProviders() {
+        assertNull(decodeHistoricalSummarizerProvider("ELEVEN_LABS"))
+        assertNull(decodeHistoricalSummarizerProvider("MICROSOFT_MAI_TRANSCRIBE"))
+    }
+
+    @Test
+    fun decodeHistoricalSummarizerProvider_mapsLegacyGeminiNamesAndRejectsUnknowns() {
+        assertEquals(
+            TranscriptionProvider.GEMINI_FLASH,
+            decodeHistoricalSummarizerProvider("GEMINI_25_FLASH"),
+        )
+        assertNull(decodeHistoricalSummarizerProvider("NOT_A_PROVIDER"))
+    }
+
+    @Test
     fun providerFamilyLabel_returnsGeminiCustomForCustomProvider() {
         assertEquals("Gemini Custom", providerFamilyLabel(TranscriptionProvider.GEMINI_CUSTOM))
+    }
+
+    @Test
+    fun providerFamilyLabel_returnsMicrosoftLabelForMicrosoftProvider() {
+        assertEquals("Microsoft MAI Transcribe", providerFamilyLabel(TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE))
     }
 
     @Test
@@ -196,6 +232,21 @@ class TranscriptionPresentationTest {
         assertEquals(
             "Custom Gemini model (not set)",
             providerDisplayLabel(TranscriptionProvider.GEMINI_CUSTOM, ""),
+        )
+    }
+
+    @Test
+    fun uiStateToTranscriptionQueueSettings_disablesSpeakerDiarizationForMicrosoft() {
+        assertEquals(
+            TranscriptionQueueSettings(
+                provider = TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
+                customModelName = "",
+                speakerDiarizationEnabled = false,
+            ),
+            UiState(
+                provider = TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
+                speakerDiarizationEnabled = true,
+            ).toTranscriptionQueueSettings(),
         )
     }
 
@@ -287,112 +338,138 @@ class TranscriptionPresentationTest {
     }
 
     @Test
-    fun formatElevenLabsSpeakerTranscript_groupsContiguousWordsBySpeaker() {
-        val transcript = formatElevenLabsSpeakerTranscript(
-            listOf(
-                ElevenLabsWord(text = "Hello", start = 0.0, end = 0.4, type = "word", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "there", start = 0.5, end = 0.8, type = "word", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "!", start = 0.8, end = 0.9, type = "punctuation", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "Hi", start = 1.0, end = 1.2, type = "word", speakerId = "speaker_2"),
-            ),
-            languageCode = "en-US",
-            speakerLabelPrefix = "Speaker",
-        )
-
+    fun resolveMicrosoftSpeechErrorMessage_mentionsRegionForMissingEndpoint() {
         assertEquals(
-            "Speaker A: Hello there!\nSpeaker B: Hi",
-            transcript,
+            "Microsoft MAI Transcribe endpoint not found. Check the configured Speech region.",
+            resolveMicrosoftSpeechErrorMessage(404, """{"error":{"message":"Resource not found"}}"""),
         )
     }
 
     @Test
-    fun formatElevenLabsSpeakerTranscript_preservesOpeningPunctuationSpacingWithinSpeakerSection() {
-        val transcript = formatElevenLabsSpeakerTranscript(
-            listOf(
-                ElevenLabsWord(text = "Hello", start = 0.0, end = 0.4, type = "word", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "(", start = 0.4, end = 0.5, type = "punctuation", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "world", start = 0.5, end = 0.8, type = "word", speakerId = "speaker_1"),
-                ElevenLabsWord(text = ")", start = 0.8, end = 0.9, type = "punctuation", speakerId = "speaker_1"),
-            ),
-            languageCode = "en-US",
-            speakerLabelPrefix = "Speaker",
-        )
-
-        assertEquals("Speaker A: Hello (world)", transcript)
+    fun isMicrosoftSpeechUploadSizeSupported_allowsPayloadJustBelowDocumentedLimit() {
+        assertEquals(true, isMicrosoftSpeechUploadSizeSupported(69_999_999L))
     }
 
     @Test
-    fun formatElevenLabsSpeakerTranscript_preservesQuoteSpacingWithinSpeakerSection() {
-        val transcript = formatElevenLabsSpeakerTranscript(
-            listOf(
-                ElevenLabsWord(text = "He", start = 0.0, end = 0.2, type = "word", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "said", start = 0.2, end = 0.4, type = "word", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "\"", start = 0.4, end = 0.5, type = "punctuation", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "hello", start = 0.5, end = 0.7, type = "word", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "\"", start = 0.7, end = 0.8, type = "punctuation", speakerId = "speaker_1"),
-            ),
-            languageCode = "en-US",
-            speakerLabelPrefix = "Speaker",
-        )
-
-        assertEquals("Speaker A: He said \"hello\"", transcript)
+    fun isMicrosoftSpeechUploadSizeSupported_rejectsPayloadAtDocumentedLimit() {
+        assertEquals(false, isMicrosoftSpeechUploadSizeSupported(70_000_000L))
     }
 
     @Test
-    fun formatElevenLabsSpeakerTranscript_doesNotMergeUnlabeledPrefixWithFirstNamedSpeaker() {
-        val transcript = formatElevenLabsSpeakerTranscript(
-            listOf(
-                ElevenLabsWord(text = "Intro", start = 0.0, end = 0.4, type = "word", speakerId = null),
-                ElevenLabsWord(text = "Hello", start = 0.5, end = 0.8, type = "word", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "Hi", start = 0.9, end = 1.2, type = "word", speakerId = "speaker_2"),
-            ),
-            languageCode = "en-US",
-            speakerLabelPrefix = "Speaker",
-        )
+    fun isMicrosoftSpeechUploadSizeSupported_rejectsPayloadsAboveDocumentedLimit() {
+        assertEquals(false, isMicrosoftSpeechUploadSizeSupported(70_000_001L))
+    }
 
+    @Test
+    fun resolveMicrosoftSpeechKeyValidationResult_acceptsSuccessfulLocalesProbe() {
+        assertEquals(true, resolveMicrosoftSpeechKeyValidationResult(200).isValid)
+    }
+
+    @Test
+    fun resolveMicrosoftSpeechKeyValidationResult_rejectsBadRequestProbe() {
+        assertEquals("Validation failed: HTTP 400", resolveMicrosoftSpeechKeyValidationResult(400).errorMessage)
+    }
+
+    @Test
+    fun resolveMicrosoftSpeechKeyValidationResult_rejectsUnauthorizedKey() {
         assertEquals(
-            "Speaker A: Intro\nSpeaker B: Hello\nSpeaker C: Hi",
-            transcript,
+            "Invalid key for Microsoft MAI Transcribe. Use the Speech resource key from your Foundry resource, not a project API key.",
+            resolveMicrosoftSpeechKeyValidationResult(401).errorMessage,
         )
     }
 
     @Test
-    fun formatElevenLabsSpeakerTranscript_returnsBlankWithoutSpeakerIds() {
-        val transcript = formatElevenLabsSpeakerTranscript(
-            listOf(
-                ElevenLabsWord(text = "Hello", start = 0.0, end = 0.4, type = "word", speakerId = null),
-            ),
-        )
-
-        assertEquals("", transcript)
+    fun resolveMicrosoftSpeechKeyValidationResult_acceptsSuccessfulProbeAmongFallbacks() {
+        assertEquals(true, resolveMicrosoftSpeechKeyValidationResults(listOf(404, 200, 404)).isValid)
     }
 
     @Test
-    fun formatElevenLabsSpeakerTranscript_usesLocalizedSpeakerPrefix() {
-        val transcript = formatElevenLabsSpeakerTranscript(
-            listOf(
-                ElevenLabsWord(text = "Ciao", start = 0.0, end = 0.4, type = "word", speakerId = "speaker_1"),
-            ),
-            languageCode = "it-IT",
-            speakerLabelPrefix = "Voce",
+    fun resolveMicrosoftSpeechKeyValidationResult_rejectsInconclusiveProbeResponses() {
+        assertEquals(
+            "Validation failed: HTTP 404",
+            resolveMicrosoftSpeechKeyValidationResults(listOf(404, 405, 400)).errorMessage,
         )
-
-        assertEquals("Voce A: Ciao", transcript)
     }
 
     @Test
-    fun formatElevenLabsSpeakerTranscript_avoidsWordSpacingForJapanese() {
-        val transcript = formatElevenLabsSpeakerTranscript(
-            listOf(
-                ElevenLabsWord(text = "こんにちは", start = 0.0, end = 0.4, type = "word", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "世界", start = 0.5, end = 0.8, type = "word", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "。", start = 0.8, end = 0.9, type = "punctuation", speakerId = "speaker_1"),
-            ),
-            languageCode = "ja-JP",
-            speakerLabelPrefix = "Speaker",
+    fun resolveMicrosoftSpeechKeyValidationResult_rejectsUnauthorizedAcrossFallbacks() {
+        assertEquals(
+            "Invalid key for Microsoft MAI Transcribe. Use the Speech resource key from your Foundry resource, not a project API key.",
+            resolveMicrosoftSpeechKeyValidationResults(listOf(404, 401, 405)).errorMessage,
+        )
+    }
+
+    @Test
+    fun supportedMicrosoftSpeechMimeTypes_matchCurrentMaiTranscribeFormats() {
+        assertEquals(true, "audio/mp3" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
+        assertEquals(true, "audio/mpeg" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
+        assertEquals(true, "audio/wav" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
+        assertEquals(true, "audio/flac" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
+        assertEquals(false, "audio/aac" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
+        assertEquals(false, "audio/ogg" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
+        assertEquals(false, "audio/webm" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
+        assertEquals(false, "audio/m4a" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
+    }
+
+    @Test
+    fun parseMicrosoftSpeechTranscriptText_readsCombinedPhrasesFromJsonPayload() {
+        val response = JSONObject(
+            """
+            {
+              "combinedPhrases": [
+                { "text": "Hello from MAI" },
+                { "text": "Second line" }
+              ],
+              "phrases": [
+                { "text": "Ignored fallback", "locale": "en-US" }
+              ]
+            }
+            """.trimIndent(),
         )
 
-        assertEquals("Speaker A: こんにちは世界。", transcript)
+        assertEquals("Hello from MAI\nSecond line", parseMicrosoftSpeechTranscriptText(response))
+        assertEquals("en-US", parseMicrosoftSpeechLanguage(response))
+    }
+
+    @Test
+    fun parseMicrosoftSpeechTranscriptText_fallsBackToPhrasesWhenCombinedPhrasesMissing() {
+        val response = JSONObject(
+            """
+            {
+              "phrases": [
+                { "text": "Ciao mondo", "locale": "it-IT" },
+                { "text": "Seconda riga" }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals("Ciao mondo\nSeconda riga", parseMicrosoftSpeechTranscriptText(response))
+        assertEquals("it-IT", parseMicrosoftSpeechLanguage(response))
+    }
+
+    @Test
+    fun parseMicrosoftSpeechLanguage_prefersMostFrequentLocaleAcrossPhrases() {
+        val response = JSONObject(
+            """
+            {
+              "phrases": [
+                { "text": "Hola", "locale": "es-ES" },
+                { "text": "Hello", "locale": "en-US" },
+                { "text": "World", "locale": "en-US" }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals("en-US", parseMicrosoftSpeechLanguage(response))
+    }
+
+    @Test
+    fun parseMicrosoftSpeechLanguage_returnsUndWhenPhrasesMissingOrBlank() {
+        val response = JSONObject("""{"phrases":[{"text":"Hello","locale":"  "},{"text":"World"}]}""")
+
+        assertEquals("und", parseMicrosoftSpeechLanguage(response))
     }
 
     @Test
