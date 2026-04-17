@@ -331,13 +331,18 @@ class TranscriptionPresentationTest {
     }
 
     @Test
-    fun isMicrosoftSpeechUploadSizeSupported_allowsExactDocumentedLimit() {
-        assertEquals(true, isMicrosoftSpeechUploadSizeSupported(70_000_000L))
+    fun isMicrosoftSpeechUploadSizeSupported_allowsPayloadJustBelowDocumentedLimit() {
+        assertEquals(true, isMicrosoftSpeechUploadSizeSupported(249_999_999L))
+    }
+
+    @Test
+    fun isMicrosoftSpeechUploadSizeSupported_rejectsPayloadAtDocumentedLimit() {
+        assertEquals(false, isMicrosoftSpeechUploadSizeSupported(250_000_000L))
     }
 
     @Test
     fun isMicrosoftSpeechUploadSizeSupported_rejectsPayloadsAboveDocumentedLimit() {
-        assertEquals(false, isMicrosoftSpeechUploadSizeSupported(70_000_001L))
+        assertEquals(false, isMicrosoftSpeechUploadSizeSupported(250_000_001L))
     }
 
     @Test
