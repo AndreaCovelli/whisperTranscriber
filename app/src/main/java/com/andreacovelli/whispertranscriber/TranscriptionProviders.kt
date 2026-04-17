@@ -30,6 +30,7 @@ internal interface ProviderTranscriber {
 }
 
 private const val NO_TEXT_FOUND = "No text found."
+internal const val MICROSOFT_SPEECH_MAX_UPLOAD_BYTES = 70_000_000L
 
 internal class MicrosoftSpeechTranscriber(
     private val apiKey: CharArray,
@@ -43,14 +44,13 @@ internal class MicrosoftSpeechTranscriber(
         private const val MICROSOFT_SPEECH_MODEL = "mai-transcribe-1"
         private const val MICROSOFT_SPEECH_API_VERSION = "2025-10-15"
         private const val MICROSOFT_SPEECH_KEY_HEADER = "Ocp-Apim-Subscription-Key"
-        private const val MAX_INLINE_AUDIO_BYTES = 70L * 1024L * 1024L
     }
 
     override fun transcribe(): Flow<TranscriptionResult> = flow {
         try {
             val normalizedRegion = region.trim().lowercase()
             require(normalizedRegion.isNotBlank()) { "Microsoft Speech region is not set." }
-            require(audioFile.length() in 1 until MAX_INLINE_AUDIO_BYTES) {
+            require(isMicrosoftSpeechUploadSizeSupported(audioFile.length())) {
                 "Microsoft MAI Transcribe supports audio files smaller than 70 MB."
             }
 
@@ -131,6 +131,9 @@ internal class MicrosoftSpeechTranscriber(
 }
 
 private class MicrosoftSpeechHttpException(val code: Int, override val message: String) : IOException(message)
+
+internal fun isMicrosoftSpeechUploadSizeSupported(sizeBytes: Long): Boolean =
+    sizeBytes in 1..MICROSOFT_SPEECH_MAX_UPLOAD_BYTES
 
 internal class GeminiTranscriber(
     private val audioFile: File,

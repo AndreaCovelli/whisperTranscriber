@@ -331,6 +331,16 @@ class TranscriptionPresentationTest {
     }
 
     @Test
+    fun isMicrosoftSpeechUploadSizeSupported_allowsExactDocumentedLimit() {
+        assertEquals(true, isMicrosoftSpeechUploadSizeSupported(70_000_000L))
+    }
+
+    @Test
+    fun isMicrosoftSpeechUploadSizeSupported_rejectsPayloadsAboveDocumentedLimit() {
+        assertEquals(false, isMicrosoftSpeechUploadSizeSupported(70_000_001L))
+    }
+
+    @Test
     fun parseMicrosoftSpeechTranscriptText_readsCombinedPhrasesFromJsonPayload() {
         val response = JSONObject(
             """

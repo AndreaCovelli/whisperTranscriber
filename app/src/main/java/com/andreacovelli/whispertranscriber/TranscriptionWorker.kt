@@ -327,15 +327,25 @@ class TranscriptionWorker @AssistedInject constructor(
         inputMimeType: String,
         usingMicrosoftSpeech: Boolean,
     ): PreparedAudioInput = if (usingMicrosoftSpeech) {
-        repository.updateStatusAndProgress(
-            jobId,
-            "Format supported ($inputMimeType). Copying audio for Microsoft Speech...",
-            0.5f,
-        )
-        updateNotification("Copying audio...")
-        val tempFile = copyInputToTempFile(app, jobId, uri)
-        repository.updateStatusAndProgress(jobId, "Preparing for Microsoft Speech upload...", 1f)
-        PreparedAudioInput.MicrosoftSpeech(file = tempFile, mimeType = inputMimeType, tempFileToClean = tempFile)
+        val reusableLocalFile = reusableLocalFileForUri(uri)
+        if (reusableLocalFile != null) {
+            repository.updateStatusAndProgress(jobId, "Preparing local audio for Microsoft Speech upload...", 1f)
+            PreparedAudioInput.MicrosoftSpeech(
+                file = reusableLocalFile,
+                mimeType = inputMimeType,
+                tempFileToClean = null,
+            )
+        } else {
+            repository.updateStatusAndProgress(
+                jobId,
+                "Format supported ($inputMimeType). Copying audio for Microsoft Speech...",
+                0.5f,
+            )
+            updateNotification("Copying audio...")
+            val tempFile = copyInputToTempFile(app, jobId, uri)
+            repository.updateStatusAndProgress(jobId, "Preparing for Microsoft Speech upload...", 1f)
+            PreparedAudioInput.MicrosoftSpeech(file = tempFile, mimeType = inputMimeType, tempFileToClean = tempFile)
+        }
     } else {
         repository.updateStatusAndProgress(
             jobId,
@@ -356,6 +366,12 @@ class TranscriptionWorker @AssistedInject constructor(
             }
         } ?: error("Failed to read input audio file.")
     }
+
+    private fun reusableLocalFileForUri(uri: Uri): File? = uri.path
+        ?.takeIf { uri.scheme.equals("file", ignoreCase = true) }
+        ?.takeIf(String::isNotBlank)
+        ?.let(::File)
+        ?.takeIf(File::exists)
 
     private suspend fun runProviderTranscription(
         jobId: Int,
