@@ -167,6 +167,21 @@ class TranscriptionPresentationTest {
     }
 
     @Test
+    fun decodeHistoricalSummarizerProvider_returnsNullForLegacyTranscriptionOnlyProviders() {
+        assertNull(decodeHistoricalSummarizerProvider("ELEVEN_LABS"))
+        assertNull(decodeHistoricalSummarizerProvider("MICROSOFT_MAI_TRANSCRIBE"))
+    }
+
+    @Test
+    fun decodeHistoricalSummarizerProvider_mapsLegacyGeminiNamesAndRejectsUnknowns() {
+        assertEquals(
+            TranscriptionProvider.GEMINI_FLASH,
+            decodeHistoricalSummarizerProvider("GEMINI_25_FLASH"),
+        )
+        assertNull(decodeHistoricalSummarizerProvider("NOT_A_PROVIDER"))
+    }
+
+    @Test
     fun providerFamilyLabel_returnsGeminiCustomForCustomProvider() {
         assertEquals("Gemini Custom", providerFamilyLabel(TranscriptionProvider.GEMINI_CUSTOM))
     }

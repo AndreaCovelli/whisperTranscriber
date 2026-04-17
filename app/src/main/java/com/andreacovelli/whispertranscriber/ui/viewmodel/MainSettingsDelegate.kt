@@ -145,7 +145,6 @@ internal class MainSettingsDelegate(
     }
 
     private fun updateMicrosoftSpeechRegion(region: String) {
-        uiState.update { it.copy(microsoftSpeechRegion = region) }
         updateApiKeyValidationState(isGemini = false, validation = KeyValidationState.Idle)
         scope.launch {
             settings.saveMicrosoftSpeechRegion(region)

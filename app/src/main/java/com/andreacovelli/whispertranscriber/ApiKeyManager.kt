@@ -60,9 +60,20 @@ internal fun decodeStoredTranscriptionProvider(name: String?): TranscriptionProv
 
 internal fun decodeHistoricalTranscriptionProvider(name: String?): TranscriptionProvider = when (name) {
     null -> TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE
+    "ELEVEN_LABS" -> TranscriptionProvider.ELEVEN_LABS
     "GEMINI_25_FLASH" -> TranscriptionProvider.GEMINI_FLASH
     else -> runCatching { TranscriptionProvider.valueOf(name) }
         .getOrDefault(TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE)
+}
+
+internal fun decodeHistoricalSummarizerProvider(name: String?): TranscriptionProvider? {
+    if (name.isNullOrBlank()) return null
+
+    val provider = when (name) {
+        "GEMINI_25_FLASH" -> TranscriptionProvider.GEMINI_FLASH
+        else -> runCatching { TranscriptionProvider.valueOf(name) }.getOrNull()
+    }
+    return provider?.takeIf(TranscriptionProvider::isGemini)
 }
 
 private fun normalizeSpeakerDiarization(provider: TranscriptionProvider, enabled: Boolean): Boolean =

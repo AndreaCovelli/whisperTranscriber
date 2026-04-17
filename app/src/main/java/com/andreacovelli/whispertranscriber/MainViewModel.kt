@@ -98,7 +98,7 @@ fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     summary = summary,
     summaryProvider = summaryProviderName
         .takeIf(String::isNotBlank)
-        ?.let(::decodeHistoricalTranscriptionProvider),
+        ?.let(::decodeHistoricalSummarizerProvider),
     summaryModel = summaryModel,
     summaryStatus = summaryStatus,
     autoSummaryAttempted = autoSummaryAttempted,

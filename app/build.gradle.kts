@@ -91,6 +91,15 @@ android {
         }
     }
     packaging {
+        jniLibs {
+            // These AndroidX-provided JNI libs are already packaged in a form AGP cannot strip.
+            // Keeping debug symbols for them suppresses noisy strip warnings without changing inclusion.
+            keepDebugSymbols +=
+                setOf(
+                    "**/libandroidx.graphics.path.so",
+                    "**/libdatastore_shared_counter.so",
+                )
+        }
         resources {
             pickFirsts +=
                 setOf(
