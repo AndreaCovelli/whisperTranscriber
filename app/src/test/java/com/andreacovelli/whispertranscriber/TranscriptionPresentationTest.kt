@@ -347,17 +347,17 @@ class TranscriptionPresentationTest {
 
     @Test
     fun isMicrosoftSpeechUploadSizeSupported_allowsPayloadJustBelowDocumentedLimit() {
-        assertEquals(true, isMicrosoftSpeechUploadSizeSupported(249_999_999L))
+        assertEquals(true, isMicrosoftSpeechUploadSizeSupported(299_999_999L))
     }
 
     @Test
     fun isMicrosoftSpeechUploadSizeSupported_rejectsPayloadAtDocumentedLimit() {
-        assertEquals(false, isMicrosoftSpeechUploadSizeSupported(250_000_000L))
+        assertEquals(false, isMicrosoftSpeechUploadSizeSupported(300_000_000L))
     }
 
     @Test
     fun isMicrosoftSpeechUploadSizeSupported_rejectsPayloadsAboveDocumentedLimit() {
-        assertEquals(false, isMicrosoftSpeechUploadSizeSupported(250_000_001L))
+        assertEquals(false, isMicrosoftSpeechUploadSizeSupported(300_000_001L))
     }
 
     @Test
@@ -400,11 +400,14 @@ class TranscriptionPresentationTest {
     }
 
     @Test
-    fun supportedMicrosoftSpeechMimeTypes_includeCommonMobileFormats() {
-        assertEquals(true, "audio/aac" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
-        assertEquals(true, "audio/ogg" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
-        assertEquals(true, "audio/webm" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
-        assertEquals(false, "audio/mp4" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
+    fun supportedMicrosoftSpeechMimeTypes_matchCurrentMaiTranscribeFormats() {
+        assertEquals(true, "audio/mp3" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
+        assertEquals(true, "audio/mpeg" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
+        assertEquals(true, "audio/wav" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
+        assertEquals(true, "audio/flac" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
+        assertEquals(false, "audio/aac" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
+        assertEquals(false, "audio/ogg" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
+        assertEquals(false, "audio/webm" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
         assertEquals(false, "audio/m4a" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
     }
 

@@ -19,11 +19,11 @@ An Android app that transcribes audio files using AI — powered by [Microsoft A
 
 ## Requirements
 
-|                          |                                                  |
-|--------------------------|--------------------------------------------------|
-| **Minimum Android**      | 8.0 Oreo (API 26)                                |
-| **Target / Compile SDK** | 36 (Android 15)                                  |
-| **JDK**                  | 21 (resolved automatically via Gradle toolchain) |
+|                          |                                                        |
+|--------------------------|--------------------------------------------------------|
+| **Minimum Android**      | 8.0 Oreo (API 26)                                      |
+| **Target / Compile SDK** | 36 (Android 15)                                        |
+| **JDK**                  | 21 (resolved automatically via Gradle toolchain)       |
 | **API key**              | Microsoft Speech **or** Gemini (at least one required) |
 
 ---
@@ -100,11 +100,11 @@ When audio is shared into the app, it is first copied into app-managed storage s
 
 ## Supported Audio Formats
 
-| Provider           | Accepted MIME types                                                             |
-|--------------------|---------------------------------------------------------------------------------|
-| **Microsoft MAI**  | `audio/wav`, `audio/x-wav`, `audio/wave`, `audio/mp3`, `audio/mpeg`, `audio/flac`, `audio/x-flac`, `audio/aac`, `audio/ogg`, `audio/opus`, `audio/webm` |
-| **Gemini**         | `audio/wav`, `audio/mp3`, `audio/aiff`, `audio/aac`, `audio/ogg`, `audio/flac` |
-| **Auto-converted** | Any format not in the list above is converted to 16 kHz mono WAV automatically |
+| Provider           | Accepted MIME types                                                                               |
+|--------------------|---------------------------------------------------------------------------------------------------|
+| **Microsoft MAI**  | `audio/wav`, `audio/x-wav`, `audio/wave`, `audio/mp3`, `audio/mpeg`, `audio/flac`, `audio/x-flac` |
+| **Gemini**         | `audio/wav`, `audio/mp3`, `audio/aiff`, `audio/aac`, `audio/ogg`, `audio/flac`                    |
+| **Auto-converted** | Any format not in the list above is converted to 16 kHz mono WAV automatically                    |
 
 ---
 
@@ -170,8 +170,8 @@ ui/theme/                    — Material Design 3 theme, colors, typography
 
 ## Permissions
 
-| Permission                    | Reason                                      |
-|-------------------------------|---------------------------------------------|
+| Permission                    | Reason                                            |
+|-------------------------------|---------------------------------------------------|
 | `android.permission.INTERNET` | Required to call Microsoft Speech and Gemini APIs |
 
 Audio files are accessed via Android share intents — no `READ_EXTERNAL_STORAGE` permission is needed.

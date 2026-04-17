@@ -31,9 +31,11 @@ internal interface ProviderTranscriber {
 
 private const val NO_TEXT_FOUND = "No text found."
 
-// Latest GA speech-to-text REST version per current Microsoft docs.
+// Current MAI Transcribe examples in Microsoft Learn use this API version.
 internal const val MICROSOFT_SPEECH_API_VERSION = "2025-10-15"
-internal const val MICROSOFT_SPEECH_MAX_UPLOAD_BYTES = 250_000_000L
+
+// The dedicated MAI Transcribe docs currently state audio files must be less than 300 MB.
+internal const val MICROSOFT_SPEECH_MAX_UPLOAD_BYTES = 300_000_000L
 
 internal class MicrosoftSpeechTranscriber(
     private val apiKey: CharArray,
@@ -53,7 +55,7 @@ internal class MicrosoftSpeechTranscriber(
             val normalizedRegion = region.trim().lowercase()
             require(normalizedRegion.isNotBlank()) { "Microsoft Speech region is not set." }
             require(isMicrosoftSpeechUploadSizeSupported(audioFile.length())) {
-                "Microsoft MAI Transcribe supports audio files smaller than 250 MB."
+                "Microsoft MAI Transcribe uploads must be smaller than 300 MB."
             }
 
             emit(TranscriptionResult.Loading("Uploading audio ($mimeType) to Microsoft Speech..."))
