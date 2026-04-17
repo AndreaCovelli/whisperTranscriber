@@ -182,7 +182,9 @@ dependencies {
     // DataStore - use a single, consistent artifact
     implementation(libs.androidx.datastore.preferences)
 
+    // Used by HistoryExportFormat for JSON export serialization.
     implementation(libs.gson)
+    // Required to satisfy the google-genai runtime service entry and avoid release-time R8 warnings.
     implementation(libs.jackson.module.kotlin)
     implementation(libs.okhttp.logging.interceptor)
 
