@@ -325,7 +325,7 @@ class TranscriptionPresentationTest {
     @Test
     fun resolveMicrosoftSpeechErrorMessage_mentionsRegionForMissingEndpoint() {
         assertEquals(
-            "Microsoft Speech endpoint not found. Check the configured region.",
+            "Microsoft MAI Transcribe endpoint not found. Check the configured Speech region.",
             resolveMicrosoftSpeechErrorMessage(404, """{"error":{"message":"Resource not found"}}"""),
         )
     }
@@ -358,8 +358,29 @@ class TranscriptionPresentationTest {
     @Test
     fun resolveMicrosoftSpeechKeyValidationResult_rejectsUnauthorizedKey() {
         assertEquals(
-            "Invalid Microsoft Speech API key",
+            "Invalid key for Microsoft MAI Transcribe. Use the Speech resource key from your Foundry resource, not a project API key.",
             resolveMicrosoftSpeechKeyValidationResult(401).errorMessage,
+        )
+    }
+
+    @Test
+    fun resolveMicrosoftSpeechKeyValidationResult_acceptsSuccessfulProbeAmongFallbacks() {
+        assertEquals(true, resolveMicrosoftSpeechKeyValidationResults(listOf(404, 200, 404)).isValid)
+    }
+
+    @Test
+    fun resolveMicrosoftSpeechKeyValidationResult_rejectsInconclusiveProbeResponses() {
+        assertEquals(
+            "Validation failed: HTTP 404",
+            resolveMicrosoftSpeechKeyValidationResults(listOf(404, 405, 400)).errorMessage,
+        )
+    }
+
+    @Test
+    fun resolveMicrosoftSpeechKeyValidationResult_rejectsUnauthorizedAcrossFallbacks() {
+        assertEquals(
+            "Invalid key for Microsoft MAI Transcribe. Use the Speech resource key from your Foundry resource, not a project API key.",
+            resolveMicrosoftSpeechKeyValidationResults(listOf(404, 401, 405)).errorMessage,
         )
     }
 

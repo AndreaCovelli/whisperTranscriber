@@ -273,8 +273,8 @@ internal fun friendlyHttpError(code: Int, provider: String): String = when (code
 }
 
 internal fun resolveMicrosoftSpeechErrorMessage(code: Int, bodyText: String): String = when (code) {
-    401 -> "Unauthorized. Check your Microsoft Speech API key."
-    404 -> "Microsoft Speech endpoint not found. Check the configured region."
+    401 -> "Unauthorized. Check your Azure Speech key for Microsoft MAI Transcribe."
+    404 -> "Microsoft MAI Transcribe endpoint not found. Check the configured Speech region."
     429 -> friendlyHttpError(code, "Microsoft Speech")
     in 500..599 -> friendlyHttpError(code, "Microsoft Speech")
     else -> extractMicrosoftSpeechServiceMessage(bodyText)

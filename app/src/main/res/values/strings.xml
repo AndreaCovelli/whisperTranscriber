@@ -14,11 +14,11 @@
     <string name="settings_background_share_summary_notifications">Stay in current app when sharing</string>
     <string name="settings_background_share_summary_notifications_body">Queue shared audio in the background, summarize it automatically, and show the result as a notification instead of opening WhisperTranscriber</string>
     <string name="settings_app_info">App Info</string>
-    <string name="settings_microsoft_speech_api_key_title">Microsoft Speech API Key</string>
-    <string name="settings_microsoft_speech_api_key_label">Enter Microsoft Speech API key</string>
-    <string name="settings_microsoft_speech_key_forgotten">Microsoft Speech key forgotten</string>
-    <string name="settings_microsoft_speech_region_title">Microsoft Speech Region</string>
-    <string name="settings_microsoft_speech_region_body">Enter the Azure Speech region for your Microsoft mai-transcribe-1 resource, for example westus</string>
+    <string name="settings_microsoft_speech_api_key_title">Microsoft MAI Transcribe Resource Key</string>
+    <string name="settings_microsoft_speech_api_key_label">Enter the Speech resource key for your Foundry resource</string>
+    <string name="settings_microsoft_speech_key_forgotten">Microsoft MAI Transcribe key forgotten</string>
+    <string name="settings_microsoft_speech_region_title">Azure Speech Region</string>
+    <string name="settings_microsoft_speech_region_body">Enter the Azure Speech region for your Foundry resource, for example eastus or westus. If validation fails, make sure you used the resource key and not a project API key.</string>
     <string name="settings_microsoft_speech_region_label">Region</string>
     <string name="settings_gemini_api_key_title">Gemini API Key</string>
     <string name="settings_gemini_api_key_label">Enter Gemini API key</string>

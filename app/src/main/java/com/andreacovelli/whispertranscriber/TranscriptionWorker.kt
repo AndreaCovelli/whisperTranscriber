@@ -412,11 +412,11 @@ class TranscriptionWorker @AssistedInject constructor(
             "Internal error: Microsoft Speech audio data missing."
         }
         val keyChars = requireNotNull(settings.getMicrosoftSpeechApiKey()) {
-            "Microsoft Speech API key missing or corrupted."
+            "Azure Speech key for Microsoft MAI Transcribe missing or corrupted."
         }
         val region = settings.microsoftSpeechRegionFlow.first()
             .takeIf(String::isNotBlank)
-            ?: error("Microsoft Speech region is not set.")
+            ?: error("Azure Speech region for Microsoft MAI Transcribe is not set.")
         MicrosoftSpeechTranscriber(
             apiKey = keyChars,
             audioFile = microsoftSpeechInput.file,

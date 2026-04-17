@@ -360,9 +360,23 @@ data class CustomModelValidationResult(val displayName: String? = null, val erro
 
 internal fun resolveMicrosoftSpeechKeyValidationResult(code: Int): KeyValidationResult = when (code) {
     200 -> KeyValidationResult()
-    401, 403 -> KeyValidationResult("Invalid Microsoft Speech API key")
-    404 -> KeyValidationResult("Microsoft Speech endpoint not found. Check the configured region.")
+    401, 403 -> KeyValidationResult(
+        "Invalid key for Microsoft MAI Transcribe. Use the Speech resource key from your Foundry resource, not a project API key.",
+    )
+    404 -> KeyValidationResult("Microsoft MAI Transcribe endpoint not found. Check the configured Speech region.")
     else -> KeyValidationResult("Validation failed: HTTP $code")
+}
+
+internal fun resolveMicrosoftSpeechKeyValidationResults(codes: List<Int>): KeyValidationResult {
+    if (codes.isEmpty()) return KeyValidationResult("Validation failed")
+    if (codes.any { it == 200 }) return KeyValidationResult()
+
+    val authCode = codes.firstOrNull { it == 401 || it == 403 }
+    if (authCode != null) return resolveMicrosoftSpeechKeyValidationResult(authCode)
+
+    val reportedCode = codes.firstOrNull { it == 404 || it == 405 || it == 400 || it == 429 || it in 500..599 }
+        ?: codes.first()
+    return KeyValidationResult("Validation failed: HTTP $reportedCode")
 }
 
 @Singleton
@@ -376,6 +390,8 @@ class ValidationService @Inject constructor(
         private const val GEMINI_API_KEY_HEADER = "x-goog-api-key"
         private const val ERR_ENTER_GEMINI_KEY = "Enter your Gemini API key first"
         private const val MICROSOFT_SPEECH_KEY_HEADER = "Ocp-Apim-Subscription-Key"
+        private const val MICROSOFT_SPEECH_LOCALES_API_VERSION = "2025-10-15"
+        private const val MICROSOFT_SPEECH_LOCALES_FALLBACK_API_VERSION = "2024-11-15"
     }
 
     suspend fun validateGeminiKey(rawKey: String): KeyValidationResult = try {
@@ -455,21 +471,28 @@ class ValidationService @Inject constructor(
     suspend fun validateMicrosoftSpeechKey(rawKey: String, region: String): KeyValidationResult {
         val normalizedRegion = region.trim().lowercase()
         if (normalizedRegion.isBlank()) {
-            return KeyValidationResult("Enter a Microsoft Speech region first")
+            return KeyValidationResult("Enter an Azure Speech region first")
         }
 
         return try {
-            val request = Request.Builder()
-                .url(
-                    "https://$normalizedRegion.api.cognitive.microsoft.com/speechtotext/v3.0/endpoints/locales",
-                )
-                .header(MICROSOFT_SPEECH_KEY_HEADER, rawKey)
-                .get()
-                .build()
-            val code = withContext(ioDispatcher) {
-                okHttpClient.newCall(request).execute().use { response -> response.code }
+            val validationUrls = listOf(
+                "https://$normalizedRegion.api.cognitive.microsoft.com/speechtotext/transcriptions/locales" +
+                    "?api-version=$MICROSOFT_SPEECH_LOCALES_API_VERSION",
+                "https://$normalizedRegion.api.cognitive.microsoft.com/speechtotext/transcriptions/locales" +
+                    "?api-version=$MICROSOFT_SPEECH_LOCALES_FALLBACK_API_VERSION",
+                "https://$normalizedRegion.api.cognitive.microsoft.com/speechtotext/v3.2-preview.2/transcriptions/locales",
+            )
+            val codes = withContext(ioDispatcher) {
+                validationUrls.map { url ->
+                    val request = Request.Builder()
+                        .url(url)
+                        .header(MICROSOFT_SPEECH_KEY_HEADER, rawKey)
+                        .get()
+                        .build()
+                    okHttpClient.newCall(request).execute().use { response -> response.code }
+                }
             }
-            resolveMicrosoftSpeechKeyValidationResult(code)
+            resolveMicrosoftSpeechKeyValidationResults(codes)
         } catch (e: IOException) {
             KeyValidationResult(e.message ?: "Validation failed")
         }

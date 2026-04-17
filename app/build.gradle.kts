@@ -174,6 +174,7 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
 
     implementation(libs.gson)
+    implementation(libs.jackson.module.kotlin)
     implementation(libs.okhttp.logging.interceptor)
 
     // FFmpeg - align with com.arthenica package used in imports
