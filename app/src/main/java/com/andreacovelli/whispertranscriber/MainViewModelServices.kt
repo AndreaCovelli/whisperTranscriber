@@ -30,7 +30,6 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
-import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONException
@@ -360,7 +359,7 @@ data class CustomModelValidationResult(val displayName: String? = null, val erro
 }
 
 internal fun resolveMicrosoftSpeechKeyValidationResult(code: Int): KeyValidationResult = when (code) {
-    200, 201, 202, 204, 400, 415, 422, 429 -> KeyValidationResult()
+    200 -> KeyValidationResult()
     401, 403 -> KeyValidationResult("Invalid Microsoft Speech API key")
     404 -> KeyValidationResult("Microsoft Speech endpoint not found. Check the configured region.")
     else -> KeyValidationResult("Validation failed: HTTP $code")
@@ -462,16 +461,10 @@ class ValidationService @Inject constructor(
         return try {
             val request = Request.Builder()
                 .url(
-                    "https://$normalizedRegion.api.cognitive.microsoft.com/speechtotext/transcriptions:transcribe" +
-                        "?api-version=$MICROSOFT_SPEECH_API_VERSION",
+                    "https://$normalizedRegion.api.cognitive.microsoft.com/speechtotext/v3.0/endpoints/locales",
                 )
                 .header(MICROSOFT_SPEECH_KEY_HEADER, rawKey)
-                .post(
-                    MultipartBody.Builder()
-                        .setType(MultipartBody.FORM)
-                        .addFormDataPart("definition", "{}")
-                        .build(),
-                )
+                .get()
                 .build()
             val code = withContext(ioDispatcher) {
                 okHttpClient.newCall(request).execute().use { response -> response.code }

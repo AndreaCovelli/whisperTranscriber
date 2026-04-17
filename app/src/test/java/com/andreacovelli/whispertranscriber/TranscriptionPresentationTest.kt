@@ -341,8 +341,13 @@ class TranscriptionPresentationTest {
     }
 
     @Test
-    fun resolveMicrosoftSpeechKeyValidationResult_acceptsBadRequestAsReachableAuthenticatedEndpoint() {
-        assertEquals(true, resolveMicrosoftSpeechKeyValidationResult(400).isValid)
+    fun resolveMicrosoftSpeechKeyValidationResult_acceptsSuccessfulLocalesProbe() {
+        assertEquals(true, resolveMicrosoftSpeechKeyValidationResult(200).isValid)
+    }
+
+    @Test
+    fun resolveMicrosoftSpeechKeyValidationResult_rejectsBadRequestProbe() {
+        assertEquals("Validation failed: HTTP 400", resolveMicrosoftSpeechKeyValidationResult(400).errorMessage)
     }
 
     @Test
@@ -397,6 +402,30 @@ class TranscriptionPresentationTest {
 
         assertEquals("Ciao mondo\nSeconda riga", parseMicrosoftSpeechTranscriptText(response))
         assertEquals("it-IT", parseMicrosoftSpeechLanguage(response))
+    }
+
+    @Test
+    fun parseMicrosoftSpeechLanguage_prefersMostFrequentLocaleAcrossPhrases() {
+        val response = JSONObject(
+            """
+            {
+              "phrases": [
+                { "text": "Hola", "locale": "es-ES" },
+                { "text": "Hello", "locale": "en-US" },
+                { "text": "World", "locale": "en-US" }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals("en-US", parseMicrosoftSpeechLanguage(response))
+    }
+
+    @Test
+    fun parseMicrosoftSpeechLanguage_returnsUndWhenPhrasesMissingOrBlank() {
+        val response = JSONObject("""{"phrases":[{"text":"Hello","locale":"  "},{"text":"World"}]}""")
+
+        assertEquals("und", parseMicrosoftSpeechLanguage(response))
     }
 
     @Test

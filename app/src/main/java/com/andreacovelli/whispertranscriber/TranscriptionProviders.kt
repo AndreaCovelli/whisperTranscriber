@@ -30,6 +30,8 @@ internal interface ProviderTranscriber {
 }
 
 private const val NO_TEXT_FOUND = "No text found."
+
+// Latest GA speech-to-text REST version per current Microsoft docs.
 internal const val MICROSOFT_SPEECH_API_VERSION = "2025-10-15"
 internal const val MICROSOFT_SPEECH_MAX_UPLOAD_BYTES = 70_000_000L
 
@@ -295,8 +297,7 @@ internal fun parseMicrosoftSpeechTranscriptText(response: JSONObject): String {
 }
 
 internal fun parseMicrosoftSpeechLanguage(response: JSONObject): String = response.optJSONArray("phrases")
-    ?.optJSONObject(0)
-    ?.optString("locale")
+    ?.let(::selectDominantMicrosoftSpeechLocale)
     .orEmpty()
     .ifBlank { "und" }
 
@@ -332,6 +333,23 @@ private fun JSONArray.joinTexts(): String = buildList {
             ?.let(::add)
     }
 }.joinToString(separator = "\n")
+
+private fun selectDominantMicrosoftSpeechLocale(phrases: JSONArray): String? {
+    val localeCounts = linkedMapOf<String, Int>()
+    for (index in 0 until phrases.length()) {
+        val locale = phrases.optJSONObject(index)
+            ?.optString("locale")
+            .orEmpty()
+            .trim()
+            .takeIf(String::isNotBlank)
+            ?: continue
+        localeCounts[locale] = localeCounts.getOrDefault(locale, 0) + 1
+    }
+
+    return localeCounts.entries
+        .maxByOrNull(Map.Entry<String, Int>::value)
+        ?.key
+}
 
 internal fun parseTranscriptTextValue(transcriptText: String, speakerDiarizationEnabled: Boolean): String {
     if (!speakerDiarizationEnabled) {
