@@ -28,6 +28,9 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -483,13 +486,17 @@ class ValidationService @Inject constructor(
                 "https://$normalizedRegion.api.cognitive.microsoft.com/speechtotext/v3.2-preview.2/transcriptions/locales",
             )
             val codes = withContext(ioDispatcher) {
-                validationUrls.map { url ->
-                    val request = Request.Builder()
-                        .url(url)
-                        .header(MICROSOFT_SPEECH_KEY_HEADER, rawKey)
-                        .get()
-                        .build()
-                    okHttpClient.newCall(request).execute().use { response -> response.code }
+                coroutineScope {
+                    validationUrls.map { url ->
+                        async {
+                            val request = Request.Builder()
+                                .url(url)
+                                .header(MICROSOFT_SPEECH_KEY_HEADER, rawKey)
+                                .get()
+                                .build()
+                            okHttpClient.newCall(request).execute().use { response -> response.code }
+                        }
+                    }.awaitAll()
                 }
             }
             resolveMicrosoftSpeechKeyValidationResults(codes)

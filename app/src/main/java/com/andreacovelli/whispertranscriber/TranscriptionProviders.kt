@@ -34,8 +34,9 @@ private const val NO_TEXT_FOUND = "No text found."
 // Current MAI Transcribe examples in Microsoft Learn use this API version.
 internal const val MICROSOFT_SPEECH_API_VERSION = "2025-10-15"
 
-// The dedicated MAI Transcribe docs currently state audio files must be less than 300 MB.
-internal const val MICROSOFT_SPEECH_MAX_UPLOAD_BYTES = 300_000_000L
+// MAI docs mention < 300 MB audio, but the synchronous LLM Speech REST gateway used here
+// documents an extra < 70 MB limit for mai-transcribe-1 uploads on this endpoint.
+internal const val MICROSOFT_SPEECH_MAX_UPLOAD_BYTES = 70_000_000L
 
 internal class MicrosoftSpeechTranscriber(
     private val apiKey: CharArray,
@@ -55,7 +56,7 @@ internal class MicrosoftSpeechTranscriber(
             val normalizedRegion = region.trim().lowercase()
             require(normalizedRegion.isNotBlank()) { "Microsoft Speech region is not set." }
             require(isMicrosoftSpeechUploadSizeSupported(audioFile.length())) {
-                "Microsoft MAI Transcribe uploads must be smaller than 300 MB."
+                "Microsoft MAI Transcribe uploads through the synchronous LLM Speech API must be smaller than 70 MB. Compress longer audio before upload."
             }
 
             emit(TranscriptionResult.Loading("Uploading audio ($mimeType) to Microsoft Speech..."))
@@ -103,7 +104,10 @@ internal class MicrosoftSpeechTranscriber(
             val response = try {
                 JSONObject(responseBody)
             } catch (e: JSONException) {
-                throw IllegalStateException("Failed to parse Microsoft Speech response: $responseBody", e)
+                throw IllegalStateException(
+                    "Failed to parse Microsoft Speech response body (length=${responseBody.length}).",
+                    e,
+                )
             }
             emit(TranscriptionResult.Loading("Success"))
             emit(

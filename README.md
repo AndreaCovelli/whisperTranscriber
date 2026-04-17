@@ -86,6 +86,8 @@ Select **Custom Model** in Settings and type any valid Gemini model identifier (
 3. The API processes the audio and returns the full transcript in the response.
 4. The finished transcript is saved to local history.
 
+Because this app uses the synchronous LLM Speech upload endpoint, MAI uploads must stay under `70 MB` per request even though the underlying model documentation also mentions a larger model-level audio limit.
+
 ### Gemini flow
 
 1. Audio is uploaded through the Gemini File API

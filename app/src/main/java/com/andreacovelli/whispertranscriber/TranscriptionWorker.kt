@@ -327,11 +327,7 @@ class TranscriptionWorker @AssistedInject constructor(
         inputMimeType: String,
         usingMicrosoftSpeech: Boolean,
     ): PreparedAudioInput = if (usingMicrosoftSpeech) {
-        val reusableLocalFile = uri.path
-            ?.takeIf { uri.scheme.equals("file", ignoreCase = true) }
-            ?.takeIf(String::isNotBlank)
-            ?.let(::File)
-            ?.takeIf(File::exists)
+        val reusableLocalFile = reusableLocalFileForUri(uri)
         if (reusableLocalFile != null) {
             repository.updateStatusAndProgress(jobId, "Preparing local audio for Microsoft Speech upload...", 1f)
             PreparedAudioInput.MicrosoftSpeech(
@@ -369,6 +365,14 @@ class TranscriptionWorker @AssistedInject constructor(
                 outputStream().use(input::copyTo)
             }
         } ?: error("Failed to read input audio file.")
+    }
+
+    private fun reusableLocalFileForUri(uri: Uri): File? {
+        if (!uri.scheme.equals("file", ignoreCase = true)) return null
+
+        val path = uri.path?.takeIf(String::isNotBlank) ?: return null
+        val candidate = File(path)
+        return candidate.takeIf { it.isAbsolute && it.exists() && it.canRead() }
     }
 
     private suspend fun runProviderTranscription(
