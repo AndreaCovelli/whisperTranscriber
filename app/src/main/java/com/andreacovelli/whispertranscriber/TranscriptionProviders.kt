@@ -1,7 +1,5 @@
 package com.andreacovelli.whispertranscriber
 
-import android.net.Uri
-import com.andreacovelli.whispertranscriber.media.formatElevenLabsSpeakerTranscript
 import com.andreacovelli.whispertranscriber.security.useAsString
 import com.andreacovelli.whispertranscriber.security.useGenAiClient
 import com.google.genai.types.Content
@@ -20,10 +18,12 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
+import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
-import retrofit2.HttpException
 
 internal interface ProviderTranscriber {
     fun transcribe(): Flow<TranscriptionResult>
@@ -31,72 +31,106 @@ internal interface ProviderTranscriber {
 
 private const val NO_TEXT_FOUND = "No text found."
 
-internal class ElevenLabsTranscriber(
-    private val api: ElevenLabsApi,
-    private val source: Any,
+internal class MicrosoftSpeechTranscriber(
     private val apiKey: CharArray,
-    private val createRequestBodyFromUri: (Uri) -> okhttp3.RequestBody,
-    private val speakerDiarizationEnabled: Boolean,
-    private val speakerLabelPrefix: String,
+    private val audioFile: File,
+    private val mimeType: String,
+    private val region: String,
+    private val okHttpClient: OkHttpClient,
+    private val ioDispatcher: CoroutineDispatcher,
 ) : ProviderTranscriber {
     companion object {
-        private const val ELEVEN_LABS_MODEL_ID = "scribe_v2"
+        private const val MICROSOFT_SPEECH_MODEL = "mai-transcribe-1"
+        private const val MICROSOFT_SPEECH_API_VERSION = "2025-10-15"
+        private const val MICROSOFT_SPEECH_KEY_HEADER = "Ocp-Apim-Subscription-Key"
+        private const val MAX_INLINE_AUDIO_BYTES = 70L * 1024L * 1024L
     }
 
     override fun transcribe(): Flow<TranscriptionResult> = flow {
         try {
-            emit(TranscriptionResult.Loading("Uploading and transcribing..."))
-            val requestFileBody = when (source) {
-                is File -> source.asRequestBody("application/octet-stream".toMediaType())
-                is Uri -> createRequestBodyFromUri(source)
-                else -> throw IllegalArgumentException("Unsupported source type")
+            val normalizedRegion = region.trim().lowercase()
+            require(normalizedRegion.isNotBlank()) { "Microsoft Speech region is not set." }
+            require(audioFile.length() in 1 until MAX_INLINE_AUDIO_BYTES) {
+                "Microsoft MAI Transcribe supports audio files smaller than 70 MB."
             }
-            val filePart = MultipartBody.Part.createFormData("file", "audio_file", requestFileBody)
-            val modelIdPart = MultipartBody.Part.createFormData("model_id", ELEVEN_LABS_MODEL_ID)
-            val diarizePart = if (speakerDiarizationEnabled) {
-                MultipartBody.Part.createFormData("diarize", "true")
-            } else {
-                null
+
+            emit(TranscriptionResult.Loading("Uploading audio ($mimeType) to Microsoft Speech..."))
+            val endpoint =
+                "https://$normalizedRegion.api.cognitive.microsoft.com/speechtotext/transcriptions:transcribe" +
+                    "?api-version=$MICROSOFT_SPEECH_API_VERSION"
+            val definitionJson = JSONObject()
+                .put(
+                    "enhancedMode",
+                    JSONObject()
+                        .put("enabled", true)
+                        .put("model", MICROSOFT_SPEECH_MODEL),
+                )
+                .toString()
+            val multipartBody = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart(
+                    "audio",
+                    audioFile.name,
+                    audioFile.asRequestBody(mimeType.toMediaType()),
+                )
+                .addFormDataPart("definition", definitionJson)
+                .build()
+
+            val responseBody = apiKey.useAsString { key ->
+                val request = Request.Builder()
+                    .url(endpoint)
+                    .header(MICROSOFT_SPEECH_KEY_HEADER, key)
+                    .post(multipartBody)
+                    .build()
+                withContext(ioDispatcher) {
+                    okHttpClient.newCall(request).execute().use { response ->
+                        val bodyText = response.body.string()
+                        if (!response.isSuccessful) {
+                            throw MicrosoftSpeechHttpException(
+                                code = response.code,
+                                message = resolveMicrosoftSpeechErrorMessage(response.code, bodyText),
+                            )
+                        }
+                        bodyText
+                    }
+                }
             }
-            val response = apiKey.useAsString { key ->
-                api.transcribe(key, filePart, modelIdPart, diarizePart)
-            }
-            val transcriptText = if (speakerDiarizationEnabled) {
-                response.words
-                    ?.let { formatElevenLabsSpeakerTranscript(it, response.languageCode, speakerLabelPrefix) }
-                    .orEmpty()
-                    .ifBlank { response.text }
-            } else {
-                response.text
+
+            val response = try {
+                JSONObject(responseBody)
+            } catch (e: JSONException) {
+                throw IllegalStateException("Failed to parse Microsoft Speech response: $responseBody", e)
             }
             emit(TranscriptionResult.Loading("Success"))
             emit(
                 TranscriptionResult.Success(
                     TranscriptionData(
-                        text = transcriptText,
-                        language = response.languageCode ?: "Unknown",
-                        model = "ElevenLabs Scribe v2",
+                        text = parseMicrosoftSpeechTranscriptText(response),
+                        language = parseMicrosoftSpeechLanguage(response),
+                        model = MICROSOFT_SPEECH_MODEL,
                     ),
                 ),
             )
         } catch (e: CancellationException) {
             throw e
-        } catch (e: HttpException) {
-            val error = if (shouldRetryHttp(e.code())) {
-                TransientWorkException(friendlyHttpError(e.code(), "ElevenLabs"), e)
+        } catch (e: MicrosoftSpeechHttpException) {
+            val error = if (shouldRetryHttp(e.code)) {
+                TransientWorkException(e.message, e)
             } else {
-                IllegalStateException(friendlyHttpError(e.code(), "ElevenLabs"), e)
+                IllegalStateException(e.message, e)
             }
             emit(TranscriptionResult.Error(error))
         } catch (e: IOException) {
-            emit(TranscriptionResult.Error(TransientWorkException("Network or API error: ${e.message}", e)))
+            emit(TranscriptionResult.Error(TransientWorkException("Microsoft Speech error: ${e.message}", e)))
         } catch (e: IllegalArgumentException) {
-            emit(TranscriptionResult.Error(IllegalStateException("Network or API error: ${e.message}", e)))
+            emit(TranscriptionResult.Error(IllegalStateException(e.message ?: "Microsoft Speech request failed.", e)))
         } finally {
             apiKey.fill('\u0000')
         }
     }
 }
+
+private class MicrosoftSpeechHttpException(val code: Int, override val message: String) : IOException(message)
 
 internal class GeminiTranscriber(
     private val audioFile: File,
@@ -233,6 +267,46 @@ internal fun friendlyHttpError(code: Int, provider: String): String = when (code
     else -> "HTTP $code: unexpected error from $provider."
 }
 
+internal fun resolveMicrosoftSpeechErrorMessage(code: Int, bodyText: String): String = when (code) {
+    401 -> "Unauthorized. Check your Microsoft Speech API key."
+    404 -> "Microsoft Speech endpoint not found. Check the configured region."
+    429 -> friendlyHttpError(code, "Microsoft Speech")
+    in 500..599 -> friendlyHttpError(code, "Microsoft Speech")
+    else -> extractMicrosoftSpeechServiceMessage(bodyText)
+        ?.let { "HTTP $code: $it" }
+        ?: "HTTP $code: unexpected error from Microsoft Speech."
+}
+
+internal fun parseMicrosoftSpeechTranscriptText(response: JSONObject): String {
+    val combinedText = response.optJSONArray("combinedPhrases")
+        ?.joinTexts()
+        .orEmpty()
+        .trim()
+    if (combinedText.isNotBlank()) return combinedText
+
+    return response.optJSONArray("phrases")
+        ?.joinTexts()
+        .orEmpty()
+        .trim()
+        .ifBlank { NO_TEXT_FOUND }
+}
+
+internal fun parseMicrosoftSpeechLanguage(response: JSONObject): String = response.optJSONArray("phrases")
+    ?.optJSONObject(0)
+    ?.optString("locale")
+    .orEmpty()
+    .ifBlank { "und" }
+
+internal fun extractMicrosoftSpeechServiceMessage(bodyText: String): String? = runCatching {
+    val body = JSONObject(bodyText)
+    val error = body.optJSONObject("error")
+    error?.optString("message")
+        ?.takeIf(String::isNotBlank)
+        ?: error?.optJSONObject("innerError")
+            ?.optString("message")
+            ?.takeIf(String::isNotBlank)
+}.getOrNull()
+
 internal fun shouldRetryHttp(code: Int): Boolean = code == 429 || code in 500..599
 
 internal fun extractHttpStatusFromMessage(error: Throwable): Int? =
@@ -245,6 +319,16 @@ private val HTTP_STATUS_PATTERNS = listOf(
     Regex("""\bstatus(?:\s+code)?\s*[:=]?\s*([45]\d{2})\b""", RegexOption.IGNORE_CASE),
     Regex("""\bcode\s*[:=]?\s*([45]\d{2})\b""", RegexOption.IGNORE_CASE),
 )
+
+private fun JSONArray.joinTexts(): String = buildList {
+    for (index in 0 until length()) {
+        optJSONObject(index)
+            ?.optString("text")
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?.let(::add)
+    }
+}.joinToString(separator = "\n")
 
 internal fun parseTranscriptTextValue(transcriptText: String, speakerDiarizationEnabled: Boolean): String {
     if (!speakerDiarizationEnabled) {

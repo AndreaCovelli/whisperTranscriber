@@ -34,7 +34,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONException
 import org.json.JSONObject
-import retrofit2.HttpException
 
 data class QueuedShareResult(val jobsCreated: Int, val statusMessage: String)
 
@@ -209,9 +208,13 @@ class TranscriptionQueueService @Inject constructor(
 
     private fun resolveRequestedModel(provider: TranscriptionProvider, customModelName: String): String? =
         when (provider) {
-            TranscriptionProvider.ELEVEN_LABS -> null
+            TranscriptionProvider.ELEVEN_LABS,
+            TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
+            TranscriptionProvider.GEMINI_FLASH_LITE,
+            TranscriptionProvider.GEMINI_FLASH,
+            TranscriptionProvider.GEMINI_PRO,
+            -> provider.modelName
             TranscriptionProvider.GEMINI_CUSTOM -> customModelName.ifBlank { null }
-            else -> provider.modelName
         }
 
     private suspend fun restartQueuedJobs() {
@@ -358,7 +361,6 @@ data class CustomModelValidationResult(val displayName: String? = null, val erro
 @Singleton
 class GeminiValidationService @Inject constructor(
     private val settings: ApiKeyManager,
-    private val elevenLabsApi: ElevenLabsApi,
     private val okHttpClient: OkHttpClient,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
@@ -366,21 +368,6 @@ class GeminiValidationService @Inject constructor(
         private const val GEMINI_MODELS_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
         private const val GEMINI_API_KEY_HEADER = "x-goog-api-key"
         private const val ERR_ENTER_GEMINI_KEY = "Enter your Gemini API key first"
-    }
-
-    suspend fun validateElevenLabsKey(rawKey: String): KeyValidationResult = try {
-        val response = withContext(ioDispatcher) { elevenLabsApi.getUser(rawKey) }
-        if (response.isSuccessful) {
-            KeyValidationResult()
-        } else {
-            KeyValidationResult(
-                if (response.code() == 401) "Invalid API key" else "Validation failed: HTTP ${response.code()}",
-            )
-        }
-    } catch (e: IOException) {
-        KeyValidationResult(e.message ?: "Validation failed")
-    } catch (e: HttpException) {
-        KeyValidationResult("Validation failed: HTTP ${e.code()}")
     }
 
     suspend fun validateGeminiKey(rawKey: String): KeyValidationResult = try {
@@ -446,8 +433,6 @@ class GeminiValidationService @Inject constructor(
             throw e
         } catch (e: IOException) {
             CustomModelValidationResult(errorMessage = e.message ?: "Validation failed")
-        } catch (e: HttpException) {
-            CustomModelValidationResult(errorMessage = "HTTP ${e.code()}: could not verify model")
         } finally {
             keyChars.fill('\u0000')
         }

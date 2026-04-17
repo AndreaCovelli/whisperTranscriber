@@ -173,8 +173,7 @@ dependencies {
     // DataStore - use a single, consistent artifact
     implementation(libs.androidx.datastore.preferences)
 
-    implementation(libs.retrofit)
-    implementation(libs.retrofit.converter.gson)
+    implementation(libs.gson)
     implementation(libs.okhttp.logging.interceptor)
 
     // FFmpeg - align with com.arthenica package used in imports

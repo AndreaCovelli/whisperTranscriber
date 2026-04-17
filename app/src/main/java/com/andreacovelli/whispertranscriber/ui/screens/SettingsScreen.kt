@@ -17,6 +17,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -87,17 +88,19 @@ fun SettingsScreen(
             )
 
             ApiKeyCard(
-                title = stringResource(R.string.settings_elevenlabs_api_key_title),
-                label = stringResource(R.string.settings_elevenlabs_api_key_label),
-                apiKeyState = uiState.elevenLabsApiKeyState,
-                keyValidationState = uiState.elevenLabsKeyValidation,
-                onLoadSavedKey = actions.loadElevenLabsKey,
-                onSave = actions.saveElevenLabsKey,
-                onForget = actions.forgetElevenLabsKey,
-                onResetValidation = actions.resetElevenLabsKeyValidation,
-                forgetMessage = stringResource(R.string.settings_elevenlabs_key_forgotten),
+                title = stringResource(R.string.settings_microsoft_speech_api_key_title),
+                label = stringResource(R.string.settings_microsoft_speech_api_key_label),
+                apiKeyState = uiState.microsoftSpeechApiKeyState,
+                keyValidationState = uiState.microsoftSpeechKeyValidation,
+                onLoadSavedKey = actions.loadMicrosoftSpeechKey,
+                onSave = actions.saveMicrosoftSpeechKey,
+                onForget = actions.forgetMicrosoftSpeechKey,
+                onResetValidation = actions.resetMicrosoftSpeechKeyValidation,
+                forgetMessage = stringResource(R.string.settings_microsoft_speech_key_forgotten),
                 snackbarHostState = snackbarHostState,
             )
+
+            MicrosoftSpeechRegionCard(uiState = uiState, actions = actions)
 
             ApiKeyCard(
                 title = stringResource(R.string.settings_gemini_api_key_title),
@@ -139,12 +142,45 @@ private fun TranscriptionProviderCard(uiState: UiState, actions: SettingsScreenA
 
 @Composable
 private fun SpeakerDiarizationCard(uiState: UiState, actions: SettingsScreenActions) {
+    val diarizationSupported = uiState.provider.isGemini()
     SettingsToggleCard(
         title = stringResource(R.string.settings_speaker_diarization),
-        body = stringResource(R.string.settings_speaker_diarization_body),
+        body = if (diarizationSupported) {
+            stringResource(R.string.settings_speaker_diarization_body)
+        } else {
+            stringResource(R.string.settings_speaker_diarization_body_microsoft)
+        },
         checked = uiState.speakerDiarizationEnabled,
         onCheckedChange = actions.setSpeakerDiarization,
+        enabled = diarizationSupported,
     )
+}
+
+@Composable
+private fun MicrosoftSpeechRegionCard(uiState: UiState, actions: SettingsScreenActions) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                stringResource(R.string.settings_microsoft_speech_region_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = stringResource(R.string.settings_microsoft_speech_region_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = uiState.microsoftSpeechRegion,
+                onValueChange = actions.setMicrosoftSpeechRegion,
+                label = { Text(stringResource(R.string.settings_microsoft_speech_region_label)) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+        }
+    }
 }
 
 @Composable
@@ -162,7 +198,7 @@ private fun SummarizerProviderCard(uiState: UiState, actions: SettingsScreenActi
                 customModelValidation = uiState.summarizerCustomModelValidation,
                 onValidateCustomModel = actions.validateSummarizerModel,
                 onResetValidation = actions.resetSummarizerModelValidation,
-                showElevenLabs = false,
+                showMicrosoftSpeech = false,
             )
         }
     }
@@ -189,7 +225,13 @@ private fun BackgroundShareSummaryNotificationsCard(uiState: UiState, onCheckedC
 }
 
 @Composable
-private fun SettingsToggleCard(title: String, body: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun SettingsToggleCard(
+    title: String,
+    body: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
+) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -209,6 +251,7 @@ private fun SettingsToggleCard(title: String, body: String, checked: Boolean, on
                 Switch(
                     checked = checked,
                     onCheckedChange = onCheckedChange,
+                    enabled = enabled,
                 )
             }
         }

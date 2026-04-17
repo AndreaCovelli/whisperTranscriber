@@ -40,10 +40,11 @@ sealed class KeyValidationState {
 
 data class UiState(
     val status: String = "",
-    val provider: TranscriptionProvider = TranscriptionProvider.ELEVEN_LABS,
+    val provider: TranscriptionProvider = TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
     val summarizerProvider: TranscriptionProvider = TranscriptionProvider.GEMINI_FLASH,
-    val elevenLabsApiKeyState: ApiKeyState = ApiKeyState.Missing,
-    val elevenLabsKeyValidation: KeyValidationState = KeyValidationState.Idle,
+    val microsoftSpeechApiKeyState: ApiKeyState = ApiKeyState.Missing,
+    val microsoftSpeechKeyValidation: KeyValidationState = KeyValidationState.Idle,
+    val microsoftSpeechRegion: String = "",
     val geminiApiKeyState: ApiKeyState = ApiKeyState.Missing,
     val geminiKeyValidation: KeyValidationState = KeyValidationState.Idle,
     val transcriptionCustomGeminiModelName: String = "",
@@ -62,7 +63,7 @@ data class TranscriptionJobState(
     val timestamp: Long = 0L,
     val uri: Uri? = null,
     val displayName: String = "",
-    val provider: TranscriptionProvider = TranscriptionProvider.ELEVEN_LABS,
+    val provider: TranscriptionProvider = TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
     val requestedModel: String = "",
     val status: String = "Queued",
     val progress: Float = 0f, // 0..1 conversion progress
@@ -87,8 +88,7 @@ fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     timestamp = timestamp,
     uri = uri.toUri(),
     displayName = displayName,
-    provider = runCatching { TranscriptionProvider.valueOf(providerName) }
-        .getOrDefault(TranscriptionProvider.ELEVEN_LABS),
+    provider = decodeHistoricalTranscriptionProvider(providerName),
     requestedModel = requestedModel.orEmpty(),
     status = status,
     progress = progress,
@@ -98,7 +98,7 @@ fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     summary = summary,
     summaryProvider = summaryProviderName
         .takeIf(String::isNotBlank)
-        ?.let { runCatching { TranscriptionProvider.valueOf(it) }.getOrNull() },
+        ?.let(::decodeHistoricalTranscriptionProvider),
     summaryModel = summaryModel,
     summaryStatus = summaryStatus,
     autoSummaryAttempted = autoSummaryAttempted,
@@ -134,7 +134,7 @@ data class TranscriptionData(val text: String, val language: String, val model: 
 internal fun UiState.toTranscriptionQueueSettings(): TranscriptionQueueSettings = TranscriptionQueueSettings(
     provider = provider,
     customModelName = transcriptionCustomGeminiModelName,
-    speakerDiarizationEnabled = speakerDiarizationEnabled,
+    speakerDiarizationEnabled = provider.isGemini() && speakerDiarizationEnabled,
 )
 
 internal fun UiState.toSummarizationSettings(): SummarizationSettings = SummarizationSettings(
@@ -264,13 +264,18 @@ class MainViewModel @Inject constructor(
                 }
             }
             launch {
-                settings.elevenLabsApiKeyStateFlow.collect { state ->
-                    _uiState.update { it.copy(elevenLabsApiKeyState = state) }
+                settings.microsoftSpeechApiKeyStateFlow.collect { state ->
+                    _uiState.update { it.copy(microsoftSpeechApiKeyState = state) }
                 }
             }
             launch {
                 settings.geminiApiKeyStateFlow.collect { state ->
                     _uiState.update { it.copy(geminiApiKeyState = state) }
+                }
+            }
+            launch {
+                settings.microsoftSpeechRegionFlow.collect { region ->
+                    _uiState.update { it.copy(microsoftSpeechRegion = region) }
                 }
             }
             launch {

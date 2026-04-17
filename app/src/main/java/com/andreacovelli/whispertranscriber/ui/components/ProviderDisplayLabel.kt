@@ -4,6 +4,7 @@ import com.andreacovelli.whispertranscriber.TranscriptionProvider
 
 fun providerDisplayLabel(provider: TranscriptionProvider, customModelName: String): String = when (provider) {
     TranscriptionProvider.ELEVEN_LABS -> "ElevenLabs"
+    TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE -> "Microsoft MAI Transcribe"
     TranscriptionProvider.GEMINI_FLASH_LITE -> "Gemini Flash Lite"
     TranscriptionProvider.GEMINI_FLASH -> "Gemini Flash"
     TranscriptionProvider.GEMINI_PRO -> "Gemini Pro"
@@ -13,6 +14,7 @@ fun providerDisplayLabel(provider: TranscriptionProvider, customModelName: Strin
 
 fun providerFamilyLabel(provider: TranscriptionProvider): String = when (provider) {
     TranscriptionProvider.ELEVEN_LABS -> "ElevenLabs"
+    TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE -> "Microsoft MAI Transcribe"
     TranscriptionProvider.GEMINI_FLASH_LITE -> "Gemini Flash Lite"
     TranscriptionProvider.GEMINI_FLASH -> "Gemini Flash"
     TranscriptionProvider.GEMINI_PRO -> "Gemini Pro"

@@ -1,13 +1,13 @@
 # WhisperTranscriber
 
-An Android app that transcribes audio files using AI — powered by [ElevenLabs](https://elevenlabs.io/) or [Google Gemini](https://ai.google.dev/).
+An Android app that transcribes audio files using AI — powered by [Microsoft Azure Speech MAI Transcribe](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/mai-transcribe) or [Google Gemini](https://ai.google.dev/).
  Share one or more audio files with the app from any file manager or audio player, and receive transcripts in seconds.
 
 ---
 
 ## Features
 
-- **Multi-provider transcription** — choose between ElevenLabs or Gemini (Flash Lite, Flash, Pro, or a custom model)
+- **Multi-provider transcription** — choose between Microsoft MAI Transcribe or Gemini (Flash Lite, Flash, Pro, or a custom model)
 - **Batch processing** — share multiple audio files at once; jobs are staged locally, queued, and processed sequentially
 - **AI summarization** — generate a concise summary of any transcript (requires a Gemini API key)
 - **Transcription history** — all transcripts are saved locally in a searchable Room database
@@ -24,7 +24,7 @@ An Android app that transcribes audio files using AI — powered by [ElevenLabs]
 | **Minimum Android**      | 8.0 Oreo (API 26)                                |
 | **Target / Compile SDK** | 36 (Android 15)                                  |
 | **JDK**                  | 21 (resolved automatically via Gradle toolchain) |
-| **API key**              | ElevenLabs **or** Gemini (at least one required) |
+| **API key**              | Microsoft Speech **or** Gemini (at least one required) |
 
 ---
 
@@ -68,8 +68,7 @@ All configuration is done inside the app — no config files or build secrets ne
 
 ### Getting API keys
 
-- **ElevenLabs**: Sign up at [elevenlabs.io](https://elevenlabs.io/) and copy your API key from your profile.
-  - Set these permissions for the API key: `GET /v1/user` and `POST /v1/speech-to-text`.
+- **Microsoft Speech**: Create an Azure Speech resource, then copy its key and region from the Azure portal.
 - **Gemini**: Generate a key at [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
 
 ### Custom Gemini model
@@ -80,18 +79,18 @@ Select **Custom Model** in Settings and type any valid Gemini model identifier (
 
 ## How It Works
 
-### ElevenLabs flow
+### Microsoft MAI Transcribe flow
 
-1. The audio file is sent in a single request to the ElevenLabs Scribe v2 API.
-2. The API processes the audio and returns the full transcript in the response.
-3. The finished transcript is saved to local history.
+1. The audio file is sent in a single request to the Azure Speech `transcriptions:transcribe` endpoint.
+2. The request enables enhanced mode with model `mai-transcribe-1`.
+3. The API processes the audio and returns the full transcript in the response.
+4. The finished transcript is saved to local history.
 
 ### Gemini flow
 
-
 1. Audio is uploaded through the Gemini File API
 2. The model returns a structured JSON response containing the detected language code and transcript text
-3. The result is saved to local history immediately
+3. The finished transcript is saved to local history.
 
 ### Audio conversion
 
@@ -101,11 +100,11 @@ When audio is shared into the app, it is first copied into app-managed storage s
 
 ## Supported Audio Formats
 
-| Provider           | Accepted MIME types                                                                                                                                                                                                 |
-|--------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **ElevenLabs**     | `audio/mp3`, `audio/mpeg`, `audio/wav`, `audio/x-wav`, `audio/m4a`, `audio/x-m4a`, `audio/flac`, `audio/x-flac`, `audio/ogg`, `audio/vorbis`, `audio/opus`, `audio/webm`, `audio/aac`, `audio/aiff`, `audio/x-aiff` |
-| **Gemini**         | `audio/wav`, `audio/mp3`, `audio/aiff`, `audio/aac`, `audio/ogg`, `audio/flac`                                                                                                                                      |
-| **Auto-converted** | Any format not in the list above is converted to 16 kHz mono WAV automatically                                                                                                                                      |
+| Provider           | Accepted MIME types                                                             |
+|--------------------|---------------------------------------------------------------------------------|
+| **Microsoft MAI**  | `audio/wav`, `audio/x-wav`, `audio/wave`, `audio/mp3`, `audio/mpeg`, `audio/flac`, `audio/x-flac` |
+| **Gemini**         | `audio/wav`, `audio/mp3`, `audio/aiff`, `audio/aac`, `audio/ogg`, `audio/flac` |
+| **Auto-converted** | Any format not in the list above is converted to 16 kHz mono WAV automatically |
 
 ---
 
@@ -121,7 +120,7 @@ A searchable list of all past transcriptions. Each item can be expanded to revea
 
 ### Settings
 
-Configure the transcription provider, manage API keys, and enter a custom Gemini model name. Keys can be forgotten (deleted from encrypted storage) at any time.
+Configure the transcription provider, manage API keys, enter the Microsoft Speech region, and enter a custom Gemini model name. Keys can be forgotten (deleted from encrypted storage) at any time.
 
 ---
 
@@ -132,7 +131,7 @@ MainActivity.kt              — Single Activity, NavHost, share-intent handling
 MainViewModel.kt             — Sequential queue orchestration, staging, settings state
 HistoryViewModel.kt          — Room history as StateFlow
 ApiKeyManager.kt             — Encrypted credential storage (DataStore + Keystore)
-ElevenLabsApiService.kt      — Retrofit interface for ElevenLabs v2 REST API
+TranscriptionProviders.kt    — Microsoft Speech + Gemini transcription providers
 data/HistoryDatabase.kt      — Room entity, DAO, and migrations (schema v7)
 security/KeystoreCrypto.kt   — AES-256-GCM encryption helpers
 media/HardwareAudioConverter.kt — MediaCodec audio → 16 kHz mono WAV
@@ -161,7 +160,7 @@ ui/theme/                    — Material Design 3 theme, colors, typography
 | Lifecycle / ViewModel      | 2.10.0     | MVVM lifecycle management    |
 | Room                       | 2.8.4      | Local SQLite database        |
 | DataStore Preferences      | 1.2.1      | Persistent key-value storage |
-| Retrofit + Gson            | 3.0.0      | ElevenLabs REST client       |
+| OkHttp                     | 5.3.2      | Microsoft Speech HTTP client |
 | OkHttp Logging Interceptor | 5.3.2      | HTTP debug logging           |
 | Google Generative AI SDK   | 1.45.0     | Gemini API client            |
 | KSP                        | 2.3.6      | Room annotation processing   |
@@ -173,7 +172,7 @@ ui/theme/                    — Material Design 3 theme, colors, typography
 
 | Permission                    | Reason                                      |
 |-------------------------------|---------------------------------------------|
-| `android.permission.INTERNET` | Required to call ElevenLabs and Gemini APIs |
+| `android.permission.INTERNET` | Required to call Microsoft Speech and Gemini APIs |
 
 Audio files are accessed via Android share intents — no `READ_EXTERNAL_STORAGE` permission is needed.
 

@@ -40,17 +40,17 @@ fun ProviderSelector(
     customModelValidation: CustomModelValidation,
     onValidateCustomModel: (String) -> Unit,
     onResetValidation: () -> Unit,
-    showElevenLabs: Boolean = true,
+    showMicrosoftSpeech: Boolean = true,
 ) {
     var customInput by remember(customModelName) { mutableStateOf(customModelName) }
     var fieldHadFocus by remember(customModelName) { mutableStateOf(false) }
 
     Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp)) {
-        if (showElevenLabs) {
+        if (showMicrosoftSpeech) {
             ProviderRadioOption(
-                text = stringResource(R.string.provider_option_elevenlabs),
-                isSelected = selected == TranscriptionProvider.ELEVEN_LABS,
-                onClick = { onSelect(TranscriptionProvider.ELEVEN_LABS) },
+                text = stringResource(R.string.provider_option_microsoft_speech),
+                isSelected = selected == TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
+                onClick = { onSelect(TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE) },
             )
 
             Spacer(Modifier.height(8.dp))

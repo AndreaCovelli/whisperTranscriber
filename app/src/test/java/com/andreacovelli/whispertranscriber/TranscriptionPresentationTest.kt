@@ -1,6 +1,5 @@
 package com.andreacovelli.whispertranscriber
 
-import com.andreacovelli.whispertranscriber.media.formatElevenLabsSpeakerTranscript
 import com.andreacovelli.whispertranscriber.ui.components.providerDisplayLabel
 import com.andreacovelli.whispertranscriber.ui.components.providerFamilyLabel
 import com.andreacovelli.whispertranscriber.ui.components.providerFamilyLabelForModel
@@ -16,7 +15,7 @@ class TranscriptionPresentationTest {
     fun resolveShareQueueSettings_usesPersistedSettingsBeforeHydration() {
         val resolved = resolveShareQueueSettings(
             uiState = UiState(
-                provider = TranscriptionProvider.ELEVEN_LABS,
+                provider = TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
                 transcriptionCustomGeminiModelName = "",
                 speakerDiarizationEnabled = false,
             ),
@@ -48,7 +47,7 @@ class TranscriptionPresentationTest {
             ),
             transcriptionSettingsHydrated = true,
             persistedSettings = TranscriptionQueueSettings(
-                provider = TranscriptionProvider.ELEVEN_LABS,
+                provider = TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
                 customModelName = "",
                 speakerDiarizationEnabled = false,
             ),
@@ -151,8 +150,29 @@ class TranscriptionPresentationTest {
     }
 
     @Test
+    fun decodeStoredTranscriptionProvider_mapsLegacyElevenLabsSelectionToMicrosoft() {
+        assertEquals(
+            TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
+            decodeStoredTranscriptionProvider("ELEVEN_LABS"),
+        )
+    }
+
+    @Test
+    fun decodeHistoricalTranscriptionProvider_preservesLegacyElevenLabsForDisplay() {
+        assertEquals(
+            TranscriptionProvider.ELEVEN_LABS,
+            decodeHistoricalTranscriptionProvider("ELEVEN_LABS"),
+        )
+    }
+
+    @Test
     fun providerFamilyLabel_returnsGeminiCustomForCustomProvider() {
         assertEquals("Gemini Custom", providerFamilyLabel(TranscriptionProvider.GEMINI_CUSTOM))
+    }
+
+    @Test
+    fun providerFamilyLabel_returnsMicrosoftLabelForMicrosoftProvider() {
+        assertEquals("Microsoft MAI Transcribe", providerFamilyLabel(TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE))
     }
 
     @Test
@@ -196,6 +216,21 @@ class TranscriptionPresentationTest {
         assertEquals(
             "Custom Gemini model (not set)",
             providerDisplayLabel(TranscriptionProvider.GEMINI_CUSTOM, ""),
+        )
+    }
+
+    @Test
+    fun uiStateToTranscriptionQueueSettings_disablesSpeakerDiarizationForMicrosoft() {
+        assertEquals(
+            TranscriptionQueueSettings(
+                provider = TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
+                customModelName = "",
+                speakerDiarizationEnabled = false,
+            ),
+            UiState(
+                provider = TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
+                speakerDiarizationEnabled = true,
+            ).toTranscriptionQueueSettings(),
         )
     }
 
@@ -287,112 +322,11 @@ class TranscriptionPresentationTest {
     }
 
     @Test
-    fun formatElevenLabsSpeakerTranscript_groupsContiguousWordsBySpeaker() {
-        val transcript = formatElevenLabsSpeakerTranscript(
-            listOf(
-                ElevenLabsWord(text = "Hello", start = 0.0, end = 0.4, type = "word", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "there", start = 0.5, end = 0.8, type = "word", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "!", start = 0.8, end = 0.9, type = "punctuation", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "Hi", start = 1.0, end = 1.2, type = "word", speakerId = "speaker_2"),
-            ),
-            languageCode = "en-US",
-            speakerLabelPrefix = "Speaker",
-        )
-
+    fun resolveMicrosoftSpeechErrorMessage_mentionsRegionForMissingEndpoint() {
         assertEquals(
-            "Speaker A: Hello there!\nSpeaker B: Hi",
-            transcript,
+            "Microsoft Speech endpoint not found. Check the configured region.",
+            resolveMicrosoftSpeechErrorMessage(404, """{"error":{"message":"Resource not found"}}"""),
         )
-    }
-
-    @Test
-    fun formatElevenLabsSpeakerTranscript_preservesOpeningPunctuationSpacingWithinSpeakerSection() {
-        val transcript = formatElevenLabsSpeakerTranscript(
-            listOf(
-                ElevenLabsWord(text = "Hello", start = 0.0, end = 0.4, type = "word", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "(", start = 0.4, end = 0.5, type = "punctuation", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "world", start = 0.5, end = 0.8, type = "word", speakerId = "speaker_1"),
-                ElevenLabsWord(text = ")", start = 0.8, end = 0.9, type = "punctuation", speakerId = "speaker_1"),
-            ),
-            languageCode = "en-US",
-            speakerLabelPrefix = "Speaker",
-        )
-
-        assertEquals("Speaker A: Hello (world)", transcript)
-    }
-
-    @Test
-    fun formatElevenLabsSpeakerTranscript_preservesQuoteSpacingWithinSpeakerSection() {
-        val transcript = formatElevenLabsSpeakerTranscript(
-            listOf(
-                ElevenLabsWord(text = "He", start = 0.0, end = 0.2, type = "word", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "said", start = 0.2, end = 0.4, type = "word", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "\"", start = 0.4, end = 0.5, type = "punctuation", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "hello", start = 0.5, end = 0.7, type = "word", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "\"", start = 0.7, end = 0.8, type = "punctuation", speakerId = "speaker_1"),
-            ),
-            languageCode = "en-US",
-            speakerLabelPrefix = "Speaker",
-        )
-
-        assertEquals("Speaker A: He said \"hello\"", transcript)
-    }
-
-    @Test
-    fun formatElevenLabsSpeakerTranscript_doesNotMergeUnlabeledPrefixWithFirstNamedSpeaker() {
-        val transcript = formatElevenLabsSpeakerTranscript(
-            listOf(
-                ElevenLabsWord(text = "Intro", start = 0.0, end = 0.4, type = "word", speakerId = null),
-                ElevenLabsWord(text = "Hello", start = 0.5, end = 0.8, type = "word", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "Hi", start = 0.9, end = 1.2, type = "word", speakerId = "speaker_2"),
-            ),
-            languageCode = "en-US",
-            speakerLabelPrefix = "Speaker",
-        )
-
-        assertEquals(
-            "Speaker A: Intro\nSpeaker B: Hello\nSpeaker C: Hi",
-            transcript,
-        )
-    }
-
-    @Test
-    fun formatElevenLabsSpeakerTranscript_returnsBlankWithoutSpeakerIds() {
-        val transcript = formatElevenLabsSpeakerTranscript(
-            listOf(
-                ElevenLabsWord(text = "Hello", start = 0.0, end = 0.4, type = "word", speakerId = null),
-            ),
-        )
-
-        assertEquals("", transcript)
-    }
-
-    @Test
-    fun formatElevenLabsSpeakerTranscript_usesLocalizedSpeakerPrefix() {
-        val transcript = formatElevenLabsSpeakerTranscript(
-            listOf(
-                ElevenLabsWord(text = "Ciao", start = 0.0, end = 0.4, type = "word", speakerId = "speaker_1"),
-            ),
-            languageCode = "it-IT",
-            speakerLabelPrefix = "Voce",
-        )
-
-        assertEquals("Voce A: Ciao", transcript)
-    }
-
-    @Test
-    fun formatElevenLabsSpeakerTranscript_avoidsWordSpacingForJapanese() {
-        val transcript = formatElevenLabsSpeakerTranscript(
-            listOf(
-                ElevenLabsWord(text = "こんにちは", start = 0.0, end = 0.4, type = "word", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "世界", start = 0.5, end = 0.8, type = "word", speakerId = "speaker_1"),
-                ElevenLabsWord(text = "。", start = 0.8, end = 0.9, type = "punctuation", speakerId = "speaker_1"),
-            ),
-            languageCode = "ja-JP",
-            speakerLabelPrefix = "Speaker",
-        )
-
-        assertEquals("Speaker A: こんにちは世界。", transcript)
     }
 
     @Test

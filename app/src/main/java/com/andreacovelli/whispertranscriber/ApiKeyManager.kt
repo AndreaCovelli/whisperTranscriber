@@ -24,13 +24,17 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 
 enum class TranscriptionProvider(val modelName: String? = null) {
     ELEVEN_LABS,
+    MICROSOFT_MAI_TRANSCRIBE("mai-transcribe-1"),
     GEMINI_FLASH_LITE("gemini-flash-lite-latest"),
     GEMINI_FLASH("gemini-flash-latest"),
     GEMINI_PRO("gemini-pro-latest"),
     GEMINI_CUSTOM, // model name stored separately in DataStore
     ;
 
-    fun isGemini(): Boolean = this != ELEVEN_LABS
+    fun isGemini(): Boolean = this == GEMINI_FLASH_LITE ||
+        this == GEMINI_FLASH ||
+        this == GEMINI_PRO ||
+        this == GEMINI_CUSTOM
 }
 
 sealed class ApiKeyState {
@@ -48,16 +52,27 @@ data class TranscriptionQueueSettings(
 data class SummarizationSettings(val provider: TranscriptionProvider, val customModelName: String)
 
 internal fun decodeStoredTranscriptionProvider(name: String?): TranscriptionProvider = when (name) {
-    null -> TranscriptionProvider.ELEVEN_LABS
+    null, "ELEVEN_LABS" -> TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE
     "GEMINI_25_FLASH" -> TranscriptionProvider.GEMINI_FLASH
     else -> runCatching { TranscriptionProvider.valueOf(name) }
-        .getOrDefault(TranscriptionProvider.ELEVEN_LABS)
+        .getOrDefault(TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE)
 }
+
+internal fun decodeHistoricalTranscriptionProvider(name: String?): TranscriptionProvider = when (name) {
+    null -> TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE
+    "GEMINI_25_FLASH" -> TranscriptionProvider.GEMINI_FLASH
+    else -> runCatching { TranscriptionProvider.valueOf(name) }
+        .getOrDefault(TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE)
+}
+
+private fun normalizeSpeakerDiarization(provider: TranscriptionProvider, enabled: Boolean): Boolean =
+    provider.isGemini() && enabled
 
 @Singleton
 class ApiKeyManager @Inject constructor(@param:ApplicationContext private val context: Context) {
     companion object {
-        private val ELEVEN_LABS_API_KEY_ENC = stringPreferencesKey("eleven_labs_api_key_enc")
+        private val MICROSOFT_SPEECH_API_KEY_ENC = stringPreferencesKey("microsoft_speech_api_key_enc")
+        private val MICROSOFT_SPEECH_REGION = stringPreferencesKey("microsoft_speech_region")
         private val GEMINI_API_KEY_ENC = stringPreferencesKey("gemini_api_key_enc")
         private val GEMINI_TRANSCRIPTION_CUSTOM_MODEL_NAME = stringPreferencesKey("gemini_custom_model_name")
         private val GEMINI_SUMMARIZER_CUSTOM_MODEL_NAME = stringPreferencesKey("gemini_summarizer_custom_model_name")
@@ -91,14 +106,25 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
     }
 
     // Save (encrypt before persisting)
-    suspend fun saveElevenLabsApiKey(key: String) {
+    suspend fun saveMicrosoftSpeechApiKey(key: String) {
         val trimmed = key.trim()
         context.dataStore.edit { prefs ->
             if (trimmed.isEmpty()) {
-                prefs.remove(ELEVEN_LABS_API_KEY_ENC)
+                prefs.remove(MICROSOFT_SPEECH_API_KEY_ENC)
             } else {
                 val enc = KeystoreCrypto.encryptToBase64(trimmed.toByteArray(Charsets.UTF_8))
-                prefs[ELEVEN_LABS_API_KEY_ENC] = enc
+                prefs[MICROSOFT_SPEECH_API_KEY_ENC] = enc
+            }
+        }
+    }
+
+    suspend fun saveMicrosoftSpeechRegion(region: String) {
+        val normalized = region.trim().lowercase()
+        context.dataStore.edit { prefs ->
+            if (normalized.isEmpty()) {
+                prefs.remove(MICROSOFT_SPEECH_REGION)
+            } else {
+                prefs[MICROSOFT_SPEECH_REGION] = normalized
             }
         }
     }
@@ -142,9 +168,9 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
     }
 
     // Quick wipe actions
-    suspend fun forgetElevenLabsApiKey() {
+    suspend fun forgetMicrosoftSpeechApiKey() {
         context.dataStore.edit {
-            it.remove(ELEVEN_LABS_API_KEY_ENC)
+            it.remove(MICROSOFT_SPEECH_API_KEY_ENC)
         }
     }
 
@@ -171,8 +197,11 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
         }
     }
 
-    val elevenLabsApiKeyStateFlow: Flow<ApiKeyState> = getApiKeyStateFlow(ELEVEN_LABS_API_KEY_ENC)
+    val microsoftSpeechApiKeyStateFlow: Flow<ApiKeyState> = getApiKeyStateFlow(MICROSOFT_SPEECH_API_KEY_ENC)
     val geminiApiKeyStateFlow: Flow<ApiKeyState> = getApiKeyStateFlow(GEMINI_API_KEY_ENC)
+    val microsoftSpeechRegionFlow: Flow<String> = context.dataStore.data.map { p ->
+        p[MICROSOFT_SPEECH_REGION].orEmpty()
+    }.distinctUntilChanged()
 
     // Suspend functions to securely read keys on-demand
     private suspend fun getApiKey(key: Preferences.Key<String>): CharArray? {
@@ -195,7 +224,7 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
         }
     }
 
-    suspend fun getElevenLabsApiKey(): CharArray? = getApiKey(ELEVEN_LABS_API_KEY_ENC)
+    suspend fun getMicrosoftSpeechApiKey(): CharArray? = getApiKey(MICROSOFT_SPEECH_API_KEY_ENC)
     suspend fun getGeminiApiKey(): CharArray? = getApiKey(GEMINI_API_KEY_ENC)
 
     val summarizerCustomGeminiModelNameFlow: Flow<String?> = context.dataStore.data.map { p ->
@@ -218,10 +247,14 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
     }.distinctUntilChanged()
 
     val transcriptionQueueSettingsFlow: Flow<TranscriptionQueueSettings> = context.dataStore.data.map { prefs ->
+        val provider = decodeStoredTranscriptionProvider(prefs[SELECTED_PROVIDER])
         TranscriptionQueueSettings(
-            provider = decodeStoredTranscriptionProvider(prefs[SELECTED_PROVIDER]),
+            provider = provider,
             customModelName = prefs[GEMINI_TRANSCRIPTION_CUSTOM_MODEL_NAME].orEmpty(),
-            speakerDiarizationEnabled = prefs[SPEAKER_DIARIZATION_ENABLED] ?: false,
+            speakerDiarizationEnabled = normalizeSpeakerDiarization(
+                provider = provider,
+                enabled = prefs[SPEAKER_DIARIZATION_ENABLED] ?: false,
+            ),
         )
     }.distinctUntilChanged()
 
