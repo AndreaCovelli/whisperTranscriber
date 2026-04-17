@@ -377,7 +377,6 @@ class ValidationService @Inject constructor(
         private const val GEMINI_API_KEY_HEADER = "x-goog-api-key"
         private const val ERR_ENTER_GEMINI_KEY = "Enter your Gemini API key first"
         private const val MICROSOFT_SPEECH_KEY_HEADER = "Ocp-Apim-Subscription-Key"
-        private const val MICROSOFT_SPEECH_API_VERSION = "2025-10-15"
     }
 
     suspend fun validateGeminiKey(rawKey: String): KeyValidationResult = try {

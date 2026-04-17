@@ -102,7 +102,7 @@ When audio is shared into the app, it is first copied into app-managed storage s
 
 | Provider           | Accepted MIME types                                                             |
 |--------------------|---------------------------------------------------------------------------------|
-| **Microsoft MAI**  | `audio/wav`, `audio/x-wav`, `audio/wave`, `audio/mp3`, `audio/mpeg`, `audio/flac`, `audio/x-flac` |
+| **Microsoft MAI**  | `audio/wav`, `audio/x-wav`, `audio/wave`, `audio/mp3`, `audio/mpeg`, `audio/flac`, `audio/x-flac`, `audio/aac`, `audio/ogg`, `audio/opus`, `audio/webm` |
 | **Gemini**         | `audio/wav`, `audio/mp3`, `audio/aiff`, `audio/aac`, `audio/ogg`, `audio/flac` |
 | **Auto-converted** | Any format not in the list above is converted to 16 kHz mono WAV automatically |
 

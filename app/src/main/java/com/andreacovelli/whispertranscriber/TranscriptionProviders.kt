@@ -30,6 +30,7 @@ internal interface ProviderTranscriber {
 }
 
 private const val NO_TEXT_FOUND = "No text found."
+internal const val MICROSOFT_SPEECH_API_VERSION = "2025-10-15"
 internal const val MICROSOFT_SPEECH_MAX_UPLOAD_BYTES = 70_000_000L
 
 internal class MicrosoftSpeechTranscriber(
@@ -42,7 +43,6 @@ internal class MicrosoftSpeechTranscriber(
 ) : ProviderTranscriber {
     companion object {
         private const val MICROSOFT_SPEECH_MODEL = "mai-transcribe-1"
-        private const val MICROSOFT_SPEECH_API_VERSION = "2025-10-15"
         private const val MICROSOFT_SPEECH_KEY_HEADER = "Ocp-Apim-Subscription-Key"
     }
 

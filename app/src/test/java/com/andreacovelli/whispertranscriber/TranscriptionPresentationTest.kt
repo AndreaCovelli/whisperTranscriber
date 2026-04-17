@@ -355,10 +355,11 @@ class TranscriptionPresentationTest {
 
     @Test
     fun supportedMicrosoftSpeechMimeTypes_includeCommonMobileFormats() {
-        assertEquals(true, "audio/mp4" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
         assertEquals(true, "audio/aac" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
         assertEquals(true, "audio/ogg" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
         assertEquals(true, "audio/webm" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
+        assertEquals(false, "audio/mp4" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
+        assertEquals(false, "audio/m4a" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
     }
 
     @Test
