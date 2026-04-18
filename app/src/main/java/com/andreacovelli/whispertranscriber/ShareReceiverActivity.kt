@@ -53,6 +53,7 @@ class ShareReceiverActivity : ComponentActivity() {
 
         try {
             val queueSettings = settings.getTranscriptionQueueSettings()
+            val automaticSummarizationEnabled = settings.automaticSummarizationFlow.first()
             val summarizationSettings = settings.getSummarizationSettings()
             queueService.enqueueSharedAudio(
                 uris = sharedUris,
@@ -61,7 +62,7 @@ class ShareReceiverActivity : ComponentActivity() {
                 speakerDiarizationEnabled = queueSettings.speakerDiarizationEnabled,
                 expedite = true,
                 postTranscriptionWorkSpec = PostTranscriptionWorkSpec(
-                    summarizeAfterTranscription = true,
+                    summarizeAfterTranscription = automaticSummarizationEnabled,
                     notifyResult = true,
                     summarizationSettings = summarizationSettings,
                 ),

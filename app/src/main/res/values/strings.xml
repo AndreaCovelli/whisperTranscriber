@@ -12,7 +12,7 @@
     <string name="settings_automatic_summarization">Automatic Summarization</string>
     <string name="settings_automatic_summarization_body">Summarize completed transcriptions automatically</string>
     <string name="settings_background_share_summary_notifications">Stay in current app when sharing</string>
-    <string name="settings_background_share_summary_notifications_body">Queue shared audio in the background, summarize it automatically, and show the result as a notification instead of opening this app</string>
+    <string name="settings_background_share_summary_notifications_body">Queue shared audio in the background and show the result as a notification instead of opening this app. If Automatic Summarization is enabled, the notification shows the summary; otherwise it shows the transcription.</string>
     <string name="settings_app_info">App Info</string>
     <string name="settings_microsoft_speech_api_key_title">Microsoft MAI Transcribe Resource Key</string>
     <string name="settings_microsoft_speech_api_key_label">Enter the Speech resource key for your Foundry resource</string>
@@ -39,6 +39,7 @@
     <string name="main_queued_files">Queued %1$d file(s).</string>
     <string name="background_share_generic_audio_label">shared audio</string>
     <string name="background_share_queue_failed_body">Could not queue the shared audio.</string>
+    <string name="background_share_transcription_ready_title">Transcription ready: %1$s</string>
     <string name="background_share_summary_ready_title">Summary ready: %1$s</string>
     <string name="background_share_summary_failed_title">Could not process: %1$s</string>
     <string name="main_clear_completed">Clear completed</string>

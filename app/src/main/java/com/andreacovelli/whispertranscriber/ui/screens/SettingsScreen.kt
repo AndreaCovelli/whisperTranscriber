@@ -92,11 +92,11 @@ fun SettingsScreen(
             TranscriptionProviderCard(uiState = uiState, actions = actions)
             SpeakerDiarizationCard(uiState = uiState, actions = actions)
             SummarizerProviderCard(uiState = uiState, actions = actions)
-            AutomaticSummarizationCard(uiState = uiState, actions = actions)
             BackgroundShareSummaryNotificationsCard(
                 uiState = uiState,
                 onCheckedChange = onBackgroundShareSummaryNotificationsChange,
             )
+            AutomaticSummarizationCard(uiState = uiState, actions = actions)
 
             ApiKeyCard(
                 title = stringResource(R.string.settings_microsoft_speech_api_key_title),

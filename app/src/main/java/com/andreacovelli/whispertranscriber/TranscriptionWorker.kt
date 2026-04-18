@@ -249,6 +249,12 @@ class TranscriptionWorker @AssistedInject constructor(
                         )
                     }
                 }
+            } else if (postTranscriptionWorkSpec?.notifyResult == true) {
+                backgroundShareNotifier.showTranscription(
+                    jobId = jobId,
+                    displayName = displayName,
+                    transcript = result.text,
+                )
             }
         } finally {
             preparedInput.tempFileToClean?.let { file ->

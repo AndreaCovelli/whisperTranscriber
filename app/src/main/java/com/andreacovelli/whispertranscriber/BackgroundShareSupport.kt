@@ -80,16 +80,18 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
         PackageManager.PERMISSION_GRANTED
 
     fun showSummary(jobId: Int, displayName: String, summary: String) {
-        notify(
-            id = RESULT_NOTIFICATION_OFFSET + jobId,
-            builder = NotificationCompat.Builder(context, RESULT_CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle(context.getString(R.string.background_share_summary_ready_title, displayName))
-                .setContentText(summary)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(summary))
-                .setContentIntent(createOpenAppPendingIntent())
-                .setAutoCancel(true)
-                .setGroup(RESULT_GROUP_KEY),
+        showResult(
+            jobId = jobId,
+            title = context.getString(R.string.background_share_summary_ready_title, displayName),
+            text = summary,
+        )
+    }
+
+    fun showTranscription(jobId: Int, displayName: String, transcript: String) {
+        showResult(
+            jobId = jobId,
+            title = context.getString(R.string.background_share_transcription_ready_title, displayName),
+            text = transcript,
         )
     }
 
@@ -101,6 +103,20 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
                 .setContentTitle(context.getString(R.string.background_share_summary_failed_title, displayName))
                 .setContentText(message)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+                .setContentIntent(createOpenAppPendingIntent())
+                .setAutoCancel(true)
+                .setGroup(RESULT_GROUP_KEY),
+        )
+    }
+
+    private fun showResult(jobId: Int, title: String, text: String) {
+        notify(
+            id = RESULT_NOTIFICATION_OFFSET + jobId,
+            builder = NotificationCompat.Builder(context, RESULT_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
                 .setContentIntent(createOpenAppPendingIntent())
                 .setAutoCancel(true)
                 .setGroup(RESULT_GROUP_KEY),
