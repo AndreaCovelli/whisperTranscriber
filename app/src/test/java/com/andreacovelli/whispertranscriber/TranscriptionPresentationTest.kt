@@ -6,6 +6,8 @@ import com.andreacovelli.whispertranscriber.ui.components.providerFamilyLabelFor
 import com.andreacovelli.whispertranscriber.ui.components.shouldShowRetranscribeAction
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 import com.andreacovelli.whispertranscriber.ui.screens.buildBatchProgressState
+import java.io.IOException
+import java.net.UnknownHostException
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -396,6 +398,61 @@ class TranscriptionPresentationTest {
         assertEquals(
             "Invalid key for Microsoft MAI Transcribe. Use the Speech resource key from your Foundry resource, not a project API key.",
             resolveMicrosoftSpeechKeyValidationResults(listOf(404, 401, 405)).errorMessage,
+        )
+    }
+
+    @Test
+    fun resolveMicrosoftSpeechRegionValidationResults_acceptsUnauthorizedProbeAsValidRegion() {
+        assertEquals(
+            "westus",
+            resolveMicrosoftSpeechRegionValidationResults(
+                codes = listOf(404, 401, 404),
+                normalizedRegion = "westus",
+            ).normalizedRegion,
+        )
+    }
+
+    @Test
+    fun resolveMicrosoftSpeechRegionValidationResults_rejectsMissingRegionAcrossFallbacks() {
+        assertEquals(
+            "Region \"not-a-region\" not found",
+            resolveMicrosoftSpeechRegionValidationResults(
+                codes = listOf(404, 404, 404),
+                normalizedRegion = "not-a-region",
+            ).errorMessage,
+        )
+    }
+
+    @Test
+    fun resolveMicrosoftSpeechRegionValidationResults_rejectsInconclusiveServerFailure() {
+        assertEquals(
+            "Could not verify region: HTTP 503",
+            resolveMicrosoftSpeechRegionValidationResults(
+                codes = listOf(503, 500, 429),
+                normalizedRegion = "westus",
+            ).errorMessage,
+        )
+    }
+
+    @Test
+    fun resolveMicrosoftSpeechRegionIOExceptionMessage_rewritesUnknownHostError() {
+        assertEquals(
+            "Could not reach Azure Speech for region \"not-a-region\". Check that the region name is correct, for example eastus or westus.",
+            resolveMicrosoftSpeechRegionIOExceptionMessage(
+                normalizedRegion = "not-a-region",
+                error = UnknownHostException("Unable to resolve host \"not-a-region.api.cognitive.microsoft.com\""),
+            ),
+        )
+    }
+
+    @Test
+    fun resolveMicrosoftSpeechRegionIOExceptionMessage_preservesOtherIoMessages() {
+        assertEquals(
+            "timeout",
+            resolveMicrosoftSpeechRegionIOExceptionMessage(
+                normalizedRegion = "westus",
+                error = IOException("timeout"),
+            ),
         )
     }
 

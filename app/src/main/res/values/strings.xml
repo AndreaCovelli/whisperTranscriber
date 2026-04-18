@@ -20,6 +20,8 @@
     <string name="settings_microsoft_speech_region_title">Azure Speech Region</string>
     <string name="settings_microsoft_speech_region_body">Enter the Azure Speech region for your Foundry resource, for example eastus or westus. If validation fails, make sure you used the resource key and not a project API key.</string>
     <string name="settings_microsoft_speech_region_label">Region</string>
+    <string name="settings_microsoft_speech_region_validating">Validating region…</string>
+    <string name="settings_microsoft_speech_region_valid">Region \"%1$s\" is valid</string>
     <string name="settings_gemini_api_key_title">Gemini API Key</string>
     <string name="settings_gemini_api_key_label">Enter Gemini API key</string>
     <string name="settings_gemini_key_forgotten">Gemini key forgotten</string>
