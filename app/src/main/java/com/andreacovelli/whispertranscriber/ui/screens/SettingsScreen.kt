@@ -201,7 +201,7 @@ private fun MicrosoftSpeechRegionCard(uiState: UiState, actions: SettingsScreenA
                     .onFocusChanged { focusState ->
                         if (focusState.isFocused) {
                             fieldHadFocus = true
-                        } else if (fieldHadFocus) {
+                        } else if (fieldHadFocus && regionInput != uiState.microsoftSpeechRegion) {
                             actions.setMicrosoftSpeechRegion(regionInput)
                         }
                     },
