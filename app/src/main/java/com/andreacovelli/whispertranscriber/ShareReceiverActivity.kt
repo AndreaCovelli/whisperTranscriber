@@ -59,6 +59,7 @@ class ShareReceiverActivity : ComponentActivity() {
                 provider = queueSettings.provider,
                 customModelName = queueSettings.customModelName,
                 speakerDiarizationEnabled = queueSettings.speakerDiarizationEnabled,
+                expedite = true,
                 postTranscriptionWorkSpec = PostTranscriptionWorkSpec(
                     summarizeAfterTranscription = true,
                     notifyResult = true,

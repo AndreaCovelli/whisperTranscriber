@@ -10,6 +10,7 @@ import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
@@ -70,6 +71,7 @@ class TranscriptionQueueService @Inject constructor(
         provider: TranscriptionProvider,
         customModelName: String,
         speakerDiarizationEnabled: Boolean,
+        expedite: Boolean = false,
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec? = null,
     ): QueuedShareResult {
         val preparedAudio = prepareSharedAudio(uris)
@@ -78,6 +80,7 @@ class TranscriptionQueueService @Inject constructor(
             provider = provider,
             customModelName = customModelName,
             speakerDiarizationEnabled = speakerDiarizationEnabled,
+            expedite = expedite,
             postTranscriptionWorkSpec = postTranscriptionWorkSpec,
         )
     }
@@ -115,6 +118,7 @@ class TranscriptionQueueService @Inject constructor(
         provider: TranscriptionProvider,
         customModelName: String,
         speakerDiarizationEnabled: Boolean,
+        expedite: Boolean = false,
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec? = null,
     ): QueuedShareResult {
         if (preparedAudio.isEmpty()) {
@@ -144,7 +148,7 @@ class TranscriptionQueueService @Inject constructor(
                     ),
                 ).toInt()
                 pendingPreparedAudio.remove(prepared)
-                enqueueWorker(jobId, speakerLabelPrefix, postTranscriptionWorkSpec)
+                enqueueWorker(jobId, speakerLabelPrefix, postTranscriptionWorkSpec, expedite)
             }
         } catch (e: IOException) {
             deleteStagedFiles(pendingPreparedAudio)
@@ -274,8 +278,9 @@ class TranscriptionQueueService @Inject constructor(
         jobId: Int,
         speakerLabelPrefix: String,
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec?,
+        expedite: Boolean = false,
     ) {
-        val workRequest = OneTimeWorkRequestBuilder<TranscriptionWorker>()
+        val workRequestBuilder = OneTimeWorkRequestBuilder<TranscriptionWorker>()
             .setInputData(
                 postTranscriptionWorkSpec?.toInputData(jobId, speakerLabelPrefix) ?: workDataOf(
                     "jobId" to jobId,
@@ -289,7 +294,12 @@ class TranscriptionQueueService @Inject constructor(
             )
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .addTag(jobTag(jobId))
-            .build()
+
+        if (expedite) {
+            workRequestBuilder.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+        }
+
+        val workRequest = workRequestBuilder.build()
 
         workManager.beginUniqueWork(
             TRANSCRIPTION_QUEUE,
