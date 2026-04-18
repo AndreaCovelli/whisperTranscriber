@@ -7,13 +7,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -42,6 +46,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.andreacovelli.whispertranscriber.BuildConfig
 import com.andreacovelli.whispertranscriber.MainViewModel
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.RegionValidationState
 import com.andreacovelli.whispertranscriber.SettingsScreenActions
 import com.andreacovelli.whispertranscriber.UiState
 import com.andreacovelli.whispertranscriber.ui.components.ApiKeyCard
@@ -165,6 +170,7 @@ private fun SpeakerDiarizationCard(uiState: UiState, actions: SettingsScreenActi
 @Composable
 private fun MicrosoftSpeechRegionCard(uiState: UiState, actions: SettingsScreenActions) {
     var regionInput by remember(uiState.microsoftSpeechRegion) { mutableStateOf(uiState.microsoftSpeechRegion) }
+    var fieldHadFocus by remember(uiState.microsoftSpeechRegion) { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
@@ -183,21 +189,70 @@ private fun MicrosoftSpeechRegionCard(uiState: UiState, actions: SettingsScreenA
             )
             OutlinedTextField(
                 value = regionInput,
-                onValueChange = { regionInput = it },
+                onValueChange = {
+                    regionInput = it
+                    actions.resetMicrosoftSpeechRegionValidation()
+                },
                 label = {
                     Text(stringResource(R.string.settings_microsoft_speech_region_label))
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .onFocusChanged { focusState ->
-                        if (!focusState.isFocused && regionInput != uiState.microsoftSpeechRegion) {
+                        if (focusState.isFocused) {
+                            fieldHadFocus = true
+                        } else if (fieldHadFocus) {
                             actions.setMicrosoftSpeechRegion(regionInput)
                         }
                     },
                 singleLine = true,
+                isError = uiState.microsoftSpeechRegionValidation is RegionValidationState.Error,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
             )
+            when (val validation = uiState.microsoftSpeechRegionValidation) {
+                is RegionValidationState.Validating -> {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.height(14.dp).width(14.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        Text(
+                            stringResource(R.string.settings_microsoft_speech_region_validating),
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                }
+                is RegionValidationState.Valid -> {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = null,
+                            modifier = Modifier.height(14.dp).width(14.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            stringResource(R.string.settings_microsoft_speech_region_valid, validation.region),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                is RegionValidationState.Error -> {
+                    Text(
+                        validation.message,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                else -> Unit
+            }
         }
     }
 }

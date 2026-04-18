@@ -21,6 +21,7 @@ import com.google.genai.types.Part
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.IOException
+import java.net.UnknownHostException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -357,6 +358,10 @@ data class KeyValidationResult(val errorMessage: String? = null) {
     val isValid: Boolean get() = errorMessage == null
 }
 
+data class RegionValidationResult(val normalizedRegion: String? = null, val errorMessage: String? = null) {
+    val isValid: Boolean get() = errorMessage == null
+}
+
 data class CustomModelValidationResult(val displayName: String? = null, val errorMessage: String? = null) {
     val isValid: Boolean get() = errorMessage == null
 }
@@ -380,6 +385,31 @@ internal fun resolveMicrosoftSpeechKeyValidationResults(codes: List<Int>): KeyVa
     val reportedCode = codes.firstOrNull { it == 404 || it == 405 || it == 400 || it == 429 || it in 500..599 }
         ?: codes.first()
     return KeyValidationResult("Validation failed: HTTP $reportedCode")
+}
+
+internal fun resolveMicrosoftSpeechRegionValidationResults(
+    codes: List<Int>,
+    normalizedRegion: String,
+): RegionValidationResult {
+    if (codes.isEmpty()) return RegionValidationResult(errorMessage = "Validation failed")
+    if (codes.any { it == 200 || it == 400 || it == 401 || it == 403 || it == 405 }) {
+        return RegionValidationResult(normalizedRegion = normalizedRegion)
+    }
+    if (codes.any { it == 404 }) {
+        return RegionValidationResult(errorMessage = "Region \"$normalizedRegion\" not found")
+    }
+
+    val reportedCode = codes.firstOrNull { it == 429 || it in 500..599 } ?: codes.first()
+    return RegionValidationResult(errorMessage = "Could not verify region: HTTP $reportedCode")
+}
+
+internal fun resolveMicrosoftSpeechRegionIOExceptionMessage(normalizedRegion: String, error: IOException): String {
+    val message = error.message.orEmpty()
+    return if (error is UnknownHostException || message.contains("Unable to resolve host", ignoreCase = true)) {
+        "Could not reach Azure Speech for region \"$normalizedRegion\". Check that the region name is correct, for example eastus or westus."
+    } else {
+        error.message ?: "Validation failed"
+    }
 }
 
 @Singleton
@@ -478,32 +508,60 @@ class ValidationService @Inject constructor(
         }
 
         return try {
-            val validationUrls = listOf(
-                "https://$normalizedRegion.api.cognitive.microsoft.com/speechtotext/transcriptions/locales" +
-                    "?api-version=$MICROSOFT_SPEECH_LOCALES_API_VERSION",
-                "https://$normalizedRegion.api.cognitive.microsoft.com/speechtotext/transcriptions/locales" +
-                    "?api-version=$MICROSOFT_SPEECH_LOCALES_FALLBACK_API_VERSION",
-                "https://$normalizedRegion.api.cognitive.microsoft.com/speechtotext/v3.2-preview.2/transcriptions/locales",
-            )
-            val codes = withContext(ioDispatcher) {
-                coroutineScope {
-                    validationUrls.map { url ->
-                        async {
-                            val request = Request.Builder()
-                                .url(url)
-                                .header(MICROSOFT_SPEECH_KEY_HEADER, rawKey)
-                                .get()
-                                .build()
-                            okHttpClient.newCall(request).execute().use { response -> response.code }
-                        }
-                    }.awaitAll()
-                }
-            }
+            val codes = probeMicrosoftSpeechRegion(normalizedRegion, rawKey)
             resolveMicrosoftSpeechKeyValidationResults(codes)
         } catch (e: IOException) {
-            KeyValidationResult(e.message ?: "Validation failed")
+            KeyValidationResult(resolveMicrosoftSpeechRegionIOExceptionMessage(normalizedRegion, e))
         }
     }
+
+    suspend fun validateMicrosoftSpeechRegion(region: String): RegionValidationResult {
+        val normalizedRegion = region.trim().lowercase()
+        if (normalizedRegion.isBlank()) {
+            return RegionValidationResult(errorMessage = "Enter an Azure Speech region")
+        }
+
+        val keyChars = settings.getMicrosoftSpeechApiKey()
+        val savedKey = try {
+            keyChars
+                ?.takeIf { it.isNotEmpty() }
+                ?.concatToString()
+        } finally {
+            keyChars?.fill('\u0000')
+        }
+
+        return try {
+            val codes = probeMicrosoftSpeechRegion(normalizedRegion, savedKey)
+            resolveMicrosoftSpeechRegionValidationResults(codes, normalizedRegion)
+        } catch (e: IOException) {
+            RegionValidationResult(errorMessage = resolveMicrosoftSpeechRegionIOExceptionMessage(normalizedRegion, e))
+        }
+    }
+
+    private fun buildMicrosoftSpeechValidationUrls(normalizedRegion: String): List<String> = listOf(
+        "https://$normalizedRegion.api.cognitive.microsoft.com/speechtotext/transcriptions/locales" +
+            "?api-version=$MICROSOFT_SPEECH_LOCALES_API_VERSION",
+        "https://$normalizedRegion.api.cognitive.microsoft.com/speechtotext/transcriptions/locales" +
+            "?api-version=$MICROSOFT_SPEECH_LOCALES_FALLBACK_API_VERSION",
+        "https://$normalizedRegion.api.cognitive.microsoft.com/speechtotext/v3.2-preview.2/transcriptions/locales",
+    )
+
+    private suspend fun probeMicrosoftSpeechRegion(normalizedRegion: String, rawKey: String? = null): List<Int> =
+        withContext(ioDispatcher) {
+            coroutineScope {
+                buildMicrosoftSpeechValidationUrls(normalizedRegion).map { url ->
+                    async {
+                        val requestBuilder = Request.Builder()
+                            .url(url)
+                            .get()
+                        if (!rawKey.isNullOrBlank()) {
+                            requestBuilder.header(MICROSOFT_SPEECH_KEY_HEADER, rawKey)
+                        }
+                        okHttpClient.newCall(requestBuilder.build()).execute().use { response -> response.code }
+                    }
+                }.awaitAll()
+            }
+        }
 }
 
 data class SummarizationResult(val statusMessage: String, val errorMessage: String? = null)

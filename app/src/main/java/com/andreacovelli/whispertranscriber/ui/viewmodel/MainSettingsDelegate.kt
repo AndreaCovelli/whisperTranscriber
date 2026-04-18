@@ -3,6 +3,7 @@ package com.andreacovelli.whispertranscriber.ui.viewmodel
 import com.andreacovelli.whispertranscriber.ApiKeyManager
 import com.andreacovelli.whispertranscriber.CustomModelValidation
 import com.andreacovelli.whispertranscriber.KeyValidationState
+import com.andreacovelli.whispertranscriber.RegionValidationState
 import com.andreacovelli.whispertranscriber.SettingsScreenActions
 import com.andreacovelli.whispertranscriber.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.UiState
@@ -24,6 +25,7 @@ internal class MainSettingsDelegate(
 ) {
     private var microsoftValidationJob: Job? = null
     private var geminiValidationJob: Job? = null
+    private var microsoftRegionValidationJob: Job? = null
     private var transcriptionModelValidationJob: Job? = null
     private var summarizerModelValidationJob: Job? = null
 
@@ -34,10 +36,11 @@ internal class MainSettingsDelegate(
         setBackgroundShareSummaryNotificationsEnabled = ::updateBackgroundShareSummaryNotificationsEnabled,
         setSpeakerDiarization = ::updateSpeakerDiarization,
         setMicrosoftSpeechRegion = ::updateMicrosoftSpeechRegion,
+        resetMicrosoftSpeechRegionValidation = ::resetMicrosoftSpeechRegionValidation,
         loadMicrosoftSpeechKey = { loadKeyForDisplay(settings::getMicrosoftSpeechApiKey) },
         loadGeminiKey = { loadKeyForDisplay(settings::getGeminiApiKey) },
-        saveMicrosoftSpeechKey = ::setMicrosoftSpeechKey,
-        saveGeminiKey = ::setGeminiKey,
+        saveMicrosoftSpeechKey = ::validateAndSaveMicrosoftSpeechKey,
+        saveGeminiKey = ::validateAndSaveGeminiKey,
         validateTranscriptionModel = { validateCustomGeminiModel(it, isSummarizer = false) },
         validateSummarizerModel = { validateCustomGeminiModel(it, isSummarizer = true) },
         resetTranscriptionModelValidation = ::resetTranscriptionModelValidation,
@@ -47,14 +50,6 @@ internal class MainSettingsDelegate(
         forgetMicrosoftSpeechKey = ::forgetMicrosoftSpeechKey,
         forgetGeminiKey = ::forgetGeminiKey,
     )
-
-    private fun setMicrosoftSpeechKey(key: String) {
-        validateAndSaveMicrosoftSpeechKey(key)
-    }
-
-    private fun setGeminiKey(key: String) {
-        validateAndSaveGeminiKey(key)
-    }
 
     private fun validateAndSaveGeminiKey(key: String) {
         val trimmed = key.trim()
@@ -146,8 +141,34 @@ internal class MainSettingsDelegate(
 
     private fun updateMicrosoftSpeechRegion(region: String) {
         updateApiKeyValidationState(isGemini = false, validation = KeyValidationState.Idle)
-        scope.launch {
-            settings.saveMicrosoftSpeechRegion(region)
+        val trimmed = region.trim()
+        microsoftRegionValidationJob?.cancel()
+
+        if (trimmed.isBlank()) {
+            updateRegionValidationState(RegionValidationState.Idle)
+            scope.launch {
+                settings.saveMicrosoftSpeechRegion("")
+            }
+            return
+        }
+
+        updateRegionValidationState(RegionValidationState.Validating)
+        microsoftRegionValidationJob = scope.launch {
+            val result = validationService.validateMicrosoftSpeechRegion(trimmed)
+            if (result.isValid) {
+                val normalizedRegion = result.normalizedRegion.orEmpty()
+                settings.saveMicrosoftSpeechRegion(normalizedRegion)
+                uiState.update {
+                    it.copy(
+                        microsoftSpeechRegion = normalizedRegion,
+                        microsoftSpeechRegionValidation = RegionValidationState.Valid(normalizedRegion),
+                    )
+                }
+            } else {
+                updateRegionValidationState(
+                    RegionValidationState.Error(result.errorMessage ?: "Validation failed"),
+                )
+            }
         }
     }
 
@@ -161,6 +182,10 @@ internal class MainSettingsDelegate(
 
     private fun resetMicrosoftSpeechKeyValidation() {
         updateApiKeyValidationState(isGemini = false, validation = KeyValidationState.Idle)
+    }
+
+    private fun resetMicrosoftSpeechRegionValidation() {
+        updateRegionValidationState(RegionValidationState.Idle)
     }
 
     private fun resetGeminiKeyValidation() {
@@ -238,6 +263,10 @@ internal class MainSettingsDelegate(
                 it.copy(microsoftSpeechKeyValidation = validation)
             }
         }
+    }
+
+    private fun updateRegionValidationState(validation: RegionValidationState) {
+        uiState.update { it.copy(microsoftSpeechRegionValidation = validation) }
     }
 
     private fun updateModelValidationState(isSummarizer: Boolean, validation: CustomModelValidation) {

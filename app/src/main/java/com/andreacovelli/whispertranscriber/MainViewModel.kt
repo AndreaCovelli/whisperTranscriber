@@ -38,6 +38,13 @@ sealed class KeyValidationState {
     data class Error(val message: String) : KeyValidationState()
 }
 
+sealed class RegionValidationState {
+    object Idle : RegionValidationState()
+    object Validating : RegionValidationState()
+    data class Valid(val region: String) : RegionValidationState()
+    data class Error(val message: String) : RegionValidationState()
+}
+
 data class UiState(
     val status: String = "",
     val provider: TranscriptionProvider = TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
@@ -45,6 +52,7 @@ data class UiState(
     val microsoftSpeechApiKeyState: ApiKeyState = ApiKeyState.Missing,
     val microsoftSpeechKeyValidation: KeyValidationState = KeyValidationState.Idle,
     val microsoftSpeechRegion: String = "",
+    val microsoftSpeechRegionValidation: RegionValidationState = RegionValidationState.Idle,
     val geminiApiKeyState: ApiKeyState = ApiKeyState.Missing,
     val geminiKeyValidation: KeyValidationState = KeyValidationState.Idle,
     val transcriptionCustomGeminiModelName: String = "",

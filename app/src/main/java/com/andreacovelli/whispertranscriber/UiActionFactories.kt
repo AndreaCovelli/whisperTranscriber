@@ -18,6 +18,7 @@ data class SettingsScreenActions(
     val setBackgroundShareSummaryNotificationsEnabled: (Boolean) -> Unit,
     val setSpeakerDiarization: (Boolean) -> Unit,
     val setMicrosoftSpeechRegion: (String) -> Unit,
+    val resetMicrosoftSpeechRegionValidation: () -> Unit,
     val loadMicrosoftSpeechKey: suspend () -> String?,
     val loadGeminiKey: suspend () -> String?,
     val saveMicrosoftSpeechKey: (String) -> Unit,
