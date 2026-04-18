@@ -55,6 +55,7 @@ class TranscriptionQueueService @Inject constructor(
     private val settings: ApiKeyManager,
     private val repository: TranscriptionRepository,
     private val workManager: WorkManager,
+    private val backgroundShareNotifier: BackgroundShareNotifier,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
     companion object {
@@ -177,6 +178,8 @@ class TranscriptionQueueService @Inject constructor(
         val job = repository.getJob(jobId)
         repository.updateError(jobId, "Cancelled", false, "Cancelled")
         workManager.cancelAllWorkByTag(jobTag(jobId))
+        backgroundShareNotifier.cancelRetryScheduled(jobId)
+        backgroundShareNotifier.cancelBackgroundProcessing(jobId)
         if (job?.isRunning == true) {
             restartQueuedJobs()
         }
@@ -191,6 +194,8 @@ class TranscriptionQueueService @Inject constructor(
         if (job?.isRunning == true || job?.status == "Queued") {
             workManager.cancelAllWorkByTag(jobTag(jobId))
         }
+        backgroundShareNotifier.cancelRetryScheduled(jobId)
+        backgroundShareNotifier.cancelBackgroundProcessing(jobId)
         deleteStagedFile(repository.deleteJob(jobId))
         if (job?.isRunning == true) {
             restartQueuedJobs()
@@ -204,6 +209,8 @@ class TranscriptionQueueService @Inject constructor(
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec? = null,
     ) {
         workManager.cancelAllWorkByTag(jobTag(jobId))
+        backgroundShareNotifier.cancelRetryScheduled(jobId)
+        backgroundShareNotifier.cancelBackgroundProcessing(jobId)
         val requestedModel = resolveRequestedModel(provider, customModelName)
         if (repository.retryJob(jobId, provider.name, requestedModel)) {
             enqueueWorker(

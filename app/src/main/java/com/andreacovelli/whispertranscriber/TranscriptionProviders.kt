@@ -2,6 +2,8 @@ package com.andreacovelli.whispertranscriber
 
 import com.andreacovelli.whispertranscriber.security.useAsString
 import com.andreacovelli.whispertranscriber.security.useGenAiClient
+import com.google.genai.errors.ApiException
+import com.google.genai.errors.GenAiIOException
 import com.google.genai.types.Content
 import com.google.genai.types.File as GenAiFile
 import com.google.genai.types.GenerateContentConfig
@@ -154,6 +156,7 @@ internal class GeminiTranscriber(
     companion object {
         private const val TYPE_OBJECT = "OBJECT"
         private const val TYPE_STRING = "STRING"
+        private const val GEMINI_TRANSCRIPTION_TIMEOUT_MILLIS = 600_000
     }
 
     override fun transcribe(): Flow<TranscriptionResult> = flow {
@@ -161,7 +164,7 @@ internal class GeminiTranscriber(
 
         try {
             emit(TranscriptionResult.Loading("Uploading audio ($mimeType) via File API..."))
-            apiKey.useGenAiClient { client ->
+            apiKey.useGenAiClient(timeoutMillis = GEMINI_TRANSCRIPTION_TIMEOUT_MILLIS) { client ->
                 uploadedFile = withContext(ioDispatcher) {
                     val uploadConfig = UploadFileConfig.builder().mimeType(mimeType).build()
                     client.files.upload(audioFile.absolutePath, uploadConfig)
@@ -206,6 +209,16 @@ internal class GeminiTranscriber(
             throw e
         } catch (e: IOException) {
             emit(TranscriptionResult.Error(TransientWorkException(resolveGeminiErrorMessage(e), e)))
+        } catch (e: GenAiIOException) {
+            emit(TranscriptionResult.Error(TransientWorkException(resolveGeminiErrorMessage(e), e)))
+        } catch (e: ApiException) {
+            val message = resolveGeminiErrorMessage(e, e.code())
+            val error = if (shouldRetryGeminiApiError(e)) {
+                TransientWorkException(message, e)
+            } else {
+                IllegalStateException(message, e)
+            }
+            emit(TranscriptionResult.Error(error))
         } catch (e: IllegalStateException) {
             emit(TranscriptionResult.Error(IllegalStateException(resolveGeminiErrorMessage(e), e)))
         } catch (e: IllegalArgumentException) {
@@ -267,7 +280,13 @@ internal class GeminiTranscriber(
     private fun resolveGeminiErrorMessage(
         error: Throwable,
         httpCode: Int? = extractHttpStatusFromMessage(error),
-    ): String = httpCode?.let { friendlyHttpError(it, "Gemini") }
+    ): String = httpCode?.let { code ->
+        if (code == 429 && isQuotaExhaustedMessage(error.message)) {
+            "Quota exhausted for Gemini. Check your billing or wait for quota reset."
+        } else {
+            friendlyHttpError(code, "Gemini")
+        }
+    }
         ?: "Gemini error: ${error.message ?: error::class.java.simpleName}"
 }
 
@@ -318,6 +337,28 @@ internal fun extractMicrosoftSpeechServiceMessage(bodyText: String): String? = r
 }.getOrNull()
 
 internal fun shouldRetryHttp(code: Int): Boolean = code == 429 || code in 500..599
+
+internal fun shouldRetryGeminiApiError(error: ApiException): Boolean {
+    if (error.code() == 429) {
+        return !isQuotaExhaustedMessage(error.message())
+    }
+    return shouldRetryHttp(error.code())
+}
+
+internal fun isQuotaExhaustedMessage(message: String?): Boolean {
+    val normalized = message.orEmpty().lowercase()
+    if (normalized.isBlank()) return false
+
+    return listOf(
+        "quota",
+        "resource exhausted",
+        "resource_exhausted",
+        "quota exceeded",
+        "exceeded your current quota",
+        "billing",
+        "daily limit",
+    ).any(normalized::contains)
+}
 
 internal fun extractHttpStatusFromMessage(error: Throwable): Int? =
     HTTP_STATUS_PATTERNS.firstNotNullOfOrNull { pattern ->

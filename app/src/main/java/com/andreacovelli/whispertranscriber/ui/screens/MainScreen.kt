@@ -129,7 +129,7 @@ private fun MainScreenContent(
         if (uiState.jobs.isEmpty()) {
             item { EmptyJobsState() }
         } else {
-            if (uiState.jobs.any { !it.isRunning && it.status != "Queued" }) {
+            if (uiState.jobs.any { !it.isRunning && !it.isQueuedLike() }) {
                 item { ClearCompletedRow(onClick = onClearCompleted) }
             }
             items(uiState.jobs, key = { it.id }) { job ->
@@ -145,6 +145,8 @@ private fun MainScreenContent(
         }
     }
 }
+
+private fun TranscriptionJobState.isQueuedLike(): Boolean = status == "Queued" || status == "Retry scheduled"
 
 @Composable
 private fun MainJobCard(

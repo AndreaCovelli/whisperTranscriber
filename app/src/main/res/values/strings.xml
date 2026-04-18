@@ -42,6 +42,10 @@
     <string name="background_share_transcription_ready_title">Transcription ready: %1$s</string>
     <string name="background_share_summary_ready_title">Summary ready: %1$s</string>
     <string name="background_share_summary_failed_title">Could not process: %1$s</string>
+    <string name="transcription_background_notification_title">Processing in background: %1$s</string>
+    <string name="transcription_retry_status">Retry scheduled</string>
+    <string name="transcription_retry_notification_title">Retry scheduled: %1$s</string>
+    <string name="transcription_retry_notification_body">Temporary issue. Automatic retry scheduled.\n\n%1$s</string>
     <string name="main_clear_completed">Clear completed</string>
     <string name="main_copied_transcript">Copied transcript</string>
     <string name="main_copied_summary">Copied summary</string>

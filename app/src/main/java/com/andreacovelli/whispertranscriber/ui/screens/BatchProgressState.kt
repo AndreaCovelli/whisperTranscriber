@@ -8,7 +8,7 @@ internal fun buildBatchProgressState(jobs: List<TranscriptionJobState>): BatchPr
     val targetJob = jobs
         .asSequence()
         .filter { it.batchId.isNotBlank() }
-        .filter { it.isRunning || it.status == "Queued" }
+        .filter { it.isRunning || it.isQueuedLike() }
         .minWithOrNull(compareBy({ !it.isRunning }, { it.timestamp }, { it.id }))
         ?: return null
 
@@ -17,7 +17,7 @@ internal fun buildBatchProgressState(jobs: List<TranscriptionJobState>): BatchPr
     jobs.forEach { job ->
         if (job.batchId != targetJob.batchId) return@forEach
         totalFiles += 1
-        if (!job.isRunning && job.status != "Queued") {
+        if (!job.isRunning && !job.isQueuedLike()) {
             completedFiles += 1
         }
     }
@@ -35,3 +35,5 @@ internal fun buildBatchProgressState(jobs: List<TranscriptionJobState>): BatchPr
         completedFiles = completedFiles,
     )
 }
+
+private fun TranscriptionJobState.isQueuedLike(): Boolean = status == "Queued" || status == "Retry scheduled"
