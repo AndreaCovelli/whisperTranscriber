@@ -21,7 +21,7 @@
     <string name="settings_microsoft_speech_region_body">Enter the Azure Speech region for your Foundry resource, for example eastus or westus. If validation fails, make sure you used the resource key and not a project API key.</string>
     <string name="settings_microsoft_speech_region_label">Region</string>
     <string name="settings_microsoft_speech_region_validating">Validating region…</string>
-    <string name="settings_microsoft_speech_region_valid">Region \"%1$s\" is valid</string>
+    <string name="settings_microsoft_speech_region_valid">Region "%1$s" is valid</string>
     <string name="settings_gemini_api_key_title">Gemini API Key</string>
     <string name="settings_gemini_api_key_label">Enter Gemini API key</string>
     <string name="settings_gemini_key_forgotten">Gemini key forgotten</string>
@@ -42,6 +42,8 @@
     <string name="background_share_transcription_ready_title">Transcription ready: %1$s</string>
     <string name="background_share_summary_ready_title">Summary ready: %1$s</string>
     <string name="background_share_summary_failed_title">Could not process: %1$s</string>
+    <string name="background_share_preparing_notification_body">Preparing shared audio…</string>
+    <string name="background_share_waiting_to_start_notification_body">Queued. Waiting to start…</string>
     <string name="transcription_background_notification_title">Processing in background: %1$s</string>
     <string name="transcription_retry_status">Retry scheduled</string>
     <string name="transcription_retry_notification_title">Retry scheduled: %1$s</string>

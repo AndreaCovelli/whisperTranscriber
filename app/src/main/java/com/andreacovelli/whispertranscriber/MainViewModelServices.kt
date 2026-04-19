@@ -148,6 +148,11 @@ class TranscriptionQueueService @Inject constructor(
                         isRunning = false,
                     ),
                 ).toInt()
+                backgroundShareNotifier.showBackgroundProcessing(
+                    jobId = jobId,
+                    displayName = prepared.displayName,
+                    message = context.getString(R.string.background_share_waiting_to_start_notification_body),
+                )
                 pendingPreparedAudio.remove(prepared)
                 enqueueWorker(jobId, speakerLabelPrefix, postTranscriptionWorkSpec, expedite)
             }

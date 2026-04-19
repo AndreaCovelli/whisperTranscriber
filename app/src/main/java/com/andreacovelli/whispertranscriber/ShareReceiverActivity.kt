@@ -51,6 +51,7 @@ class ShareReceiverActivity : ComponentActivity() {
             return
         }
 
+        backgroundShareNotifier.showPreparingShare()
         try {
             val queueSettings = settings.getTranscriptionQueueSettings()
             val automaticSummarizationEnabled = settings.automaticSummarizationFlow.first()
@@ -77,6 +78,8 @@ class ShareReceiverActivity : ComponentActivity() {
             showBackgroundShareQueueFailure(e)
         } catch (e: SQLException) {
             showBackgroundShareQueueFailure(e)
+        } finally {
+            backgroundShareNotifier.cancelPreparingShare()
         }
     }
 

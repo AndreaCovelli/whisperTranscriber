@@ -69,6 +69,7 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
         private const val GENERIC_FAILURE_NOTIFICATION_OFFSET = 40_000
         private const val RETRY_NOTIFICATION_OFFSET = 60_000
         private const val PROCESSING_NOTIFICATION_OFFSET = 80_000
+        private const val PREPARING_SHARE_NOTIFICATION_ID = 100_000
     }
 
     private val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -141,12 +142,33 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
         )
     }
 
+    fun showPreparingShare() {
+        val displayName = context.getString(R.string.background_share_generic_audio_label)
+        val message = context.getString(R.string.background_share_preparing_notification_body)
+        notify(
+            id = PREPARING_SHARE_NOTIFICATION_ID,
+            builder = NotificationCompat.Builder(context, TranscriptionWorker.CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(context.getString(R.string.transcription_background_notification_title, displayName))
+                .setContentText(message)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+                .setContentIntent(createOpenAppPendingIntent())
+                .setOnlyAlertOnce(true)
+                .setOngoing(true)
+                .setAutoCancel(false),
+        )
+    }
+
     fun cancelRetryScheduled(jobId: Int) {
         NotificationManagerCompat.from(context).cancel(retryNotificationId(jobId))
     }
 
     fun cancelBackgroundProcessing(jobId: Int) {
         NotificationManagerCompat.from(context).cancel(processingNotificationId(jobId))
+    }
+
+    fun cancelPreparingShare() {
+        NotificationManagerCompat.from(context).cancel(PREPARING_SHARE_NOTIFICATION_ID)
     }
 
     private fun showResult(jobId: Int, title: String, text: String) {
