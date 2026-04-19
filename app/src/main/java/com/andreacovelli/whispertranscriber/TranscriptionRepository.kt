@@ -85,6 +85,10 @@ class TranscriptionRepository @Inject constructor(
         jobDao.updateError(id, error, isRunning, status)
     }
 
+    suspend fun markRetryScheduled(id: Int, status: String) {
+        jobDao.markRetryScheduled(id, status)
+    }
+
     suspend fun updateStatus(id: Int, status: String) {
         jobDao.updateStatus(id, status)
     }

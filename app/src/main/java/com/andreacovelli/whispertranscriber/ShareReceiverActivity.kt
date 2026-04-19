@@ -51,16 +51,19 @@ class ShareReceiverActivity : ComponentActivity() {
             return
         }
 
+        backgroundShareNotifier.showPreparingShare()
         try {
             val queueSettings = settings.getTranscriptionQueueSettings()
+            val automaticSummarizationEnabled = settings.automaticSummarizationFlow.first()
             val summarizationSettings = settings.getSummarizationSettings()
             queueService.enqueueSharedAudio(
                 uris = sharedUris,
                 provider = queueSettings.provider,
                 customModelName = queueSettings.customModelName,
                 speakerDiarizationEnabled = queueSettings.speakerDiarizationEnabled,
+                expedite = true,
                 postTranscriptionWorkSpec = PostTranscriptionWorkSpec(
-                    summarizeAfterTranscription = true,
+                    summarizeAfterTranscription = automaticSummarizationEnabled,
                     notifyResult = true,
                     summarizationSettings = summarizationSettings,
                 ),
@@ -75,6 +78,8 @@ class ShareReceiverActivity : ComponentActivity() {
             showBackgroundShareQueueFailure(e)
         } catch (e: SQLException) {
             showBackgroundShareQueueFailure(e)
+        } finally {
+            backgroundShareNotifier.cancelPreparingShare()
         }
     }
 

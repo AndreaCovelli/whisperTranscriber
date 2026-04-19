@@ -67,12 +67,16 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
         private const val RESULT_GROUP_KEY = "background_share_result_group"
         private const val RESULT_NOTIFICATION_OFFSET = 20_000
         private const val GENERIC_FAILURE_NOTIFICATION_OFFSET = 40_000
+        private const val RETRY_NOTIFICATION_OFFSET = 60_000
+        private const val PROCESSING_NOTIFICATION_OFFSET = 80_000
+        private const val PREPARING_SHARE_NOTIFICATION_ID = 100_000
     }
 
     private val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
     init {
         ensureResultChannel()
+        ensureTranscriptionChannel()
     }
 
     fun canPostNotifications(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
@@ -80,16 +84,18 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
         PackageManager.PERMISSION_GRANTED
 
     fun showSummary(jobId: Int, displayName: String, summary: String) {
-        notify(
-            id = RESULT_NOTIFICATION_OFFSET + jobId,
-            builder = NotificationCompat.Builder(context, RESULT_CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle(context.getString(R.string.background_share_summary_ready_title, displayName))
-                .setContentText(summary)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(summary))
-                .setContentIntent(createOpenAppPendingIntent())
-                .setAutoCancel(true)
-                .setGroup(RESULT_GROUP_KEY),
+        showResult(
+            jobId = jobId,
+            title = context.getString(R.string.background_share_summary_ready_title, displayName),
+            text = summary,
+        )
+    }
+
+    fun showTranscription(jobId: Int, displayName: String, transcript: String) {
+        showResult(
+            jobId = jobId,
+            title = context.getString(R.string.background_share_transcription_ready_title, displayName),
+            text = transcript,
         )
     }
 
@@ -101,6 +107,78 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
                 .setContentTitle(context.getString(R.string.background_share_summary_failed_title, displayName))
                 .setContentText(message)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+                .setContentIntent(createOpenAppPendingIntent())
+                .setAutoCancel(true)
+                .setGroup(RESULT_GROUP_KEY),
+        )
+    }
+
+    fun showRetryScheduled(jobId: Int, displayName: String, message: String) {
+        notify(
+            id = retryNotificationId(jobId),
+            builder = NotificationCompat.Builder(context, TranscriptionWorker.CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(context.getString(R.string.transcription_retry_notification_title, displayName))
+                .setContentText(message)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+                .setContentIntent(createOpenAppPendingIntent())
+                .setOngoing(true)
+                .setAutoCancel(false),
+        )
+    }
+
+    fun showBackgroundProcessing(jobId: Int, displayName: String, message: String) {
+        notify(
+            id = processingNotificationId(jobId),
+            builder = NotificationCompat.Builder(context, TranscriptionWorker.CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(context.getString(R.string.transcription_background_notification_title, displayName))
+                .setContentText(message)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+                .setContentIntent(createOpenAppPendingIntent())
+                .setOnlyAlertOnce(true)
+                .setOngoing(true)
+                .setAutoCancel(false),
+        )
+    }
+
+    fun showPreparingShare() {
+        val displayName = context.getString(R.string.background_share_generic_audio_label)
+        val message = context.getString(R.string.background_share_preparing_notification_body)
+        notify(
+            id = PREPARING_SHARE_NOTIFICATION_ID,
+            builder = NotificationCompat.Builder(context, TranscriptionWorker.CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(context.getString(R.string.transcription_background_notification_title, displayName))
+                .setContentText(message)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+                .setContentIntent(createOpenAppPendingIntent())
+                .setOnlyAlertOnce(true)
+                .setOngoing(true)
+                .setAutoCancel(false),
+        )
+    }
+
+    fun cancelRetryScheduled(jobId: Int) {
+        NotificationManagerCompat.from(context).cancel(retryNotificationId(jobId))
+    }
+
+    fun cancelBackgroundProcessing(jobId: Int) {
+        NotificationManagerCompat.from(context).cancel(processingNotificationId(jobId))
+    }
+
+    fun cancelPreparingShare() {
+        NotificationManagerCompat.from(context).cancel(PREPARING_SHARE_NOTIFICATION_ID)
+    }
+
+    private fun showResult(jobId: Int, title: String, text: String) {
+        notify(
+            id = RESULT_NOTIFICATION_OFFSET + jobId,
+            builder = NotificationCompat.Builder(context, RESULT_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
                 .setContentIntent(createOpenAppPendingIntent())
                 .setAutoCancel(true)
                 .setGroup(RESULT_GROUP_KEY),
@@ -123,6 +201,16 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
         )
     }
 
+    private fun ensureTranscriptionChannel() {
+        notificationManager.createNotificationChannel(
+            NotificationChannel(
+                TranscriptionWorker.CHANNEL_ID,
+                "Transcription Service",
+                NotificationManager.IMPORTANCE_LOW,
+            ),
+        )
+    }
+
     private fun createOpenAppPendingIntent(): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -136,4 +224,8 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
     }
 
     private fun genericFailureNotificationId(): Int = GENERIC_FAILURE_NOTIFICATION_OFFSET + Random.nextInt(10_000)
+
+    private fun retryNotificationId(jobId: Int): Int = RETRY_NOTIFICATION_OFFSET + jobId
+
+    private fun processingNotificationId(jobId: Int): Int = PROCESSING_NOTIFICATION_OFFSET + jobId
 }

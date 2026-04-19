@@ -74,6 +74,12 @@ internal val SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES = setOf(
     "audio/x-flac",
 )
 
+private val WAV_CONTAINER_MIME_TYPES = setOf(
+    "audio/wav",
+    "audio/x-wav",
+    "audio/wave",
+)
+
 @Suppress("unused")
 @HiltWorker
 class TranscriptionWorker @AssistedInject constructor(
@@ -88,6 +94,9 @@ class TranscriptionWorker @AssistedInject constructor(
 ) : CoroutineWorker(appContext, workerParams) {
 
     private val notificationManager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    private var foregroundUnavailable = false
+    private var currentJobId: Int = -1
+    private var currentDisplayName: String = ""
 
     companion object {
         const val NOTIFICATION_ID = 1001
@@ -128,7 +137,26 @@ class TranscriptionWorker @AssistedInject constructor(
     }
 
     private suspend fun updateNotification(progressText: String) {
-        setForeground(createForegroundInfo(progressText))
+        if (currentJobId == -1) return
+        if (foregroundUnavailable) {
+            backgroundShareNotifier.showBackgroundProcessing(currentJobId, currentDisplayName, progressText)
+            return
+        }
+
+        try {
+            setForeground(createForegroundInfo(progressText))
+            backgroundShareNotifier.cancelBackgroundProcessing(currentJobId)
+        } catch (e: IllegalStateException) {
+            if (!isForegroundStartDenied(e)) throw e
+
+            foregroundUnavailable = true
+            android.util.Log.w(
+                "TranscriptionWorker",
+                "Foreground service start denied. Continuing without foreground service notification.",
+                e,
+            )
+            backgroundShareNotifier.showBackgroundProcessing(currentJobId, currentDisplayName, progressText)
+        }
     }
 
     override suspend fun doWork(): Result {
@@ -136,11 +164,14 @@ class TranscriptionWorker @AssistedInject constructor(
         if (jobId == -1) return Result.failure()
 
         val job = repository.getJob(jobId) ?: return Result.failure()
+        currentJobId = jobId
+        currentDisplayName = job.displayName
+        backgroundShareNotifier.cancelRetryScheduled(jobId)
+        backgroundShareNotifier.cancelBackgroundProcessing(jobId)
         if (job.status == "Cancelled") return Result.success()
         val postTranscriptionWorkSpec = PostTranscriptionWorkSpec.fromInputData(inputData)
 
         try {
-            setForeground(getForegroundInfo())
             repository.updateRunning(jobId, true, "Starting...")
             updateNotification("Processing: ${job.displayName}")
 
@@ -175,33 +206,53 @@ class TranscriptionWorker @AssistedInject constructor(
                 speakerDiarizationEnabled = job.speakerDiarizationEnabled,
                 postTranscriptionWorkSpec = postTranscriptionWorkSpec,
             )
+            backgroundShareNotifier.cancelBackgroundProcessing(jobId)
             return Result.success()
         } catch (e: CancellationException) {
             throw e
         } catch (e: TransientWorkException) {
-            repository.updateError(jobId, e.message ?: e::class.java.simpleName, false, "Error")
+            val message = e.message ?: e::class.java.simpleName
+            val retryMessage = applicationContext.getString(R.string.transcription_retry_notification_body, message)
+            repository.markRetryScheduled(jobId, applicationContext.getString(R.string.transcription_retry_status))
+            backgroundShareNotifier.cancelBackgroundProcessing(jobId)
+            backgroundShareNotifier.showRetryScheduled(jobId, job.displayName, retryMessage)
             return Result.retry()
         } catch (e: IOException) {
             val message = e.message ?: e::class.java.simpleName
+            backgroundShareNotifier.cancelBackgroundProcessing(jobId)
             repository.updateError(jobId, message, false, "Error")
             notifyPostTranscriptionFailure(postTranscriptionWorkSpec, jobId, job.displayName, message)
             return Result.failure()
         } catch (e: IllegalStateException) {
             val message = e.message ?: e::class.java.simpleName
+            backgroundShareNotifier.cancelBackgroundProcessing(jobId)
             repository.updateError(jobId, message, false, "Error")
             notifyPostTranscriptionFailure(postTranscriptionWorkSpec, jobId, job.displayName, message)
             return Result.failure()
         } catch (e: IllegalArgumentException) {
             val message = e.message ?: e::class.java.simpleName
+            backgroundShareNotifier.cancelBackgroundProcessing(jobId)
             repository.updateError(jobId, message, false, "Error")
             notifyPostTranscriptionFailure(postTranscriptionWorkSpec, jobId, job.displayName, message)
             return Result.failure()
         } catch (e: SQLException) {
             val message = e.message ?: e::class.java.simpleName
+            backgroundShareNotifier.cancelBackgroundProcessing(jobId)
             repository.updateError(jobId, message, false, "Error")
             notifyPostTranscriptionFailure(postTranscriptionWorkSpec, jobId, job.displayName, message)
             return Result.failure()
         }
+    }
+
+    private fun isForegroundStartDenied(error: IllegalStateException): Boolean {
+        if (error.javaClass.name == "android.app.ForegroundServiceStartNotAllowedException") return true
+
+        return generateSequence<Throwable>(error) { it.cause }
+            .any { throwable ->
+                throwable.javaClass.name == "android.app.ForegroundServiceStartNotAllowedException" ||
+                    throwable.message.orEmpty().contains("mAllowStartForeground false", ignoreCase = true) ||
+                    throwable.message.orEmpty().contains("startForegroundService() not allowed", ignoreCase = true)
+            }
     }
 
     private suspend fun processSingleJob(
@@ -249,6 +300,12 @@ class TranscriptionWorker @AssistedInject constructor(
                         )
                     }
                 }
+            } else if (postTranscriptionWorkSpec?.notifyResult == true) {
+                backgroundShareNotifier.showTranscription(
+                    jobId = jobId,
+                    displayName = displayName,
+                    transcript = result.text,
+                )
             }
         } finally {
             preparedInput.tempFileToClean?.let { file ->
@@ -272,7 +329,7 @@ class TranscriptionWorker @AssistedInject constructor(
     ): PreparedAudioInput {
         val app = applicationContext as Application
         val conversionNeeded = inputMimeType == null ||
-            (usingMicrosoftSpeech && inputMimeType !in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES) ||
+            (usingMicrosoftSpeech && shouldConvertForMicrosoftSpeech(inputMimeType)) ||
             (!usingMicrosoftSpeech && inputMimeType !in SUPPORTED_GEMINI_MIME_TYPES)
         return if (conversionNeeded) {
             prepareConvertedAudio(app, jobId, uri, inputMimeType, usingMicrosoftSpeech)
@@ -280,6 +337,9 @@ class TranscriptionWorker @AssistedInject constructor(
             prepareNativeAudio(app, jobId, uri, inputMimeType, usingMicrosoftSpeech)
         }
     }
+
+    private fun shouldConvertForMicrosoftSpeech(inputMimeType: String): Boolean =
+        inputMimeType !in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES || inputMimeType in WAV_CONTAINER_MIME_TYPES
 
     private suspend fun prepareConvertedAudio(
         app: Application,
