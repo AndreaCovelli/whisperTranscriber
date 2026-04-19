@@ -300,7 +300,15 @@ internal fun friendlyHttpError(code: Int, provider: String): String = when (code
 internal fun resolveMicrosoftSpeechErrorMessage(code: Int, bodyText: String): String = when (code) {
     401 -> "Unauthorized. Check your Azure Speech key for Microsoft MAI Transcribe."
     404 -> "Microsoft MAI Transcribe endpoint not found. Check the configured Speech region."
-    429 -> friendlyHttpError(code, "Microsoft Speech")
+    429 -> extractMicrosoftSpeechServiceMessage(bodyText)
+        ?.let { serviceMessage ->
+            if (isMicrosoftSpeechResourceExhaustedMessage(serviceMessage)) {
+                "Microsoft Speech resource exhausted. The service hit its current rate, concurrency, or preview capacity limits. The app will retry automatically."
+            } else {
+                "HTTP 429: $serviceMessage"
+            }
+        }
+        ?: friendlyHttpError(code, "Microsoft Speech")
     in 500..599 -> friendlyHttpError(code, "Microsoft Speech")
     else -> extractMicrosoftSpeechServiceMessage(bodyText)
         ?.let { "HTTP $code: $it" }
@@ -335,6 +343,20 @@ internal fun extractMicrosoftSpeechServiceMessage(bodyText: String): String? = r
             ?.optString("message")
             ?.takeIf(String::isNotBlank)
 }.getOrNull()
+
+internal fun isMicrosoftSpeechResourceExhaustedMessage(message: String?): Boolean {
+    val normalized = message.orEmpty().lowercase()
+    if (normalized.isBlank()) return false
+
+    return listOf(
+        "resource exhausted",
+        "too many requests",
+        "rate limit",
+        "quota",
+        "concurrent",
+        "capacity",
+    ).any(normalized::contains)
+}
 
 internal fun shouldRetryHttp(code: Int): Boolean = code == 429 || code in 500..599
 
