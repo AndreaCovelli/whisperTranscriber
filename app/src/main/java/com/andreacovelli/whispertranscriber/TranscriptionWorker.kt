@@ -74,6 +74,12 @@ internal val SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES = setOf(
     "audio/x-flac",
 )
 
+private val WAV_CONTAINER_MIME_TYPES = setOf(
+    "audio/wav",
+    "audio/x-wav",
+    "audio/wave",
+)
+
 @Suppress("unused")
 @HiltWorker
 class TranscriptionWorker @AssistedInject constructor(
@@ -323,7 +329,7 @@ class TranscriptionWorker @AssistedInject constructor(
     ): PreparedAudioInput {
         val app = applicationContext as Application
         val conversionNeeded = inputMimeType == null ||
-            (usingMicrosoftSpeech && inputMimeType !in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES) ||
+            (usingMicrosoftSpeech && shouldConvertForMicrosoftSpeech(inputMimeType)) ||
             (!usingMicrosoftSpeech && inputMimeType !in SUPPORTED_GEMINI_MIME_TYPES)
         return if (conversionNeeded) {
             prepareConvertedAudio(app, jobId, uri, inputMimeType, usingMicrosoftSpeech)
@@ -331,6 +337,9 @@ class TranscriptionWorker @AssistedInject constructor(
             prepareNativeAudio(app, jobId, uri, inputMimeType, usingMicrosoftSpeech)
         }
     }
+
+    private fun shouldConvertForMicrosoftSpeech(inputMimeType: String): Boolean =
+        inputMimeType !in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES || inputMimeType in WAV_CONTAINER_MIME_TYPES
 
     private suspend fun prepareConvertedAudio(
         app: Application,
