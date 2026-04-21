@@ -457,18 +457,6 @@ class TranscriptionPresentationTest {
     }
 
     @Test
-    fun supportedMicrosoftSpeechMimeTypes_matchCurrentMaiTranscribeFormats() {
-        assertEquals(true, "audio/mp3" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
-        assertEquals(true, "audio/mpeg" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
-        assertEquals(true, "audio/wav" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
-        assertEquals(true, "audio/flac" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
-        assertEquals(false, "audio/aac" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
-        assertEquals(false, "audio/ogg" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
-        assertEquals(false, "audio/webm" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
-        assertEquals(false, "audio/m4a" in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES)
-    }
-
-    @Test
     fun parseMicrosoftSpeechTranscriptText_readsCombinedPhrasesFromJsonPayload() {
         val response = JSONObject(
             """

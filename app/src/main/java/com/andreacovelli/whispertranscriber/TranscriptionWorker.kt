@@ -64,21 +64,37 @@ private sealed interface PreparedAudioInput {
     data class Gemini(val file: File, val mimeType: String, override val tempFileToClean: File?) : PreparedAudioInput
 }
 
-internal val SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES = setOf(
-    "audio/mp3",
-    "audio/mpeg",
-    "audio/wav",
-    "audio/x-wav",
-    "audio/wave",
-    "audio/flac",
-    "audio/x-flac",
-)
+internal object TranscriptionMimeSupport {
+    val geminiNativeUploadMimeTypes = setOf(
+        "audio/wav",
+        "audio/x-wav",
+        "audio/mp3",
+        "audio/mpeg",
+        "audio/aiff",
+        "audio/x-aiff",
+        "audio/aac",
+        "audio/ogg",
+        "audio/vorbis",
+        "audio/flac",
+        "audio/x-flac",
+    )
 
-private val WAV_CONTAINER_MIME_TYPES = setOf(
-    "audio/wav",
-    "audio/x-wav",
-    "audio/wave",
-)
+    val microsoftSpeechNativeUploadMimeTypes = setOf(
+        "audio/mp3",
+        "audio/mpeg",
+        "audio/wav",
+        "audio/x-wav",
+        "audio/wave",
+        "audio/flac",
+        "audio/x-flac",
+    )
+
+    val microsoftSpeechWavReencodeMimeTypes = setOf(
+        "audio/wav",
+        "audio/x-wav",
+        "audio/wave",
+    )
+}
 
 @Suppress("unused")
 @HiltWorker
@@ -105,11 +121,6 @@ class TranscriptionWorker @AssistedInject constructor(
 
         private const val CONVERTED_FILE_PREFIX = "converted_"
         private const val DIRECT_FILE_PREFIX = "direct_"
-
-        private val SUPPORTED_GEMINI_MIME_TYPES = setOf(
-            "audio/wav", "audio/x-wav", "audio/mp3", "audio/mpeg", "audio/aiff", "audio/x-aiff",
-            "audio/aac", "audio/ogg", "audio/vorbis", "audio/flac", "audio/x-flac",
-        )
     }
 
     override suspend fun getForegroundInfo(): ForegroundInfo = createForegroundInfo("Starting transcription...")
@@ -330,7 +341,7 @@ class TranscriptionWorker @AssistedInject constructor(
         val app = applicationContext as Application
         val conversionNeeded = inputMimeType == null ||
             (usingMicrosoftSpeech && shouldConvertForMicrosoftSpeech(inputMimeType)) ||
-            (!usingMicrosoftSpeech && inputMimeType !in SUPPORTED_GEMINI_MIME_TYPES)
+            (!usingMicrosoftSpeech && inputMimeType !in TranscriptionMimeSupport.geminiNativeUploadMimeTypes)
         return if (conversionNeeded) {
             prepareConvertedAudio(app, jobId, uri, inputMimeType, usingMicrosoftSpeech)
         } else {
@@ -339,7 +350,8 @@ class TranscriptionWorker @AssistedInject constructor(
     }
 
     private fun shouldConvertForMicrosoftSpeech(inputMimeType: String): Boolean =
-        inputMimeType !in SUPPORTED_MICROSOFT_SPEECH_MIME_TYPES || inputMimeType in WAV_CONTAINER_MIME_TYPES
+        inputMimeType !in TranscriptionMimeSupport.microsoftSpeechNativeUploadMimeTypes ||
+            inputMimeType in TranscriptionMimeSupport.microsoftSpeechWavReencodeMimeTypes
 
     private suspend fun prepareConvertedAudio(
         app: Application,
