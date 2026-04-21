@@ -9,6 +9,8 @@ class TranscriptionWorkerMimeSupportTest {
         assertEquals(true, "audio/mp3" in TranscriptionMimeSupport.geminiNativeUploadMimeTypes)
         assertEquals(true, "audio/mpeg" in TranscriptionMimeSupport.geminiNativeUploadMimeTypes)
         assertEquals(true, "audio/wav" in TranscriptionMimeSupport.geminiNativeUploadMimeTypes)
+        assertEquals(true, "audio/x-wav" in TranscriptionMimeSupport.geminiNativeUploadMimeTypes)
+        assertEquals(true, "audio/wave" in TranscriptionMimeSupport.geminiNativeUploadMimeTypes)
         assertEquals(true, "audio/aac" in TranscriptionMimeSupport.geminiNativeUploadMimeTypes)
         assertEquals(true, "audio/ogg" in TranscriptionMimeSupport.geminiNativeUploadMimeTypes)
         assertEquals(true, "audio/flac" in TranscriptionMimeSupport.geminiNativeUploadMimeTypes)

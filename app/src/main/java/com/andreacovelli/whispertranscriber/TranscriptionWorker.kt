@@ -68,6 +68,7 @@ internal object TranscriptionMimeSupport {
     val geminiNativeUploadMimeTypes = setOf(
         "audio/wav",
         "audio/x-wav",
+        "audio/wave",
         "audio/mp3",
         "audio/mpeg",
         "audio/aiff",
