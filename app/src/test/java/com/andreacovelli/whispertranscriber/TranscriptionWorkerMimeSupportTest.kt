@@ -24,6 +24,9 @@ class TranscriptionWorkerMimeSupportTest {
             ),
             TranscriptionMimeSupport.geminiNativeUploadMimeTypes,
         )
+        assertFalse("audio/mp4" in TranscriptionMimeSupport.geminiNativeUploadMimeTypes)
+        assertFalse("audio/x-m4a" in TranscriptionMimeSupport.geminiNativeUploadMimeTypes)
+        assertFalse("audio/m4a" in TranscriptionMimeSupport.geminiNativeUploadMimeTypes)
         assertFalse("audio/webm" in TranscriptionMimeSupport.geminiNativeUploadMimeTypes)
     }
 
