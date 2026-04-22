@@ -169,15 +169,16 @@ class TranscriptionExecutionRunner @Inject constructor(
         onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
     ) {
         val usingMicrosoftSpeech = providerExecution is ProviderExecution.MicrosoftSpeech
-        val preparedInput = prepareAudioInput(
-            jobId = jobId,
-            uri = uri,
-            inputMimeType = inputMimeType,
-            usingMicrosoftSpeech = usingMicrosoftSpeech,
-            displayName = displayName,
-            onProgressNotification = onProgressNotification,
-        )
+        var preparedInput: PreparedAudioInput? = null
         try {
+            preparedInput = prepareAudioInput(
+                jobId = jobId,
+                uri = uri,
+                inputMimeType = inputMimeType,
+                usingMicrosoftSpeech = usingMicrosoftSpeech,
+                displayName = displayName,
+                onProgressNotification = onProgressNotification,
+            )
             val result = runProviderTranscription(
                 jobId = jobId,
                 displayName = displayName,
@@ -221,7 +222,7 @@ class TranscriptionExecutionRunner @Inject constructor(
                 )
             }
         } finally {
-            preparedInput.tempFileToClean?.let { file ->
+            preparedInput?.tempFileToClean?.let { file ->
                 runCatching { file.delete() }
                     .onFailure { throwable ->
                         android.util.Log.w(
@@ -445,20 +446,25 @@ class TranscriptionExecutionRunner @Inject constructor(
             val keyChars = requireNotNull(settings.getMicrosoftSpeechApiKey()) {
                 "Azure Speech key for Microsoft MAI Transcribe missing or corrupted."
             }
+            var keyOwnershipTransferred = false
             try {
                 val region = settings.microsoftSpeechRegionFlow.first()
                     .takeIf(String::isNotBlank)
                     ?: error("Azure Speech region for Microsoft MAI Transcribe is not set.")
-                MicrosoftSpeechTranscriber(
-                    apiKey = keyChars.copyOf(),
+                val transcriber = MicrosoftSpeechTranscriber(
+                    apiKey = keyChars,
                     audioFile = microsoftSpeechInput.file,
                     mimeType = microsoftSpeechInput.mimeType,
                     region = region,
                     okHttpClient = okHttpClient,
                     ioDispatcher = ioDispatcher,
                 )
+                keyOwnershipTransferred = true
+                transcriber
             } finally {
-                keyChars.fill('\u0000')
+                if (!keyOwnershipTransferred) {
+                    keyChars.fill('\u0000')
+                }
             }
         }
         is ProviderExecution.Gemini -> {
@@ -466,18 +472,23 @@ class TranscriptionExecutionRunner @Inject constructor(
                 "Internal error: Gemini audio data missing."
             }
             val keyChars = requireNotNull(settings.getGeminiApiKey()) { "API key missing or corrupted" }
+            var keyOwnershipTransferred = false
             try {
-                GeminiTranscriber(
+                val transcriber = GeminiTranscriber(
                     audioFile = geminiInput.file,
                     mimeType = geminiInput.mimeType,
-                    apiKey = keyChars.copyOf(),
+                    apiKey = keyChars,
                     modelName = providerExecution.modelName,
                     speakerDiarizationEnabled = speakerDiarizationEnabled,
                     speakerLabelPrefix = speakerLabelPrefix,
                     ioDispatcher = ioDispatcher,
                 )
+                keyOwnershipTransferred = true
+                transcriber
             } finally {
-                keyChars.fill('\u0000')
+                if (!keyOwnershipTransferred) {
+                    keyChars.fill('\u0000')
+                }
             }
         }
     }
