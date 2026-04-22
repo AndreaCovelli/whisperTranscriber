@@ -92,6 +92,45 @@ class TranscriptionRepositoryInstrumentedTest {
     }
 
     @Test
+    fun upsertHistoryForSummarization_usesLatestHistoryIdFromDatabase() = runBlocking {
+        val jobId = db.transcriptionJobDao().insert(
+            TranscriptionJob(
+                uri = "content://test/latest-history.wav",
+                displayName = "latest-history.wav",
+                transcript = "Transcript text",
+                language = "en",
+                model = "whisper-1",
+            ),
+        ).toInt()
+        val staleJobSnapshot = requireNotNull(repository.getJob(jobId))
+        val currentHistoryId = historyRepository.insert(
+            TranscriptionHistory(
+                text = "Transcript text",
+                language = "en",
+                model = "whisper-1",
+                displayName = "latest-history.wav",
+            ),
+        )
+        db.transcriptionJobDao().updateHistoryId(jobId, currentHistoryId)
+
+        val updatedHistoryId = repository.upsertHistoryForSummarization(
+            job = staleJobSnapshot,
+            summary = "New summary",
+            summaryProviderName = "GEMINI_FLASH",
+            summaryModel = "gemini-2.5-flash",
+        )
+
+        val updatedHistory = db.transcriptionHistoryDao().getById(currentHistoryId)
+        val updatedJob = repository.getJob(jobId)
+
+        assertEquals(currentHistoryId, updatedHistoryId)
+        assertEquals("New summary", updatedHistory?.summary)
+        assertEquals("GEMINI_FLASH", updatedHistory?.summaryProviderName)
+        assertEquals("gemini-2.5-flash", updatedHistory?.summaryModel)
+        assertEquals(currentHistoryId, updatedJob?.historyId)
+    }
+
+    @Test
     fun succeedSummarization_updatesJobAndHistorySummary() = runBlocking {
         val historyId = historyRepository.insert(
             TranscriptionHistory(
@@ -135,7 +174,7 @@ class TranscriptionRepositoryInstrumentedTest {
     }
 
     @Test
-    fun markRetryScheduled_usesBlockingRetryLiteral() = runBlocking {
+    fun markRetryScheduled_keepsRetryStateWithoutBlockingQueue() = runBlocking {
         val jobId = repository.addJob(
             TranscriptionJob(
                 uri = "content://test/retry.wav",
@@ -152,7 +191,7 @@ class TranscriptionRepositoryInstrumentedTest {
         assertEquals("Retry scheduled", updatedJob?.status)
         assertFalse(updatedJob?.isRunning ?: true)
         assertEquals(1, updatedJob?.retryCount)
-        assertEquals(1, repository.countBlockingJobs())
+        assertEquals(0, repository.countBlockingJobs())
     }
 
     @Test

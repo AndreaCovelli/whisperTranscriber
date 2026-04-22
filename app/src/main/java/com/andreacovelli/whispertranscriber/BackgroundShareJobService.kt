@@ -68,7 +68,10 @@ class BackgroundShareJobService : JobService() {
                         queueService.onExecutionFinished(jobId)
                         jobFinished(params, false)
                     }
-                    JobRunOutcome.Retry -> jobFinished(params, true)
+                    JobRunOutcome.Retry -> {
+                        queueService.scheduleNextQueuedJobIfIdle()
+                        jobFinished(params, true)
+                    }
                     JobRunOutcome.Failure -> {
                         queueService.onExecutionFinished(jobId)
                         jobFinished(params, false)

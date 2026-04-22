@@ -99,7 +99,10 @@ class TranscriptionWorker @AssistedInject constructor(
                 queueService.onExecutionFinished(jobId)
                 Result.success()
             }
-            JobRunOutcome.Retry -> Result.retry()
+            JobRunOutcome.Retry -> {
+                queueService.scheduleNextQueuedJobIfIdle()
+                Result.retry()
+            }
             JobRunOutcome.Failure -> {
                 queueService.onExecutionFinished(jobId)
                 Result.failure()

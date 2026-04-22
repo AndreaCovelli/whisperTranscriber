@@ -231,7 +231,7 @@ interface TranscriptionJobDao {
     @Query("SELECT * FROM active_jobs WHERE status = 'Queued' ORDER BY timestamp ASC, id ASC LIMIT 1")
     suspend fun getOldestQueuedJob(): TranscriptionJob?
 
-    @Query("SELECT COUNT(*) FROM active_jobs WHERE isRunning = 1 OR status = 'Retry scheduled'")
+    @Query("SELECT COUNT(*) FROM active_jobs WHERE isRunning = 1")
     suspend fun countBlockingJobs(): Int
 
     @Query(
