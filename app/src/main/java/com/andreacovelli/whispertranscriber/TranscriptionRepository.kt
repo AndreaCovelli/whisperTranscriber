@@ -6,7 +6,6 @@ import com.andreacovelli.whispertranscriber.data.HistoryRepository
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.data.TranscriptionJobDao
-import com.andreacovelli.whispertranscriber.data.TranscriptionJobSummarizationDao
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -15,7 +14,6 @@ import kotlinx.coroutines.flow.Flow
 class TranscriptionRepository @Inject constructor(
     private val db: AppDatabase,
     private val jobDao: TranscriptionJobDao,
-    private val jobSummarizationDao: TranscriptionJobSummarizationDao,
     private val historyRepository: HistoryRepository,
 ) {
 
@@ -98,39 +96,6 @@ class TranscriptionRepository @Inject constructor(
     }
 
     suspend fun resetRunningToQueued(id: Int): Boolean = jobDao.resetRunningToQueued(id) > 0
-
-    suspend fun setSummarizing(id: Int, isSummarizing: Boolean) {
-        jobSummarizationDao.setSummarizing(id, isSummarizing)
-    }
-
-    suspend fun updateSummaryStatus(id: Int, status: String) {
-        jobSummarizationDao.updateSummaryStatus(id, status)
-    }
-
-    suspend fun succeedSummarization(id: Int, summary: String, summaryProviderName: String, summaryModel: String) {
-        jobSummarizationDao.succeedSummarization(id, summary, summaryProviderName, summaryModel)
-    }
-
-    suspend fun failSummarization(id: Int, error: String?) {
-        jobSummarizationDao.failSummarization(id, error)
-    }
-
-    suspend fun cancelSummarization(id: Int): Boolean = jobSummarizationDao.cancelSummarization(id) > 0
-
-    suspend fun claimAutoSummary(id: Int, providerName: String, modelName: String): Boolean =
-        jobSummarizationDao.claimAutoSummary(id, providerName, modelName) > 0
-
-    suspend fun claimManualSummary(id: Int, providerName: String, modelName: String): Boolean =
-        jobSummarizationDao.claimManualSummary(id, providerName, modelName) > 0
-
-    suspend fun resetStaleSummaries(): Int = jobSummarizationDao.resetStaleSummaries()
-
-    suspend fun clearJobSummary(jobId: Int) {
-        db.withTransaction {
-            jobSummarizationDao.clearJobSummaryFields(jobId)
-            historyRepository.updateSummaryByJobId(jobId, "", "", "")
-        }
-    }
 
     suspend fun clearJobTranscription(jobId: Int) {
         db.withTransaction {

@@ -8,8 +8,6 @@ import android.database.SQLException
 import android.net.Uri
 import android.os.Build
 import android.os.PersistableBundle
-import android.provider.OpenableColumns
-import android.webkit.MimeTypeMap
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.NetworkType
@@ -24,7 +22,6 @@ import com.google.genai.types.Content
 import com.google.genai.types.GenerateContentConfig
 import com.google.genai.types.Part
 import dagger.hilt.android.qualifiers.ApplicationContext
-import java.io.File
 import java.io.IOException
 import java.net.UnknownHostException
 import java.util.UUID
@@ -46,18 +43,12 @@ import org.json.JSONObject
 
 data class QueuedShareResult(val jobsCreated: Int, val statusMessage: String)
 
-data class PreparedSharedAudio(
-    val originalUri: Uri,
-    val displayName: String,
-    val stagedFile: File,
-    val mimeType: String?,
-)
-
 @Singleton
 class TranscriptionQueueService @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val settings: ApiKeyManager,
     private val repository: TranscriptionRepository,
+    private val queuedAudioStore: QueuedAudioStore,
     private val workManager: WorkManager,
     private val backgroundShareNotifier: BackgroundShareNotifier,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
@@ -66,10 +57,6 @@ class TranscriptionQueueService @Inject constructor(
         internal const val QUEUED_JOB_ID_INPUT = "jobId"
         internal const val QUEUED_JOB_DISPLAY_NAME_INPUT = "displayName"
         private const val SPEAKER_LABEL_PREFIX_INPUT = "speakerLabelPrefix"
-        private const val STAGED_FILE_PREFIX = "staged_"
-        private const val STAGED_AUDIO_DIR = "queued_audio"
-        internal const val CONVERTED_FILE_PREFIX = "converted_"
-        internal const val DIRECT_FILE_PREFIX = "direct_"
     }
 
     suspend fun enqueueSharedAudio(
@@ -80,7 +67,7 @@ class TranscriptionQueueService @Inject constructor(
         preferImmediateBackgroundStart: Boolean = false,
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec? = null,
     ): QueuedShareResult {
-        val preparedAudio = prepareSharedAudio(uris)
+        val preparedAudio = queuedAudioStore.prepareSharedAudio(uris)
         return enqueuePreparedSharedAudio(
             preparedAudio = preparedAudio,
             provider = provider,
@@ -89,34 +76,6 @@ class TranscriptionQueueService @Inject constructor(
             preferImmediateBackgroundStart = preferImmediateBackgroundStart,
             postTranscriptionWorkSpec = postTranscriptionWorkSpec,
         )
-    }
-
-    private suspend fun prepareSharedAudio(uris: List<Uri>): List<PreparedSharedAudio> {
-        if (uris.isEmpty()) return emptyList()
-
-        val preparedAudio = mutableListOf<PreparedSharedAudio>()
-        try {
-            uris.forEachIndexed { index, uri ->
-                val displayName = resolveDisplayName(uri).ifBlank { uri.lastPathSegment ?: "Audio ${index + 1}" }
-                val (stagedFile, mimeType) = stageSharedAudio(uri, index)
-                preparedAudio += PreparedSharedAudio(
-                    originalUri = uri,
-                    displayName = displayName,
-                    stagedFile = stagedFile,
-                    mimeType = mimeType,
-                )
-            }
-            return preparedAudio
-        } catch (e: IOException) {
-            deleteStagedFiles(preparedAudio)
-            throw e
-        } catch (e: SecurityException) {
-            deleteStagedFiles(preparedAudio)
-            throw e
-        } catch (e: SQLException) {
-            deleteStagedFiles(preparedAudio)
-            throw e
-        }
     }
 
     private suspend fun enqueuePreparedSharedAudio(
@@ -175,19 +134,19 @@ class TranscriptionQueueService @Inject constructor(
             }
             scheduleNextQueuedJobIfIdle()
         } catch (e: IOException) {
-            deleteStagedFiles(pendingPreparedAudio)
+            queuedAudioStore.deletePreparedAudio(pendingPreparedAudio)
             throw e
         } catch (e: SecurityException) {
-            deleteStagedFiles(pendingPreparedAudio)
+            queuedAudioStore.deletePreparedAudio(pendingPreparedAudio)
             throw e
         } catch (e: IllegalArgumentException) {
-            deleteStagedFiles(pendingPreparedAudio)
+            queuedAudioStore.deletePreparedAudio(pendingPreparedAudio)
             throw e
         } catch (e: IllegalStateException) {
-            deleteStagedFiles(pendingPreparedAudio)
+            queuedAudioStore.deletePreparedAudio(pendingPreparedAudio)
             throw e
         } catch (e: SQLException) {
-            deleteStagedFiles(pendingPreparedAudio)
+            queuedAudioStore.deletePreparedAudio(pendingPreparedAudio)
             throw e
         }
 
@@ -207,7 +166,7 @@ class TranscriptionQueueService @Inject constructor(
     }
 
     suspend fun clearCompletedJobs() {
-        repository.clearCompletedJobs().forEach(::deleteStagedFile)
+        repository.clearCompletedJobs().forEach(queuedAudioStore::deleteStagedFile)
     }
 
     suspend fun deleteJob(jobId: Int) {
@@ -215,7 +174,7 @@ class TranscriptionQueueService @Inject constructor(
         cancelScheduledExecution(job)
         backgroundShareNotifier.cancelRetryScheduled(jobId)
         backgroundShareNotifier.cancelBackgroundProcessing(jobId)
-        deleteStagedFile(repository.deleteJob(jobId))
+        queuedAudioStore.deleteStagedFile(repository.deleteJob(jobId))
         scheduleNextQueuedJobIfIdle()
     }
 
@@ -290,25 +249,7 @@ class TranscriptionQueueService @Inject constructor(
     suspend fun cleanupOldTempFiles(
         tempFileMaxAgeMs: Long = TimeUnit.DAYS.toMillis(3),
         stagedFileMaxAgeMs: Long = TimeUnit.DAYS.toMillis(7),
-    ) = withContext(ioDispatcher) {
-        val cache = context.cacheDir ?: return@withContext
-        val tempCutoff = System.currentTimeMillis() - tempFileMaxAgeMs
-        cache.listFiles()
-            .orEmpty()
-            .asSequence()
-            .filter(File::isFile)
-            .filter { it.lastModified() < tempCutoff }
-            .filter(::isManagedTempFile)
-            .forEach(::deleteQuietly)
-
-        val stagedCutoff = System.currentTimeMillis() - stagedFileMaxAgeMs
-        stagedAudioDir().listFiles()
-            .orEmpty()
-            .asSequence()
-            .filter(File::isFile)
-            .filter { it.lastModified() < stagedCutoff }
-            .forEach(::deleteQuietly)
-    }
+    ) = queuedAudioStore.cleanupOldTempFiles(tempFileMaxAgeMs, stagedFileMaxAgeMs)
 
     suspend fun scheduleNextQueuedJobIfIdle(): Boolean {
         if (repository.countBlockingJobs() > 0) return false
@@ -405,59 +346,6 @@ class TranscriptionQueueService @Inject constructor(
     private fun jobTag(jobId: Int): String = "TranscriptionJob_$jobId"
 
     private fun jobWorkName(jobId: Int): String = "TranscriptionJobWork_$jobId"
-
-    private fun stagedAudioDir(): File = File(context.filesDir, STAGED_AUDIO_DIR).apply { mkdirs() }
-
-    private suspend fun stageSharedAudio(uri: Uri, index: Int): Pair<File, String?> = withContext(ioDispatcher) {
-        val contentResolver = context.contentResolver
-        val mimeType = contentResolver.getType(uri)?.lowercase()
-        val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)
-            ?: MimeTypeMap.getFileExtensionFromUrl(uri.toString()).takeIf(String::isNotBlank)
-            ?: "bin"
-        val stagedFile = File.createTempFile("${STAGED_FILE_PREFIX}${index}_", ".$extension", stagedAudioDir())
-        try {
-            contentResolver.openInputStream(uri)?.use { input ->
-                stagedFile.outputStream().use(input::copyTo)
-            } ?: throw IOException("Failed to read shared audio: $uri")
-        } catch (e: IOException) {
-            deleteQuietly(stagedFile)
-            throw e
-        }
-        stagedFile to mimeType
-    }
-
-    private suspend fun resolveDisplayName(uri: Uri): String = withContext(ioDispatcher) {
-        val projection = arrayOf(OpenableColumns.DISPLAY_NAME)
-        runCatching {
-            context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
-                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (index >= 0 && cursor.moveToFirst()) {
-                    cursor.getString(index).orEmpty()
-                } else {
-                    ""
-                }
-            }.orEmpty()
-        }.getOrDefault("")
-    }
-
-    private fun deleteStagedFile(path: String?) {
-        if (path.isNullOrBlank()) return
-        deleteQuietly(File(path))
-    }
-
-    private fun deleteStagedFiles(preparedAudio: List<PreparedSharedAudio>) {
-        preparedAudio.forEach { deleteQuietly(it.stagedFile) }
-    }
-
-    private fun deleteQuietly(file: File) {
-        runCatching { file.delete() }
-    }
-
-    private fun isManagedTempFile(file: File): Boolean {
-        val name = file.name
-        return (name.startsWith(CONVERTED_FILE_PREFIX) && name.endsWith(".wav")) ||
-            (name.startsWith(DIRECT_FILE_PREFIX) && name.endsWith(".tmp"))
-    }
 }
 
 data class KeyValidationResult(val errorMessage: String? = null) {
@@ -680,6 +568,7 @@ private data class SummarizerSelection(val provider: TranscriptionProvider, val 
 class SummarizationService @Inject constructor(
     private val settings: ApiKeyManager,
     private val repository: TranscriptionRepository,
+    private val summarizationRepository: TranscriptionSummarizationRepository,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
     suspend fun summarize(
@@ -695,9 +584,17 @@ class SummarizationService @Inject constructor(
         }
 
         val claimed = if (allowResummarize) {
-            repository.claimManualSummary(jobId, summarizerSelection.provider.name, summarizerSelection.modelName)
+            summarizationRepository.claimManualSummary(
+                jobId,
+                summarizerSelection.provider.name,
+                summarizerSelection.modelName,
+            )
         } else {
-            repository.claimAutoSummary(jobId, summarizerSelection.provider.name, summarizerSelection.modelName)
+            summarizationRepository.claimAutoSummary(
+                jobId,
+                summarizerSelection.provider.name,
+                summarizerSelection.modelName,
+            )
         }
         if (!claimed) return SummarizationResult(statusMessage = fallbackStatusMessage)
 
@@ -705,26 +602,26 @@ class SummarizationService @Inject constructor(
         return try {
             val job = repository.getJob(jobId)
             if (job == null) {
-                repository.setSummarizing(jobId, false)
+                summarizationRepository.setSummarizing(jobId, false)
                 summarizingCleared = true
                 return SummarizationResult(statusMessage = fallbackStatusMessage)
             }
 
             val text = job.transcript
             if (text.isBlank()) {
-                repository.setSummarizing(jobId, false)
-                repository.updateSummaryStatus(jobId, "")
+                summarizationRepository.setSummarizing(jobId, false)
+                summarizationRepository.updateSummaryStatus(jobId, "")
                 summarizingCleared = true
                 SummarizationResult(statusMessage = "Nothing to summarize for ${job.displayName}.")
             } else {
-                repository.updateSummaryStatus(jobId, "Summarizing...")
+                summarizationRepository.updateSummaryStatus(jobId, "Summarizing...")
                 val apiKey = requireGeminiApiKey()
                 val summary = try {
                     requestSummary(text, apiKey, summarizerSelection.modelName)
                 } finally {
                     apiKey.fill('\u0000')
                 }
-                repository.succeedSummarization(
+                summarizationRepository.succeedSummarization(
                     jobId,
                     summary.text,
                     summarizerSelection.provider.name,
@@ -742,25 +639,25 @@ class SummarizationService @Inject constructor(
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
-            repository.failSummarization(jobId, e.message)
+            summarizationRepository.failSummarization(jobId, e.message)
             summarizingCleared = true
             SummarizationResult("Summarization error: ${e.message}", e.message)
         } catch (e: IllegalStateException) {
-            repository.failSummarization(jobId, e.message)
+            summarizationRepository.failSummarization(jobId, e.message)
             summarizingCleared = true
             val message = e.message ?: "Summarization failed"
             SummarizationResult("Error: $message", message)
         } finally {
             if (!summarizingCleared) {
                 withContext(NonCancellable + ioDispatcher) {
-                    repository.setSummarizing(jobId, false)
+                    summarizationRepository.setSummarizing(jobId, false)
                 }
             }
         }
     }
 
     suspend fun cancelSummary(jobId: Int): String {
-        val cancelled = repository.cancelSummarization(jobId)
+        val cancelled = summarizationRepository.cancelSummarization(jobId)
         return if (cancelled) "Summary cancelled." else "Nothing to stop."
     }
 

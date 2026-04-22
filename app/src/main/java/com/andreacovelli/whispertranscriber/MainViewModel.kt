@@ -180,6 +180,7 @@ class MainViewModel @Inject constructor(
     @param:ApplicationContext private val appContext: Context,
     private val settings: ApiKeyManager,
     private val repository: TranscriptionRepository,
+    private val summarizationRepository: TranscriptionSummarizationRepository,
     private val queueService: TranscriptionQueueService,
     private val validationService: ValidationService,
     private val summarizationService: SummarizationService,
@@ -212,7 +213,7 @@ class MainViewModel @Inject constructor(
         summarizeJob = { jobId -> runSummarization(jobId, allowResummarize = true) },
         clearSummary = { jobId ->
             viewModelScope.launch {
-                repository.clearJobSummary(jobId)
+                summarizationRepository.clearJobSummary(jobId)
             }
         },
         clearTranscript = { jobId ->
@@ -249,7 +250,7 @@ class MainViewModel @Inject constructor(
     init {
         if (staleSummariesRecovered.compareAndSet(false, true)) {
             viewModelScope.launch {
-                repository.resetStaleSummaries()
+                summarizationRepository.resetStaleSummaries()
             }
         }
 

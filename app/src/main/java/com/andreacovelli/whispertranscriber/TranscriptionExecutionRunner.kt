@@ -273,7 +273,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         )
         onProgressNotification(jobId, displayName, "Converting audio...")
         val outputFile = withContext(ioDispatcher) {
-            File.createTempFile("${TranscriptionQueueService.CONVERTED_FILE_PREFIX}$jobId", ".wav", app.cacheDir)
+            File.createTempFile("${QueuedAudioStore.CONVERTED_FILE_PREFIX}$jobId", ".wav", app.cacheDir)
         }
         HardwareAudioConverter.convertTo16kMonoWav(
             context = app,
@@ -339,7 +339,7 @@ class TranscriptionExecutionRunner @Inject constructor(
     private fun copyInputToTempFile(app: Application, jobId: Int, uri: Uri): File {
         val contentResolver = app.contentResolver
         return contentResolver.openInputStream(uri)?.use { input ->
-            File.createTempFile("${TranscriptionQueueService.DIRECT_FILE_PREFIX}$jobId", ".tmp", app.cacheDir).apply {
+            File.createTempFile("${QueuedAudioStore.DIRECT_FILE_PREFIX}$jobId", ".tmp", app.cacheDir).apply {
                 outputStream().use(input::copyTo)
             }
         } ?: error("Failed to read input audio file.")
