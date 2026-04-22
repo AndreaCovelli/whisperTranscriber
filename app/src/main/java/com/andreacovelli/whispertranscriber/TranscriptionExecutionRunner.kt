@@ -336,15 +336,25 @@ class TranscriptionExecutionRunner @Inject constructor(
             PreparedAudioInput.MicrosoftSpeech(file = tempFile, mimeType = inputMimeType, tempFileToClean = tempFile)
         }
     } else {
-        repository.updateStatusAndProgress(
-            jobId,
-            "Format supported ($inputMimeType). Copying audio for Gemini...",
-            0.5f,
-        )
-        onProgressNotification(jobId, displayName, "Copying audio...")
-        val tempFile = copyInputToTempFile(app, jobId, uri)
-        repository.updateStatusAndProgress(jobId, "Preparing for Gemini upload...", 1f)
-        PreparedAudioInput.Gemini(file = tempFile, mimeType = inputMimeType, tempFileToClean = tempFile)
+        val reusableLocalFile = reusableLocalFileForUri(uri)
+        if (reusableLocalFile != null) {
+            repository.updateStatusAndProgress(jobId, "Preparing local audio for Gemini upload...", 1f)
+            PreparedAudioInput.Gemini(
+                file = reusableLocalFile,
+                mimeType = inputMimeType,
+                tempFileToClean = null,
+            )
+        } else {
+            repository.updateStatusAndProgress(
+                jobId,
+                "Format supported ($inputMimeType). Copying audio for Gemini...",
+                0.5f,
+            )
+            onProgressNotification(jobId, displayName, "Copying audio...")
+            val tempFile = copyInputToTempFile(app, jobId, uri)
+            repository.updateStatusAndProgress(jobId, "Preparing for Gemini upload...", 1f)
+            PreparedAudioInput.Gemini(file = tempFile, mimeType = inputMimeType, tempFileToClean = tempFile)
+        }
     }
 
     private suspend fun copyInputToTempFile(app: Application, jobId: Int, uri: Uri): File = withContext(ioDispatcher) {
@@ -408,31 +418,41 @@ class TranscriptionExecutionRunner @Inject constructor(
         val keyChars = requireNotNull(settings.getMicrosoftSpeechApiKey()) {
             "Azure Speech key for Microsoft MAI Transcribe missing or corrupted."
         }
-        val region = settings.microsoftSpeechRegionFlow.first()
-            .takeIf(String::isNotBlank)
-            ?: error("Azure Speech region for Microsoft MAI Transcribe is not set.")
-        MicrosoftSpeechTranscriber(
-            apiKey = keyChars,
-            audioFile = microsoftSpeechInput.file,
-            mimeType = microsoftSpeechInput.mimeType,
-            region = region,
-            okHttpClient = okHttpClient,
-            ioDispatcher = ioDispatcher,
-        )
+        try {
+            val region = settings.microsoftSpeechRegionFlow.first()
+                .takeIf(String::isNotBlank)
+                ?: error("Azure Speech region for Microsoft MAI Transcribe is not set.")
+            MicrosoftSpeechTranscriber(
+                apiKey = keyChars,
+                audioFile = microsoftSpeechInput.file,
+                mimeType = microsoftSpeechInput.mimeType,
+                region = region,
+                okHttpClient = okHttpClient,
+                ioDispatcher = ioDispatcher,
+            )
+        } catch (throwable: Throwable) {
+            keyChars.fill('\u0000')
+            throw throwable
+        }
     } else {
         val geminiInput = checkNotNull(preparedInput as? PreparedAudioInput.Gemini) {
             "Internal error: Gemini audio data missing."
         }
         val modelName = requireNotNull(geminiModel) { "Gemini model not specified." }
         val keyChars = requireNotNull(settings.getGeminiApiKey()) { "API key missing or corrupted" }
-        GeminiTranscriber(
-            audioFile = geminiInput.file,
-            mimeType = geminiInput.mimeType,
-            apiKey = keyChars,
-            modelName = modelName,
-            speakerDiarizationEnabled = speakerDiarizationEnabled,
-            ioDispatcher = ioDispatcher,
-        )
+        try {
+            GeminiTranscriber(
+                audioFile = geminiInput.file,
+                mimeType = geminiInput.mimeType,
+                apiKey = keyChars,
+                modelName = modelName,
+                speakerDiarizationEnabled = speakerDiarizationEnabled,
+                ioDispatcher = ioDispatcher,
+            )
+        } catch (throwable: Throwable) {
+            keyChars.fill('\u0000')
+            throw throwable
+        }
     }
 
     private suspend fun persistCompletedTranscription(jobId: Int, displayName: String, data: TranscriptionData) {

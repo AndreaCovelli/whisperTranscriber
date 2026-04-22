@@ -30,6 +30,7 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
         private const val RESULT_CHANNEL_ID = "background_share_results"
         private const val RESULT_CHANNEL_NAME = "Shared audio results"
         private const val RESULT_GROUP_KEY = "background_share_result_group"
+        private const val PROCESSING_GROUP_KEY = "background_share_processing_group"
         private const val RESULT_NOTIFICATION_OFFSET = 20_000
         private const val GENERIC_FAILURE_NOTIFICATION_OFFSET = 40_000
         private const val RETRY_NOTIFICATION_OFFSET = 60_000
@@ -206,6 +207,7 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
             .setOnlyAlertOnce(true)
             .setOngoing(true)
             .setAutoCancel(false)
+            .setGroup(PROCESSING_GROUP_KEY)
             .apply {
                 if (jobId != null) {
                     addAction(

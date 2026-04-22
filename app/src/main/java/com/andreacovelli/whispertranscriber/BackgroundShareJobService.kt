@@ -106,5 +106,5 @@ class BackgroundShareJobService : JobService() {
         )
     }
 
-    private fun notificationId(jobId: Int): Int = 200_000 + jobId
+    private fun notificationId(jobId: Int): Int = backgroundShareSchedulerJobId(jobId)
 }
