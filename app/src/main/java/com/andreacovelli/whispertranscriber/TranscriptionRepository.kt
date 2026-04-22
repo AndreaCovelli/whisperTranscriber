@@ -101,6 +101,10 @@ class TranscriptionRepository @Inject constructor(
 
     suspend fun resetRunningToQueued(id: Int): Boolean = jobDao.resetRunningToQueued(id) > 0
 
+    suspend fun markRunningAsCompleted(id: Int) {
+        jobDao.markRunningAsCompleted(id)
+    }
+
     suspend fun resetStaleJobs(): Int = jobDao.resetAllRunningToQueued()
 
     suspend fun clearJobTranscription(jobId: Int) {

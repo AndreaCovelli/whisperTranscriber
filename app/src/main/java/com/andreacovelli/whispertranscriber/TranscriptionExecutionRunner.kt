@@ -81,35 +81,41 @@ class TranscriptionExecutionRunner @Inject constructor(
         return try {
             onProgressNotification(jobId, displayName, "Processing: ${job.displayName}")
 
-            val providerExecution = resolveProviderExecution(job.providerName, job.requestedModel)
+            if (job.transcript.isNotBlank()) {
+                resumePostTranscriptionWork(jobId, displayName, job.transcript, postTranscriptionWorkSpec)
+                backgroundShareNotifier.cancelBackgroundProcessing(jobId)
+                JobRunOutcome.Success
+            } else {
+                val providerExecution = resolveProviderExecution(job.providerName, job.requestedModel)
 
-            val stagedUri = when (val resolution = QueuedAudioInputResolver.resolve(job)) {
-                is QueuedAudioInputResolution.Ready -> resolution.uri
-                is QueuedAudioInputResolution.MissingStagedFile -> {
-                    repository.updateError(jobId, resolution.message, false, "Error")
-                    notifyPostTranscriptionFailure(
-                        postTranscriptionWorkSpec = postTranscriptionWorkSpec,
-                        jobId = jobId,
-                        displayName = job.displayName,
-                        message = resolution.message,
-                    )
-                    return JobRunOutcome.Failure
+                val stagedUri = when (val resolution = QueuedAudioInputResolver.resolve(job)) {
+                    is QueuedAudioInputResolution.Ready -> resolution.uri
+                    is QueuedAudioInputResolution.MissingStagedFile -> {
+                        repository.updateError(jobId, resolution.message, false, "Error")
+                        notifyPostTranscriptionFailure(
+                            postTranscriptionWorkSpec = postTranscriptionWorkSpec,
+                            jobId = jobId,
+                            displayName = job.displayName,
+                            message = resolution.message,
+                        )
+                        return JobRunOutcome.Failure
+                    }
                 }
-            }
 
-            processSingleJob(
-                jobId = jobId,
-                uri = stagedUri,
-                displayName = job.displayName,
-                inputMimeType = job.sourceMimeType?.lowercase(),
-                providerExecution = providerExecution,
-                speakerDiarizationEnabled = job.speakerDiarizationEnabled,
-                speakerLabelPrefix = speakerLabelPrefix,
-                postTranscriptionWorkSpec = postTranscriptionWorkSpec,
-                onProgressNotification = onProgressNotification,
-            )
-            backgroundShareNotifier.cancelBackgroundProcessing(jobId)
-            JobRunOutcome.Success
+                processSingleJob(
+                    jobId = jobId,
+                    uri = stagedUri,
+                    displayName = job.displayName,
+                    inputMimeType = job.sourceMimeType?.lowercase(),
+                    providerExecution = providerExecution,
+                    speakerDiarizationEnabled = job.speakerDiarizationEnabled,
+                    speakerLabelPrefix = speakerLabelPrefix,
+                    postTranscriptionWorkSpec = postTranscriptionWorkSpec,
+                    onProgressNotification = onProgressNotification,
+                )
+                backgroundShareNotifier.cancelBackgroundProcessing(jobId)
+                JobRunOutcome.Success
+            }
         } catch (e: CancellationException) {
             withContext(NonCancellable + ioDispatcher) {
                 repository.resetRunningToQueued(jobId)
@@ -132,6 +138,9 @@ class TranscriptionExecutionRunner @Inject constructor(
                 JobRunOutcome.Retry
             }
         } catch (e: IOException) {
+            handleTerminalFailure(jobId, displayName, postTranscriptionWorkSpec, e.message ?: e::class.java.simpleName)
+            JobRunOutcome.Failure
+        } catch (e: SecurityException) {
             handleTerminalFailure(jobId, displayName, postTranscriptionWorkSpec, e.message ?: e::class.java.simpleName)
             JobRunOutcome.Failure
         } catch (e: IllegalStateException) {
@@ -189,38 +198,7 @@ class TranscriptionExecutionRunner @Inject constructor(
                 onProgressNotification = onProgressNotification,
             )
             persistCompletedTranscription(jobId, displayName, result)
-            if (postTranscriptionWorkSpec?.summarizeAfterTranscription == true) {
-                val summarizationResult = summarizationService.summarize(
-                    jobId = jobId,
-                    settings = postTranscriptionWorkSpec.summarizationSettings,
-                    allowResummarize = false,
-                    fallbackStatusMessage = "Completed",
-                )
-                if (postTranscriptionWorkSpec.notifyResult) {
-                    if (summarizationResult.errorMessage == null) {
-                        val completedJob = repository.getJob(jobId)
-                        backgroundShareNotifier.showSummary(
-                            jobId = jobId,
-                            displayName = displayName,
-                            summary = completedJob?.summary.orEmpty().ifBlank {
-                                summarizationResult.statusMessage
-                            },
-                        )
-                    } else {
-                        backgroundShareNotifier.showFailure(
-                            jobId = jobId,
-                            displayName = displayName,
-                            message = summarizationResult.errorMessage,
-                        )
-                    }
-                }
-            } else if (postTranscriptionWorkSpec?.notifyResult == true) {
-                backgroundShareNotifier.showTranscription(
-                    jobId = jobId,
-                    displayName = displayName,
-                    transcript = result.text,
-                )
-            }
+            resumePostTranscriptionWork(jobId, displayName, result.text, postTranscriptionWorkSpec)
         } finally {
             preparedInput?.tempFileToClean?.let { file ->
                 runCatching { file.delete() }
@@ -510,6 +488,50 @@ class TranscriptionExecutionRunner @Inject constructor(
 
     private suspend fun persistCompletedTranscription(jobId: Int, displayName: String, data: TranscriptionData) {
         repository.persistCompletedTranscription(jobId, displayName, data)
+    }
+
+    private suspend fun resumePostTranscriptionWork(
+        jobId: Int,
+        displayName: String,
+        transcript: String,
+        postTranscriptionWorkSpec: PostTranscriptionWorkSpec?,
+    ) {
+        if (postTranscriptionWorkSpec?.summarizeAfterTranscription == true) {
+            val summarizationResult = summarizationService.summarize(
+                jobId = jobId,
+                settings = postTranscriptionWorkSpec.summarizationSettings,
+                allowResummarize = false,
+                fallbackStatusMessage = "Completed",
+            )
+            repository.markRunningAsCompleted(jobId)
+            if (postTranscriptionWorkSpec.notifyResult) {
+                if (summarizationResult.errorMessage == null) {
+                    val completedJob = repository.getJob(jobId)
+                    backgroundShareNotifier.showSummary(
+                        jobId = jobId,
+                        displayName = displayName,
+                        summary = completedJob?.summary.orEmpty().ifBlank {
+                            summarizationResult.statusMessage
+                        },
+                    )
+                } else {
+                    backgroundShareNotifier.showFailure(
+                        jobId = jobId,
+                        displayName = displayName,
+                        message = summarizationResult.errorMessage,
+                    )
+                }
+            }
+        } else {
+            repository.markRunningAsCompleted(jobId)
+            if (postTranscriptionWorkSpec?.notifyResult == true) {
+                backgroundShareNotifier.showTranscription(
+                    jobId = jobId,
+                    displayName = displayName,
+                    transcript = transcript,
+                )
+            }
+        }
     }
 
     private fun notifyPostTranscriptionFailure(

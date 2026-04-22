@@ -198,6 +198,18 @@ interface TranscriptionJobDao {
     )
     suspend fun resetRunningToQueued(id: Int): Int
 
+    @Query(
+        """
+        UPDATE active_jobs
+        SET isRunning = 0,
+            status = 'Completed',
+            progress = 1,
+            error = NULL
+        WHERE id = :id
+        """,
+    )
+    suspend fun markRunningAsCompleted(id: Int)
+
     @Query("UPDATE active_jobs SET isRunning = 0, status = 'Queued' WHERE isRunning = 1 OR status = 'Retry scheduled'")
     suspend fun resetAllRunningToQueued(): Int
 
