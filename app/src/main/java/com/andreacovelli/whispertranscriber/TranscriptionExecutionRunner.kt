@@ -275,18 +275,29 @@ class TranscriptionExecutionRunner @Inject constructor(
         val outputFile = withContext(ioDispatcher) {
             File.createTempFile("${QueuedAudioStore.CONVERTED_FILE_PREFIX}$jobId", ".wav", app.cacheDir)
         }
-        HardwareAudioConverter.convertTo16kMonoWav(
-            context = app,
-            inputUri = uri,
-            outputFile = outputFile,
-            onProgress = { progress ->
-                repository.updateStatusAndProgress(
-                    jobId,
-                    "Converting to 16 kHz WAV: ${"%.1f".format(progress * 100)}%",
-                    progress,
-                )
-            },
-        )
+        try {
+            HardwareAudioConverter.convertTo16kMonoWav(
+                context = app,
+                inputUri = uri,
+                outputFile = outputFile,
+                onProgress = { progress ->
+                    repository.updateStatusAndProgress(
+                        jobId,
+                        "Converting to 16 kHz WAV: ${"%.1f".format(progress * 100)}%",
+                        progress,
+                    )
+                },
+            )
+        } catch (e: IOException) {
+            runCatching { outputFile.delete() }
+            throw e
+        } catch (e: IllegalArgumentException) {
+            runCatching { outputFile.delete() }
+            throw e
+        } catch (e: IllegalStateException) {
+            runCatching { outputFile.delete() }
+            throw e
+        }
         return if (usingMicrosoftSpeech) {
             repository.updateStatus(jobId, "Converted audio ready for Microsoft Speech...")
             PreparedAudioInput.MicrosoftSpeech(file = outputFile, mimeType = "audio/wav", tempFileToClean = outputFile)

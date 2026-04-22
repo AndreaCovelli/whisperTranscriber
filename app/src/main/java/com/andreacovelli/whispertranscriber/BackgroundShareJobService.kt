@@ -21,9 +21,6 @@ class BackgroundShareJobService : JobService() {
     lateinit var queueService: TranscriptionQueueService
 
     @Inject
-    lateinit var repository: TranscriptionRepository
-
-    @Inject
     lateinit var backgroundShareNotifier: BackgroundShareNotifier
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -85,9 +82,6 @@ class BackgroundShareJobService : JobService() {
         if (jobId != -1) {
             runningJobs.remove(jobId)?.cancel()
             runningParams.remove(jobId)
-            serviceScope.launch {
-                repository.resetRunningToQueued(jobId)
-            }
         }
         return true
     }
