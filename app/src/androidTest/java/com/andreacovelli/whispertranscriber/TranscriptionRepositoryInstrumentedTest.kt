@@ -10,8 +10,10 @@ import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -30,7 +32,6 @@ class TranscriptionRepositoryInstrumentedTest {
         repository = TranscriptionRepository(
             db = db,
             jobDao = db.transcriptionJobDao(),
-            jobSummarizationDao = db.transcriptionJobSummarizationDao(),
             historyRepository = historyRepository,
         )
     }
@@ -82,5 +83,57 @@ class TranscriptionRepositoryInstrumentedTest {
         assertEquals("GEMINI_FLASH", restoredHistory?.summaryProviderName)
         assertEquals("gemini-2.5-flash", restoredHistory?.summaryModel)
         assertEquals(restoredHistoryId, updatedJob?.historyId)
+    }
+
+    @Test
+    fun markRetryScheduled_usesBlockingRetryLiteral() = runBlocking {
+        val jobId = repository.addJob(
+            TranscriptionJob(
+                uri = "content://test/retry.wav",
+                displayName = "retry.wav",
+                status = "Starting...",
+                isRunning = true,
+            ),
+        ).toInt()
+
+        repository.markRetryScheduled(jobId)
+
+        val updatedJob = repository.getJob(jobId)
+
+        assertEquals("Retry scheduled", updatedJob?.status)
+        assertFalse(updatedJob?.isRunning ?: true)
+        assertEquals(1, repository.countBlockingJobs())
+    }
+
+    @Test
+    fun resetStaleJobs_requeuesRunningJobsAndMakesThemClaimableAgain() = runBlocking {
+        val staleJobId = repository.addJob(
+            TranscriptionJob(
+                uri = "content://test/stale.wav",
+                displayName = "stale.wav",
+                status = "Processing...",
+                isRunning = true,
+            ),
+        ).toInt()
+        val queuedJobId = repository.addJob(
+            TranscriptionJob(
+                uri = "content://test/queued.wav",
+                displayName = "queued.wav",
+                status = "Queued",
+                isRunning = false,
+            ),
+        ).toInt()
+
+        val resetCount = repository.resetStaleJobs()
+        val staleJob = repository.getJob(staleJobId)
+        val untouchedQueuedJob = repository.getJob(queuedJobId)
+
+        assertEquals(1, resetCount)
+        assertEquals("Queued", staleJob?.status)
+        assertFalse(staleJob?.isRunning ?: true)
+        assertEquals("Queued", untouchedQueuedJob?.status)
+        assertFalse(untouchedQueuedJob?.isRunning ?: true)
+        assertEquals(0, repository.countBlockingJobs())
+        assertTrue(repository.claimJobForExecution(staleJobId, "Starting..."))
     }
 }

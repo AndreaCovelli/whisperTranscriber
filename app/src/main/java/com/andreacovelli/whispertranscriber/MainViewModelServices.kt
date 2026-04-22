@@ -224,6 +224,7 @@ class TranscriptionQueueService @Inject constructor(
         }
 
     suspend fun resumePendingQueue() {
+        repository.resetStaleJobs()
         scheduleNextQueuedJobIfIdle()
     }
 

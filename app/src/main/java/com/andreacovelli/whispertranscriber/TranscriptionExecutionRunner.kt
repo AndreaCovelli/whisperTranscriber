@@ -110,7 +110,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         } catch (e: TransientWorkException) {
             val message = e.message ?: e::class.java.simpleName
             val retryMessage = applicationContext.getString(R.string.transcription_retry_notification_body, message)
-            repository.markRetryScheduled(jobId, applicationContext.getString(R.string.transcription_retry_status))
+            repository.markRetryScheduled(jobId)
             backgroundShareNotifier.cancelBackgroundProcessing(jobId)
             backgroundShareNotifier.showRetryScheduled(jobId, displayName, retryMessage)
             JobRunOutcome.Retry
@@ -347,9 +347,9 @@ class TranscriptionExecutionRunner @Inject constructor(
         PreparedAudioInput.Gemini(file = tempFile, mimeType = inputMimeType, tempFileToClean = tempFile)
     }
 
-    private fun copyInputToTempFile(app: Application, jobId: Int, uri: Uri): File {
+    private suspend fun copyInputToTempFile(app: Application, jobId: Int, uri: Uri): File = withContext(ioDispatcher) {
         val contentResolver = app.contentResolver
-        return contentResolver.openInputStream(uri)?.use { input ->
+        contentResolver.openInputStream(uri)?.use { input ->
             File.createTempFile("${QueuedAudioStore.DIRECT_FILE_PREFIX}$jobId", ".tmp", app.cacheDir).apply {
                 outputStream().use(input::copyTo)
             }

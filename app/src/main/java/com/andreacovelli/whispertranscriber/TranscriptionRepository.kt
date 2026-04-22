@@ -79,8 +79,8 @@ class TranscriptionRepository @Inject constructor(
         jobDao.updateError(id, error, isRunning, status)
     }
 
-    suspend fun markRetryScheduled(id: Int, status: String) {
-        jobDao.markRetryScheduled(id, status)
+    suspend fun markRetryScheduled(id: Int) {
+        jobDao.markRetryScheduled(id)
     }
 
     suspend fun updateStatus(id: Int, status: String) {
@@ -92,6 +92,8 @@ class TranscriptionRepository @Inject constructor(
     }
 
     suspend fun resetRunningToQueued(id: Int): Boolean = jobDao.resetRunningToQueued(id) > 0
+
+    suspend fun resetStaleJobs(): Int = jobDao.resetAllRunningToQueued()
 
     suspend fun clearJobTranscription(jobId: Int) {
         db.withTransaction {

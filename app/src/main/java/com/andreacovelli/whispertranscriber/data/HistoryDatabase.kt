@@ -166,8 +166,8 @@ interface TranscriptionJobDao {
     @Query("UPDATE active_jobs SET error = :error, isRunning = :isRunning, status = :status WHERE id = :id")
     suspend fun updateError(id: Int, error: String, isRunning: Boolean, status: String)
 
-    @Query("UPDATE active_jobs SET error = NULL, isRunning = 0, status = :status WHERE id = :id")
-    suspend fun markRetryScheduled(id: Int, status: String)
+    @Query("UPDATE active_jobs SET error = NULL, isRunning = 0, status = 'Retry scheduled' WHERE id = :id")
+    suspend fun markRetryScheduled(id: Int)
 
     @Query("UPDATE active_jobs SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: Int, status: String)
@@ -185,6 +185,9 @@ interface TranscriptionJobDao {
         """,
     )
     suspend fun resetRunningToQueued(id: Int): Int
+
+    @Query("UPDATE active_jobs SET isRunning = 0, status = 'Queued' WHERE isRunning = 1")
+    suspend fun resetAllRunningToQueued(): Int
 
     @Query(
         """
