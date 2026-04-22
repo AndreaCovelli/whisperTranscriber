@@ -65,6 +65,7 @@ class TranscriptionExecutionRunner @Inject constructor(
 
     internal suspend fun runJob(
         jobId: Int,
+        speakerLabelPrefix: String,
         onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
     ): JobRunOutcome {
         backgroundShareNotifier.cancelRetryScheduled(jobId)
@@ -104,6 +105,7 @@ class TranscriptionExecutionRunner @Inject constructor(
                 inputMimeType = job.sourceMimeType?.lowercase(),
                 providerExecution = providerExecution,
                 speakerDiarizationEnabled = job.speakerDiarizationEnabled,
+                speakerLabelPrefix = speakerLabelPrefix,
                 postTranscriptionWorkSpec = postTranscriptionWorkSpec,
                 onProgressNotification = onProgressNotification,
             )
@@ -163,6 +165,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         inputMimeType: String?,
         providerExecution: ProviderExecution,
         speakerDiarizationEnabled: Boolean,
+        speakerLabelPrefix: String,
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec?,
         onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
     ) {
@@ -182,6 +185,7 @@ class TranscriptionExecutionRunner @Inject constructor(
                 preparedInput = preparedInput,
                 providerExecution = providerExecution,
                 speakerDiarizationEnabled = speakerDiarizationEnabled,
+                speakerLabelPrefix = speakerLabelPrefix,
                 onProgressNotification = onProgressNotification,
             )
             persistCompletedTranscription(jobId, displayName, result)
@@ -400,9 +404,15 @@ class TranscriptionExecutionRunner @Inject constructor(
         preparedInput: PreparedAudioInput,
         providerExecution: ProviderExecution,
         speakerDiarizationEnabled: Boolean,
+        speakerLabelPrefix: String,
         onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
     ): TranscriptionData {
-        val transcriber = buildTranscriber(preparedInput, providerExecution, speakerDiarizationEnabled)
+        val transcriber = buildTranscriber(
+            preparedInput = preparedInput,
+            providerExecution = providerExecution,
+            speakerDiarizationEnabled = speakerDiarizationEnabled,
+            speakerLabelPrefix = speakerLabelPrefix,
+        )
         var resultData: TranscriptionData? = null
         transcriber.transcribe().collect { result ->
             when (result) {
@@ -426,6 +436,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         preparedInput: PreparedAudioInput,
         providerExecution: ProviderExecution,
         speakerDiarizationEnabled: Boolean,
+        speakerLabelPrefix: String,
     ): ProviderTranscriber = when (providerExecution) {
         ProviderExecution.MicrosoftSpeech -> {
             check(!speakerDiarizationEnabled) { "Speaker diarization is not supported by Microsoft MAI Transcribe." }
@@ -463,6 +474,7 @@ class TranscriptionExecutionRunner @Inject constructor(
                     apiKey = keyChars.copyOf(),
                     modelName = providerExecution.modelName,
                     speakerDiarizationEnabled = speakerDiarizationEnabled,
+                    speakerLabelPrefix = speakerLabelPrefix,
                     ioDispatcher = ioDispatcher,
                 )
             } finally {

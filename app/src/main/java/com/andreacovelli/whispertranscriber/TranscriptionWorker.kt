@@ -32,7 +32,6 @@ class TranscriptionWorker @AssistedInject constructor(
     companion object {
         const val NOTIFICATION_ID = 1001
         const val CHANNEL_ID = "transcription_channel"
-        const val SPEAKER_LABEL_PREFIX_INPUT = "speakerLabelPrefix"
     }
 
     override suspend fun getForegroundInfo(): ForegroundInfo = createForegroundInfo("Starting transcription...")
@@ -84,10 +83,12 @@ class TranscriptionWorker @AssistedInject constructor(
     override suspend fun doWork(): Result {
         val jobId = inputData.getInt(TranscriptionQueueService.QUEUED_JOB_ID_INPUT, -1)
         if (jobId == -1) return Result.failure()
+        val speakerLabelPrefix = inputData.getString(TranscriptionQueueService.SPEAKER_LABEL_PREFIX_INPUT).orEmpty()
 
         return when (
             runner.runJob(
                 jobId = jobId,
+                speakerLabelPrefix = speakerLabelPrefix,
                 onProgressNotification = ::updateNotification,
             )
         ) {
@@ -99,10 +100,7 @@ class TranscriptionWorker @AssistedInject constructor(
                 queueService.onExecutionFinished(jobId)
                 Result.success()
             }
-            JobRunOutcome.Retry -> {
-                queueService.scheduleNextQueuedJobIfIdle()
-                Result.retry()
-            }
+            JobRunOutcome.Retry -> Result.retry()
             JobRunOutcome.Failure -> {
                 queueService.onExecutionFinished(jobId)
                 Result.failure()

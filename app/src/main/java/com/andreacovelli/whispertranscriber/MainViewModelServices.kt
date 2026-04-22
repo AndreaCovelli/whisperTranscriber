@@ -55,7 +55,7 @@ class TranscriptionQueueService @Inject constructor(
     companion object {
         internal const val QUEUED_JOB_ID_INPUT = "jobId"
         internal const val QUEUED_JOB_DISPLAY_NAME_INPUT = "displayName"
-        private const val SPEAKER_LABEL_PREFIX_INPUT = "speakerLabelPrefix"
+        internal const val SPEAKER_LABEL_PREFIX_INPUT = "speakerLabelPrefix"
     }
 
     suspend fun enqueueSharedAudio(
@@ -320,6 +320,7 @@ class TranscriptionQueueService @Inject constructor(
         val extras = PersistableBundle().apply {
             putInt(QUEUED_JOB_ID_INPUT, job.id)
             putString(QUEUED_JOB_DISPLAY_NAME_INPUT, job.displayName)
+            putString(SPEAKER_LABEL_PREFIX_INPUT, context.getString(R.string.speaker_label_prefix))
         }
         val jobInfo = JobInfo.Builder(schedulerJobId, ComponentName(context, BackgroundShareJobService::class.java))
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)

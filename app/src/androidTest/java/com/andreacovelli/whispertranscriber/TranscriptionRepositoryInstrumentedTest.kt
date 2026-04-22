@@ -174,7 +174,7 @@ class TranscriptionRepositoryInstrumentedTest {
     }
 
     @Test
-    fun markRetryScheduled_keepsRetryStateWithoutBlockingQueue() = runBlocking {
+    fun markRetryScheduled_keepsRetryStateBlockingSequentialQueue() = runBlocking {
         val jobId = repository.addJob(
             TranscriptionJob(
                 uri = "content://test/retry.wav",
@@ -191,7 +191,7 @@ class TranscriptionRepositoryInstrumentedTest {
         assertEquals("Retry scheduled", updatedJob?.status)
         assertFalse(updatedJob?.isRunning ?: true)
         assertEquals(1, updatedJob?.retryCount)
-        assertEquals(0, repository.countBlockingJobs())
+        assertEquals(1, repository.countBlockingJobs())
     }
 
     @Test

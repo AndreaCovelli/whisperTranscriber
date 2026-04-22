@@ -40,6 +40,8 @@ class BackgroundShareJobService : JobService() {
         ).orEmpty().ifBlank {
             getString(R.string.background_share_generic_audio_label)
         }
+        val speakerLabelPrefix = params.extras.getString(TranscriptionQueueService.SPEAKER_LABEL_PREFIX_INPUT)
+            .orEmpty()
         runningParams[jobId] = params
         setNotification(
             params,
@@ -57,6 +59,7 @@ class BackgroundShareJobService : JobService() {
                 when (
                     runner.runJob(
                         jobId = jobId,
+                        speakerLabelPrefix = speakerLabelPrefix,
                         onProgressNotification = ::updateNotification,
                     )
                 ) {
@@ -68,10 +71,7 @@ class BackgroundShareJobService : JobService() {
                         queueService.onExecutionFinished(jobId)
                         jobFinished(params, false)
                     }
-                    JobRunOutcome.Retry -> {
-                        queueService.scheduleNextQueuedJobIfIdle()
-                        jobFinished(params, true)
-                    }
+                    JobRunOutcome.Retry -> jobFinished(params, true)
                     JobRunOutcome.Failure -> {
                         queueService.onExecutionFinished(jobId)
                         jobFinished(params, false)

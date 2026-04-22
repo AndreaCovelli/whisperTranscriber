@@ -151,6 +151,7 @@ internal class GeminiTranscriber(
     private val apiKey: CharArray,
     private val modelName: String,
     private val speakerDiarizationEnabled: Boolean,
+    private val speakerLabelPrefix: String,
     private val ioDispatcher: CoroutineDispatcher,
 ) : ProviderTranscriber {
     companion object {
@@ -258,16 +259,7 @@ internal class GeminiTranscriber(
         .build()
 
     private fun buildPrompt(): String = if (speakerDiarizationEnabled) {
-        """
-        Transcribe the provided audio and return only a compact JSON object with fields:
-        language_code (BCP-47 like en-US) and text.
-        When multiple speakers can be distinguished, format text with speaker labels on separate lines,
-        for example:
-        Speaker A: Hello
-        Speaker B: Hi
-        If speaker changes cannot be inferred reliably, return the plain transcript text without labels.
-        Do not include any extra commentary.
-        """.trimIndent()
+        buildGeminiSpeakerDiarizationPrompt(speakerLabelPrefix)
     } else {
         "Transcribe the provided audio. Return only a compact JSON object with fields: language_code (BCP-47 like en-US) and text (full transcript). Do not include any extra commentary."
     }
@@ -430,4 +422,18 @@ internal fun parseTranscriptTextValue(transcriptText: String, speakerDiarization
         .filter(String::isNotEmpty)
         .joinToString(separator = "\n")
         .ifBlank { NO_TEXT_FOUND }
+}
+
+internal fun buildGeminiSpeakerDiarizationPrompt(speakerLabelPrefix: String): String {
+    val normalizedPrefix = speakerLabelPrefix.trim().ifBlank { "Speaker" }
+    return """
+        Transcribe the provided audio and return only a compact JSON object with fields:
+        language_code (BCP-47 like en-US) and text.
+        When multiple speakers can be distinguished, format text with speaker labels on separate lines,
+        for example:
+        $normalizedPrefix A: Hello
+        $normalizedPrefix B: Hi
+        If speaker changes cannot be inferred reliably, return the plain transcript text without labels.
+        Do not include any extra commentary.
+        """.trimIndent()
 }
