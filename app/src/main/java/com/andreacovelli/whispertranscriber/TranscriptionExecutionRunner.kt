@@ -16,6 +16,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -109,7 +110,9 @@ class TranscriptionExecutionRunner @Inject constructor(
             backgroundShareNotifier.cancelBackgroundProcessing(jobId)
             JobRunOutcome.Success
         } catch (e: CancellationException) {
-            repository.resetRunningToQueued(jobId)
+            withContext(NonCancellable + ioDispatcher) {
+                repository.resetRunningToQueued(jobId)
+            }
             throw e
         } catch (e: TransientWorkException) {
             val message = e.message ?: e::class.java.simpleName
@@ -120,7 +123,9 @@ class TranscriptionExecutionRunner @Inject constructor(
                 JobRunOutcome.Failure
             } else {
                 val retryMessage = applicationContext.getString(R.string.transcription_retry_notification_body, message)
-                repository.markRetryScheduled(jobId)
+                withContext(NonCancellable + ioDispatcher) {
+                    repository.markRetryScheduled(jobId)
+                }
                 backgroundShareNotifier.cancelBackgroundProcessing(jobId)
                 backgroundShareNotifier.showRetryScheduled(jobId, displayName, retryMessage)
                 JobRunOutcome.Retry
@@ -474,9 +479,8 @@ class TranscriptionExecutionRunner @Inject constructor(
         }
     }
 
-    private fun resolveProviderExecution(providerName: String?, requestedModel: String?): ProviderExecution {
-        val provider = decodeStoredTranscriptionProvider(providerName)
-        return when (provider) {
+    private fun resolveProviderExecution(providerName: String?, requestedModel: String?): ProviderExecution =
+        when (val provider = decodeStoredTranscriptionProvider(providerName)) {
             TranscriptionProvider.ELEVEN_LABS,
             TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
             -> ProviderExecution.MicrosoftSpeech
@@ -489,7 +493,6 @@ class TranscriptionExecutionRunner @Inject constructor(
                     ?: error("Gemini model not specified."),
             )
         }
-    }
 
     private suspend fun persistCompletedTranscription(jobId: Int, displayName: String, data: TranscriptionData) {
         val historyId = repository.insertHistory(
