@@ -131,9 +131,6 @@ class TranscriptionQueueService @Inject constructor(
                 )
                 pendingPreparedAudio.remove(prepared)
             }
-            if (preferImmediateBackgroundStart) {
-                repository.resetStaleJobs()
-            }
             scheduleNextQueuedJobIfIdle()
         } catch (e: IOException) {
             queuedAudioStore.deletePreparedAudio(pendingPreparedAudio)

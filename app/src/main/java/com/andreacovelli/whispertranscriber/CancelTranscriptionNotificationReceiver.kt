@@ -3,16 +3,20 @@ package com.andreacovelli.whispertranscriber
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.andreacovelli.whispertranscriber.di.ApplicationScope
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
 class CancelTranscriptionNotificationReceiver : BroadcastReceiver() {
     @Inject
     lateinit var queueService: TranscriptionQueueService
+
+    @Inject
+    @ApplicationScope
+    lateinit var applicationScope: CoroutineScope
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != ACTION_CANCEL_JOB) return
@@ -21,7 +25,7 @@ class CancelTranscriptionNotificationReceiver : BroadcastReceiver() {
         if (jobId == -1) return
 
         val pendingResult = goAsync()
-        CoroutineScope(Dispatchers.IO).launch {
+        applicationScope.launch {
             try {
                 queueService.cancelJob(jobId)
             } finally {
