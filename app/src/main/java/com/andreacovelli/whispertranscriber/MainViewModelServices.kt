@@ -51,7 +51,6 @@ class TranscriptionQueueService @Inject constructor(
     private val queuedAudioStore: QueuedAudioStore,
     private val workManager: WorkManager,
     private val backgroundShareNotifier: BackgroundShareNotifier,
-    @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
     companion object {
         internal const val QUEUED_JOB_ID_INPUT = "jobId"

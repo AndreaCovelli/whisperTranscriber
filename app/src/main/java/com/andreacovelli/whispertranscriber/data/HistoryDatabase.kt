@@ -145,9 +145,6 @@ interface TranscriptionJobDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(job: TranscriptionJob): Long
 
-    @Query("UPDATE active_jobs SET isRunning = :isRunning, status = :status WHERE id = :id")
-    suspend fun updateRunning(id: Int, isRunning: Boolean, status: String)
-
     @Query("UPDATE active_jobs SET status = :status, progress = :progress WHERE id = :id")
     suspend fun updateStatusAndProgress(id: Int, status: String, progress: Float)
 
@@ -215,9 +212,6 @@ interface TranscriptionJobDao {
 
     @Query("UPDATE active_jobs SET historyId = :historyId WHERE id = :jobId")
     suspend fun updateHistoryId(jobId: Int, historyId: Int)
-
-    @Query("SELECT * FROM active_jobs WHERE status = 'Queued' ORDER BY timestamp ASC")
-    suspend fun getQueuedJobs(): List<TranscriptionJob>
 
     @Query("SELECT * FROM active_jobs WHERE status = 'Queued' ORDER BY timestamp ASC, id ASC LIMIT 1")
     suspend fun getOldestQueuedJob(): TranscriptionJob?

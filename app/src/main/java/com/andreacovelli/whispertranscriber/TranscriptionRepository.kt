@@ -57,10 +57,6 @@ class TranscriptionRepository @Inject constructor(
         newHistoryId
     }
 
-    suspend fun updateRunning(id: Int, isRunning: Boolean, status: String) {
-        jobDao.updateRunning(id, isRunning, status)
-    }
-
     suspend fun updateStatusAndProgress(id: Int, status: String, progress: Float) {
         jobDao.updateStatusAndProgress(id, status, progress)
     }
@@ -109,8 +105,6 @@ class TranscriptionRepository @Inject constructor(
     }
 
     suspend fun getJob(jobId: Int): TranscriptionJob? = jobDao.getJobById(jobId)
-
-    suspend fun getQueuedJobs(): List<TranscriptionJob> = jobDao.getQueuedJobs()
 
     suspend fun getOldestQueuedJob(): TranscriptionJob? = jobDao.getOldestQueuedJob()
 
