@@ -62,7 +62,10 @@ class BackgroundShareJobService : JobService() {
                         queueService.onExecutionFinished(jobId)
                         jobFinished(params, false)
                     }
-                    JobRunOutcome.Skipped -> jobFinished(params, false)
+                    JobRunOutcome.Skipped -> {
+                        queueService.onExecutionFinished(jobId)
+                        jobFinished(params, false)
+                    }
                     JobRunOutcome.Retry -> jobFinished(params, true)
                     JobRunOutcome.Failure -> {
                         queueService.onExecutionFinished(jobId)

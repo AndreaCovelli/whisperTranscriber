@@ -156,13 +156,21 @@ class TranscriptionRepositoryInstrumentedTest {
     }
 
     @Test
-    fun resetStaleJobs_requeuesRunningJobsAndMakesThemClaimableAgain() = runBlocking {
+    fun resetStaleJobs_requeuesBlockingJobsAndMakesThemClaimableAgain() = runBlocking {
         val staleJobId = repository.addJob(
             TranscriptionJob(
                 uri = "content://test/stale.wav",
                 displayName = "stale.wav",
                 status = "Processing...",
                 isRunning = true,
+            ),
+        ).toInt()
+        val retryScheduledJobId = repository.addJob(
+            TranscriptionJob(
+                uri = "content://test/retry-scheduled.wav",
+                displayName = "retry-scheduled.wav",
+                status = "Retry scheduled",
+                isRunning = false,
             ),
         ).toInt()
         val queuedJobId = repository.addJob(
@@ -176,15 +184,19 @@ class TranscriptionRepositoryInstrumentedTest {
 
         val resetCount = repository.resetStaleJobs()
         val staleJob = repository.getJob(staleJobId)
+        val retryScheduledJob = repository.getJob(retryScheduledJobId)
         val untouchedQueuedJob = repository.getJob(queuedJobId)
 
-        assertEquals(1, resetCount)
+        assertEquals(2, resetCount)
         assertEquals("Queued", staleJob?.status)
         assertFalse(staleJob?.isRunning ?: true)
+        assertEquals("Queued", retryScheduledJob?.status)
+        assertFalse(retryScheduledJob?.isRunning ?: true)
         assertEquals("Queued", untouchedQueuedJob?.status)
         assertFalse(untouchedQueuedJob?.isRunning ?: true)
         assertEquals(0, repository.countBlockingJobs())
         assertNotNull(repository.claimJobForExecution(staleJobId, "Starting..."))
+        assertNotNull(repository.claimJobForExecution(retryScheduledJobId, "Starting..."))
     }
 
     @Test

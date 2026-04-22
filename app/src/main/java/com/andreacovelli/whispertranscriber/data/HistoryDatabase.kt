@@ -198,7 +198,7 @@ interface TranscriptionJobDao {
     )
     suspend fun resetRunningToQueued(id: Int): Int
 
-    @Query("UPDATE active_jobs SET isRunning = 0, status = 'Queued' WHERE isRunning = 1")
+    @Query("UPDATE active_jobs SET isRunning = 0, status = 'Queued' WHERE isRunning = 1 OR status = 'Retry scheduled'")
     suspend fun resetAllRunningToQueued(): Int
 
     @Query(

@@ -95,7 +95,10 @@ class TranscriptionWorker @AssistedInject constructor(
                 queueService.onExecutionFinished(jobId)
                 Result.success()
             }
-            JobRunOutcome.Skipped -> Result.success()
+            JobRunOutcome.Skipped -> {
+                queueService.onExecutionFinished(jobId)
+                Result.success()
+            }
             JobRunOutcome.Retry -> Result.retry()
             JobRunOutcome.Failure -> {
                 queueService.onExecutionFinished(jobId)
