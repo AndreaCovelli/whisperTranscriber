@@ -28,6 +28,11 @@ interface HistoryRepository {
     suspend fun deleteAll()
 }
 
+private fun Long.toHistoryId(): Int {
+    require(this in 0..Int.MAX_VALUE.toLong()) { "History id out of Int range: $this" }
+    return toInt()
+}
+
 @Singleton
 class RoomHistoryRepository @Inject constructor(private val historyDao: TranscriptionHistoryDao) : HistoryRepository {
     override fun getPagedHistory(rawQuery: String): Flow<PagingData<TranscriptionHistory>> {
@@ -49,7 +54,7 @@ class RoomHistoryRepository @Inject constructor(private val historyDao: Transcri
     override suspend fun getExportPage(limit: Int, offset: Int): List<TranscriptionHistory> =
         historyDao.getHistoryExportPage(limit, offset)
 
-    override suspend fun insert(historyItem: TranscriptionHistory): Int = historyDao.insert(historyItem).toInt()
+    override suspend fun insert(historyItem: TranscriptionHistory): Int = historyDao.insert(historyItem).toHistoryId()
 
     override suspend fun updateSummary(
         id: Int,
