@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 13,
-    "identityHash": "d7c766c8dc5c0c607d07c379e4abf76f",
+    "identityHash": "492b17b25084d1a4803caa65000fe73f",
     "entities": [
       {
         "tableName": "transcription_history",
@@ -119,7 +119,7 @@
       },
       {
         "tableName": "active_jobs",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `uri` TEXT NOT NULL, `displayName` TEXT NOT NULL, `sourceMimeType` TEXT, `stagedFilePath` TEXT, `providerName` TEXT NOT NULL, `requestedModel` TEXT, `executionBackend` TEXT NOT NULL, `summarizeAfterTranscription` INTEGER NOT NULL, `notifyResult` INTEGER NOT NULL, `queuedSummarizerProviderName` TEXT NOT NULL, `queuedSummarizerCustomModelName` TEXT NOT NULL, `status` TEXT NOT NULL, `progress` REAL NOT NULL, `transcript` TEXT NOT NULL, `language` TEXT NOT NULL, `model` TEXT NOT NULL, `summary` TEXT NOT NULL, `summaryProviderName` TEXT NOT NULL, `summaryModel` TEXT NOT NULL, `summaryStatus` TEXT NOT NULL, `error` TEXT, `summaryError` TEXT, `isRunning` INTEGER NOT NULL, `isSummarizing` INTEGER NOT NULL, `autoSummaryAttempted` INTEGER NOT NULL, `batchId` TEXT, `speakerDiarizationEnabled` INTEGER NOT NULL, `historyId` INTEGER, `timestamp` INTEGER NOT NULL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `uri` TEXT NOT NULL, `displayName` TEXT NOT NULL, `sourceMimeType` TEXT, `stagedFilePath` TEXT, `providerName` TEXT NOT NULL, `requestedModel` TEXT, `executionBackend` TEXT NOT NULL, `summarizeAfterTranscription` INTEGER NOT NULL, `notifyResult` INTEGER NOT NULL, `queuedSummarizerProviderName` TEXT NOT NULL, `queuedSummarizerCustomModelName` TEXT NOT NULL, `status` TEXT NOT NULL, `progress` REAL NOT NULL, `transcript` TEXT NOT NULL, `language` TEXT NOT NULL, `model` TEXT NOT NULL, `summary` TEXT NOT NULL, `summaryProviderName` TEXT NOT NULL, `summaryModel` TEXT NOT NULL, `summaryStatus` TEXT NOT NULL, `error` TEXT, `summaryError` TEXT, `isRunning` INTEGER NOT NULL, `isSummarizing` INTEGER NOT NULL, `autoSummaryAttempted` INTEGER NOT NULL, `retryCount` INTEGER NOT NULL, `batchId` TEXT, `speakerDiarizationEnabled` INTEGER NOT NULL, `historyId` INTEGER, `timestamp` INTEGER NOT NULL)",
         "fields": [
           {
             "fieldPath": "id",
@@ -273,6 +273,12 @@
             "notNull": true
           },
           {
+            "fieldPath": "retryCount",
+            "columnName": "retryCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
             "fieldPath": "batchId",
             "columnName": "batchId",
             "affinity": "TEXT"
@@ -305,7 +311,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'd7c766c8dc5c0c607d07c379e4abf76f')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '492b17b25084d1a4803caa65000fe73f')"
     ]
   }
 }

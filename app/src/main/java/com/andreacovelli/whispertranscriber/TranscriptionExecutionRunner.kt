@@ -440,19 +440,15 @@ class TranscriptionExecutionRunner @Inject constructor(
                     .takeIf(String::isNotBlank)
                     ?: error("Azure Speech region for Microsoft MAI Transcribe is not set.")
                 MicrosoftSpeechTranscriber(
-                    apiKey = keyChars,
+                    apiKey = keyChars.copyOf(),
                     audioFile = microsoftSpeechInput.file,
                     mimeType = microsoftSpeechInput.mimeType,
                     region = region,
                     okHttpClient = okHttpClient,
                     ioDispatcher = ioDispatcher,
                 )
-            } catch (e: IllegalStateException) {
+            } finally {
                 keyChars.fill('\u0000')
-                throw e
-            } catch (e: IllegalArgumentException) {
-                keyChars.fill('\u0000')
-                throw e
             }
         }
         is ProviderExecution.Gemini -> {
@@ -464,17 +460,13 @@ class TranscriptionExecutionRunner @Inject constructor(
                 GeminiTranscriber(
                     audioFile = geminiInput.file,
                     mimeType = geminiInput.mimeType,
-                    apiKey = keyChars,
+                    apiKey = keyChars.copyOf(),
                     modelName = providerExecution.modelName,
                     speakerDiarizationEnabled = speakerDiarizationEnabled,
                     ioDispatcher = ioDispatcher,
                 )
-            } catch (e: IllegalStateException) {
+            } finally {
                 keyChars.fill('\u0000')
-                throw e
-            } catch (e: IllegalArgumentException) {
-                keyChars.fill('\u0000')
-                throw e
             }
         }
     }

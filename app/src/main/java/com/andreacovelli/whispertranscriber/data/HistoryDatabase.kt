@@ -391,7 +391,7 @@ interface TranscriptionJobSummarizationDao {
 
 @Database(
     entities = [TranscriptionHistory::class, TranscriptionHistoryFts::class, TranscriptionJob::class],
-    version = 14,
+    version = 13,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -523,11 +523,6 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL(
                     "ALTER TABLE active_jobs ADD COLUMN queuedSummarizerCustomModelName TEXT NOT NULL DEFAULT ''",
                 )
-            }
-        }
-
-        private val MIGRATION_13_14 = object : Migration(13, 14) {
-            override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE active_jobs ADD COLUMN retryCount INTEGER NOT NULL DEFAULT 0")
             }
         }
@@ -545,7 +540,6 @@ abstract class AppDatabase : RoomDatabase() {
             MIGRATION_10_11,
             MIGRATION_11_12,
             MIGRATION_12_13,
-            MIGRATION_13_14,
         )
 
         private fun createBuilder(context: Context) = Room.databaseBuilder(
