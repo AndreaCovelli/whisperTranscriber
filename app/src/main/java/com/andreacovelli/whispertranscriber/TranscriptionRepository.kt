@@ -112,8 +112,13 @@ class TranscriptionRepository @Inject constructor(
 
     suspend fun countBlockingJobs(): Int = jobDao.countBlockingJobs()
 
-    suspend fun claimJobForExecution(jobId: Int, status: String): Boolean =
-        jobDao.claimJobForExecution(jobId, status) > 0
+    suspend fun claimJobForExecution(jobId: Int, status: String): TranscriptionJob? = db.withTransaction {
+        if (jobDao.claimJobForExecution(jobId, status) > 0) {
+            jobDao.getJobById(jobId)
+        } else {
+            null
+        }
+    }
 
     suspend fun retryJob(
         jobId: Int,

@@ -102,6 +102,7 @@ class TranscriptionRepositoryInstrumentedTest {
 
         assertEquals("Retry scheduled", updatedJob?.status)
         assertFalse(updatedJob?.isRunning ?: true)
+        assertEquals(1, updatedJob?.retryCount)
         assertEquals(1, repository.countBlockingJobs())
     }
 
@@ -134,6 +135,36 @@ class TranscriptionRepositoryInstrumentedTest {
         assertEquals("Queued", untouchedQueuedJob?.status)
         assertFalse(untouchedQueuedJob?.isRunning ?: true)
         assertEquals(0, repository.countBlockingJobs())
-        assertTrue(repository.claimJobForExecution(staleJobId, "Starting..."))
+        assertNotNull(repository.claimJobForExecution(staleJobId, "Starting..."))
+    }
+
+    @Test
+    fun retryJob_resetsRetryCountToZero() = runBlocking {
+        val jobId = repository.addJob(
+            TranscriptionJob(
+                uri = "content://test/retry-reset.wav",
+                displayName = "retry-reset.wav",
+                status = "Retry scheduled",
+                retryCount = 2,
+                error = "timeout",
+            ),
+        ).toInt()
+
+        val retried = repository.retryJob(
+            jobId = jobId,
+            providerName = TranscriptionProvider.GEMINI_FLASH.name,
+            requestedModel = TranscriptionProvider.GEMINI_FLASH.modelName,
+            executionBackend = JobExecutionBackend.WORK_MANAGER.name,
+            summarizeAfterTranscription = false,
+            notifyResult = false,
+            queuedSummarizerProviderName = "",
+            queuedSummarizerCustomModelName = "",
+        )
+
+        val updatedJob = repository.getJob(jobId)
+
+        assertTrue(retried)
+        assertEquals("Queued", updatedJob?.status)
+        assertEquals(0, updatedJob?.retryCount)
     }
 }

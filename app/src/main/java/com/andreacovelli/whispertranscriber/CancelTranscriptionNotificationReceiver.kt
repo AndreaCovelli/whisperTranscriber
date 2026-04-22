@@ -7,7 +7,6 @@ import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
@@ -22,7 +21,7 @@ class CancelTranscriptionNotificationReceiver : BroadcastReceiver() {
         if (jobId == -1) return
 
         val pendingResult = goAsync()
-        receiverScope.launch {
+        CoroutineScope(Dispatchers.IO).launch {
             try {
                 queueService.cancelJob(jobId)
             } finally {
@@ -34,7 +33,5 @@ class CancelTranscriptionNotificationReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION_CANCEL_JOB = "com.andreacovelli.whispertranscriber.action.CANCEL_JOB"
         const val EXTRA_JOB_ID = "jobId"
-
-        private val receiverScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
 }

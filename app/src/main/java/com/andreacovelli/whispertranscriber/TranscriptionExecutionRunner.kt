@@ -27,6 +27,12 @@ internal sealed interface JobRunOutcome {
     data object Failure : JobRunOutcome
 }
 
+private sealed interface ProviderExecution {
+    data object MicrosoftSpeech : ProviderExecution
+
+    data class Gemini(val modelName: String) : ProviderExecution
+}
+
 internal sealed interface QueuedAudioInputResolution {
     data class Ready(val uri: Uri) : QueuedAudioInputResolution
 
@@ -52,30 +58,29 @@ class TranscriptionExecutionRunner @Inject constructor(
     private val okHttpClient: OkHttpClient,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
+    companion object {
+        private const val MAX_AUTOMATIC_RETRY_ATTEMPTS = 3
+    }
+
     internal suspend fun runJob(
         jobId: Int,
         onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
     ): JobRunOutcome {
-        val existingJob = repository.getJob(jobId) ?: return JobRunOutcome.Failure
-        val displayName = existingJob.displayName
-
         backgroundShareNotifier.cancelRetryScheduled(jobId)
         backgroundShareNotifier.cancelBackgroundProcessing(jobId)
-        if (existingJob.status == "Cancelled") return JobRunOutcome.Success
-        if (!repository.claimJobForExecution(jobId, "Starting...")) return JobRunOutcome.Skipped
-
-        val job = repository.getJob(jobId) ?: return JobRunOutcome.Failure
+        val job = repository.claimJobForExecution(jobId, "Starting...")
+            ?: return when (repository.getJob(jobId)?.status) {
+                "Cancelled" -> JobRunOutcome.Success
+                null -> JobRunOutcome.Failure
+                else -> JobRunOutcome.Skipped
+            }
+        val displayName = job.displayName
         val postTranscriptionWorkSpec = job.postTranscriptionWorkSpec()
 
         return try {
             onProgressNotification(jobId, displayName, "Processing: ${job.displayName}")
 
-            val requestedProvider = decodeStoredTranscriptionProvider(job.providerName)
-            val usingMicrosoftSpeech = requestedProvider == TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE
-            val geminiModelName = when (requestedProvider) {
-                TranscriptionProvider.ELEVEN_LABS, TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE -> null
-                else -> job.requestedModel ?: requestedProvider.modelName
-            }
+            val providerExecution = resolveProviderExecution(job.providerName, job.requestedModel)
 
             val stagedUri = when (val resolution = QueuedAudioInputResolver.resolve(job)) {
                 is QueuedAudioInputResolution.Ready -> resolution.uri
@@ -96,8 +101,7 @@ class TranscriptionExecutionRunner @Inject constructor(
                 uri = stagedUri,
                 displayName = job.displayName,
                 inputMimeType = job.sourceMimeType?.lowercase(),
-                usingMicrosoftSpeech = usingMicrosoftSpeech,
-                geminiModel = geminiModelName,
+                providerExecution = providerExecution,
                 speakerDiarizationEnabled = job.speakerDiarizationEnabled,
                 postTranscriptionWorkSpec = postTranscriptionWorkSpec,
                 onProgressNotification = onProgressNotification,
@@ -109,11 +113,18 @@ class TranscriptionExecutionRunner @Inject constructor(
             throw e
         } catch (e: TransientWorkException) {
             val message = e.message ?: e::class.java.simpleName
-            val retryMessage = applicationContext.getString(R.string.transcription_retry_notification_body, message)
-            repository.markRetryScheduled(jobId)
-            backgroundShareNotifier.cancelBackgroundProcessing(jobId)
-            backgroundShareNotifier.showRetryScheduled(jobId, displayName, retryMessage)
-            JobRunOutcome.Retry
+            if (job.retryCount >= MAX_AUTOMATIC_RETRY_ATTEMPTS) {
+                val exhaustedMessage =
+                    "Automatic retries exhausted after $MAX_AUTOMATIC_RETRY_ATTEMPTS attempts. $message"
+                handleTerminalFailure(jobId, displayName, postTranscriptionWorkSpec, exhaustedMessage)
+                JobRunOutcome.Failure
+            } else {
+                val retryMessage = applicationContext.getString(R.string.transcription_retry_notification_body, message)
+                repository.markRetryScheduled(jobId)
+                backgroundShareNotifier.cancelBackgroundProcessing(jobId)
+                backgroundShareNotifier.showRetryScheduled(jobId, displayName, retryMessage)
+                JobRunOutcome.Retry
+            }
         } catch (e: IOException) {
             handleTerminalFailure(jobId, displayName, postTranscriptionWorkSpec, e.message ?: e::class.java.simpleName)
             JobRunOutcome.Failure
@@ -145,12 +156,12 @@ class TranscriptionExecutionRunner @Inject constructor(
         uri: Uri,
         displayName: String,
         inputMimeType: String?,
-        usingMicrosoftSpeech: Boolean,
-        geminiModel: String?,
+        providerExecution: ProviderExecution,
         speakerDiarizationEnabled: Boolean,
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec?,
         onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
     ) {
+        val usingMicrosoftSpeech = providerExecution is ProviderExecution.MicrosoftSpeech
         val preparedInput = prepareAudioInput(
             jobId = jobId,
             uri = uri,
@@ -164,8 +175,7 @@ class TranscriptionExecutionRunner @Inject constructor(
                 jobId = jobId,
                 displayName = displayName,
                 preparedInput = preparedInput,
-                usingMicrosoftSpeech = usingMicrosoftSpeech,
-                geminiModel = geminiModel,
+                providerExecution = providerExecution,
                 speakerDiarizationEnabled = speakerDiarizationEnabled,
                 onProgressNotification = onProgressNotification,
             )
@@ -383,17 +393,19 @@ class TranscriptionExecutionRunner @Inject constructor(
         jobId: Int,
         displayName: String,
         preparedInput: PreparedAudioInput,
-        usingMicrosoftSpeech: Boolean,
-        geminiModel: String?,
+        providerExecution: ProviderExecution,
         speakerDiarizationEnabled: Boolean,
         onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
     ): TranscriptionData {
-        val transcriber = buildTranscriber(preparedInput, usingMicrosoftSpeech, geminiModel, speakerDiarizationEnabled)
+        val transcriber = buildTranscriber(preparedInput, providerExecution, speakerDiarizationEnabled)
         var resultData: TranscriptionData? = null
         transcriber.transcribe().collect { result ->
             when (result) {
                 is TranscriptionResult.Loading -> {
-                    val providerPrefix = if (usingMicrosoftSpeech) "Microsoft Speech" else "Gemini"
+                    val providerPrefix = when (providerExecution) {
+                        ProviderExecution.MicrosoftSpeech -> "Microsoft Speech"
+                        is ProviderExecution.Gemini -> "Gemini"
+                    }
                     val providerMessage = "$providerPrefix: ${result.message}"
                     repository.updateStatus(jobId, providerMessage)
                     onProgressNotification(jobId, displayName, providerMessage)
@@ -407,51 +419,75 @@ class TranscriptionExecutionRunner @Inject constructor(
 
     private suspend fun buildTranscriber(
         preparedInput: PreparedAudioInput,
-        usingMicrosoftSpeech: Boolean,
-        geminiModel: String?,
+        providerExecution: ProviderExecution,
         speakerDiarizationEnabled: Boolean,
-    ): ProviderTranscriber = if (usingMicrosoftSpeech) {
-        check(!speakerDiarizationEnabled) { "Speaker diarization is not supported by Microsoft MAI Transcribe." }
-        val microsoftSpeechInput = checkNotNull(preparedInput as? PreparedAudioInput.MicrosoftSpeech) {
-            "Internal error: Microsoft Speech audio data missing."
+    ): ProviderTranscriber = when (providerExecution) {
+        ProviderExecution.MicrosoftSpeech -> {
+            check(!speakerDiarizationEnabled) { "Speaker diarization is not supported by Microsoft MAI Transcribe." }
+            val microsoftSpeechInput = checkNotNull(preparedInput as? PreparedAudioInput.MicrosoftSpeech) {
+                "Internal error: Microsoft Speech audio data missing."
+            }
+            val keyChars = requireNotNull(settings.getMicrosoftSpeechApiKey()) {
+                "Azure Speech key for Microsoft MAI Transcribe missing or corrupted."
+            }
+            try {
+                val region = settings.microsoftSpeechRegionFlow.first()
+                    .takeIf(String::isNotBlank)
+                    ?: error("Azure Speech region for Microsoft MAI Transcribe is not set.")
+                MicrosoftSpeechTranscriber(
+                    apiKey = keyChars,
+                    audioFile = microsoftSpeechInput.file,
+                    mimeType = microsoftSpeechInput.mimeType,
+                    region = region,
+                    okHttpClient = okHttpClient,
+                    ioDispatcher = ioDispatcher,
+                )
+            } catch (e: IllegalStateException) {
+                keyChars.fill('\u0000')
+                throw e
+            } catch (e: IllegalArgumentException) {
+                keyChars.fill('\u0000')
+                throw e
+            }
         }
-        val keyChars = requireNotNull(settings.getMicrosoftSpeechApiKey()) {
-            "Azure Speech key for Microsoft MAI Transcribe missing or corrupted."
+        is ProviderExecution.Gemini -> {
+            val geminiInput = checkNotNull(preparedInput as? PreparedAudioInput.Gemini) {
+                "Internal error: Gemini audio data missing."
+            }
+            val keyChars = requireNotNull(settings.getGeminiApiKey()) { "API key missing or corrupted" }
+            try {
+                GeminiTranscriber(
+                    audioFile = geminiInput.file,
+                    mimeType = geminiInput.mimeType,
+                    apiKey = keyChars,
+                    modelName = providerExecution.modelName,
+                    speakerDiarizationEnabled = speakerDiarizationEnabled,
+                    ioDispatcher = ioDispatcher,
+                )
+            } catch (e: IllegalStateException) {
+                keyChars.fill('\u0000')
+                throw e
+            } catch (e: IllegalArgumentException) {
+                keyChars.fill('\u0000')
+                throw e
+            }
         }
-        try {
-            val region = settings.microsoftSpeechRegionFlow.first()
-                .takeIf(String::isNotBlank)
-                ?: error("Azure Speech region for Microsoft MAI Transcribe is not set.")
-            MicrosoftSpeechTranscriber(
-                apiKey = keyChars,
-                audioFile = microsoftSpeechInput.file,
-                mimeType = microsoftSpeechInput.mimeType,
-                region = region,
-                okHttpClient = okHttpClient,
-                ioDispatcher = ioDispatcher,
+    }
+
+    private fun resolveProviderExecution(providerName: String?, requestedModel: String?): ProviderExecution {
+        val provider = decodeStoredTranscriptionProvider(providerName)
+        return when (provider) {
+            TranscriptionProvider.ELEVEN_LABS,
+            TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
+            -> ProviderExecution.MicrosoftSpeech
+            TranscriptionProvider.GEMINI_FLASH_LITE,
+            TranscriptionProvider.GEMINI_FLASH,
+            TranscriptionProvider.GEMINI_PRO,
+            -> ProviderExecution.Gemini(requestedModel ?: requireNotNull(provider.modelName))
+            TranscriptionProvider.GEMINI_CUSTOM -> ProviderExecution.Gemini(
+                modelName = requestedModel?.takeIf(String::isNotBlank)
+                    ?: error("Gemini model not specified."),
             )
-        } catch (throwable: Throwable) {
-            keyChars.fill('\u0000')
-            throw throwable
-        }
-    } else {
-        val geminiInput = checkNotNull(preparedInput as? PreparedAudioInput.Gemini) {
-            "Internal error: Gemini audio data missing."
-        }
-        val modelName = requireNotNull(geminiModel) { "Gemini model not specified." }
-        val keyChars = requireNotNull(settings.getGeminiApiKey()) { "API key missing or corrupted" }
-        try {
-            GeminiTranscriber(
-                audioFile = geminiInput.file,
-                mimeType = geminiInput.mimeType,
-                apiKey = keyChars,
-                modelName = modelName,
-                speakerDiarizationEnabled = speakerDiarizationEnabled,
-                ioDispatcher = ioDispatcher,
-            )
-        } catch (throwable: Throwable) {
-            keyChars.fill('\u0000')
-            throw throwable
         }
     }
 

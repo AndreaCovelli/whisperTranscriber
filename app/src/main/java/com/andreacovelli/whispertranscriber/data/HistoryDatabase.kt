@@ -70,6 +70,7 @@ data class TranscriptionJob(
     val isRunning: Boolean = false,
     val isSummarizing: Boolean = false,
     val autoSummaryAttempted: Boolean = false,
+    val retryCount: Int = 0,
     val batchId: String? = null,
     val speakerDiarizationEnabled: Boolean = false,
     val historyId: Int? = null,
@@ -149,7 +150,7 @@ interface TranscriptionJobDao {
     suspend fun updateStatusAndProgress(id: Int, status: String, progress: Float)
 
     @Query(
-        "UPDATE active_jobs SET transcript = :transcript, language = :language, model = :model, historyId = :historyId, progress = :progress, isRunning = :isRunning, status = :status, error = :error WHERE id = :id",
+        "UPDATE active_jobs SET transcript = :transcript, language = :language, model = :model, historyId = :historyId, progress = :progress, isRunning = :isRunning, status = :status, error = :error, retryCount = 0 WHERE id = :id",
     )
     suspend fun updateResult(
         id: Int,
@@ -163,10 +164,21 @@ interface TranscriptionJobDao {
         error: String?,
     )
 
-    @Query("UPDATE active_jobs SET error = :error, isRunning = :isRunning, status = :status WHERE id = :id")
+    @Query(
+        "UPDATE active_jobs SET error = :error, isRunning = :isRunning, status = :status, retryCount = 0 WHERE id = :id",
+    )
     suspend fun updateError(id: Int, error: String, isRunning: Boolean, status: String)
 
-    @Query("UPDATE active_jobs SET error = NULL, isRunning = 0, status = 'Retry scheduled' WHERE id = :id")
+    @Query(
+        """
+        UPDATE active_jobs
+        SET error = NULL,
+            isRunning = 0,
+            status = 'Retry scheduled',
+            retryCount = retryCount + 1
+        WHERE id = :id
+        """,
+    )
     suspend fun markRetryScheduled(id: Int)
 
     @Query("UPDATE active_jobs SET status = :status WHERE id = :id")
@@ -251,6 +263,7 @@ interface TranscriptionJobDao {
             isRunning = 0,
             isSummarizing = 0,
             autoSummaryAttempted = 0,
+            retryCount = 0,
             historyId = historyId,
             providerName = :providerName,
             requestedModel = :requestedModel,
@@ -378,7 +391,7 @@ interface TranscriptionJobSummarizationDao {
 
 @Database(
     entities = [TranscriptionHistory::class, TranscriptionHistoryFts::class, TranscriptionJob::class],
-    version = 13,
+    version = 14,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -513,6 +526,12 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE active_jobs ADD COLUMN retryCount INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         val MIGRATIONS = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -526,6 +545,7 @@ abstract class AppDatabase : RoomDatabase() {
             MIGRATION_10_11,
             MIGRATION_11_12,
             MIGRATION_12_13,
+            MIGRATION_13_14,
         )
 
         private fun createBuilder(context: Context) = Room.databaseBuilder(
