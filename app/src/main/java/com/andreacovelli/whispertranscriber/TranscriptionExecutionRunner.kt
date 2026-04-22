@@ -5,7 +5,6 @@ import android.content.Context
 import android.database.SQLException
 import android.net.Uri
 import androidx.core.net.toUri
-import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
 import com.andreacovelli.whispertranscriber.media.HardwareAudioConverter
@@ -499,25 +498,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         }
 
     private suspend fun persistCompletedTranscription(jobId: Int, displayName: String, data: TranscriptionData) {
-        val historyId = repository.insertHistory(
-            TranscriptionHistory(
-                text = data.text,
-                language = data.language.ifBlank { "Unknown" },
-                model = data.model,
-                displayName = displayName,
-            ),
-        )
-        repository.updateResult(
-            jobId,
-            data.text,
-            data.language.ifBlank { "Unknown" },
-            data.model,
-            historyId,
-            1f,
-            false,
-            "Completed",
-            null,
-        )
+        repository.persistCompletedTranscription(jobId, displayName, data)
     }
 
     private fun notifyPostTranscriptionFailure(

@@ -21,8 +21,6 @@ class TranscriptionRepository @Inject constructor(
 
     suspend fun addJob(job: TranscriptionJob): Long = jobDao.insert(job)
 
-    suspend fun insertHistory(historyItem: TranscriptionHistory): Int = historyRepository.insert(historyItem)
-
     suspend fun upsertHistoryForSummarization(
         job: TranscriptionJob,
         summary: String,
@@ -61,19 +59,29 @@ class TranscriptionRepository @Inject constructor(
         jobDao.updateStatusAndProgress(id, status, progress)
     }
 
-    suspend fun updateResult(
-        id: Int,
-        transcript: String,
-        language: String,
-        model: String,
-        historyId: Int?,
-        progress: Float,
-        isRunning: Boolean,
-        status: String,
-        error: String?,
-    ) {
-        jobDao.updateResult(id, transcript, language, model, historyId, progress, isRunning, status, error)
-    }
+    suspend fun persistCompletedTranscription(id: Int, displayName: String, data: TranscriptionData) =
+        db.withTransaction {
+            val normalizedLanguage = data.language.ifBlank { "Unknown" }
+            val historyId = historyRepository.insert(
+                TranscriptionHistory(
+                    text = data.text,
+                    language = normalizedLanguage,
+                    model = data.model,
+                    displayName = displayName,
+                ),
+            )
+            jobDao.updateResult(
+                id = id,
+                transcript = data.text,
+                language = normalizedLanguage,
+                model = data.model,
+                historyId = historyId,
+                progress = 1f,
+                isRunning = false,
+                status = "Completed",
+                error = null,
+            )
+        }
 
     suspend fun updateError(id: Int, error: String, isRunning: Boolean, status: String) {
         jobDao.updateError(id, error, isRunning, status)

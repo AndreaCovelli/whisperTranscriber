@@ -435,5 +435,5 @@ internal fun buildGeminiSpeakerDiarizationPrompt(speakerLabelPrefix: String): St
         $normalizedPrefix B: Hi
         If speaker changes cannot be inferred reliably, return the plain transcript text without labels.
         Do not include any extra commentary.
-        """.trimIndent()
+    """.trimIndent()
 }
