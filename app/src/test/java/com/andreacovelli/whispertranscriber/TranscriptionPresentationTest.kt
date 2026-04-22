@@ -1,5 +1,6 @@
 package com.andreacovelli.whispertranscriber
 
+import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.ui.components.providerDisplayLabel
 import com.andreacovelli.whispertranscriber.ui.components.providerFamilyLabel
 import com.andreacovelli.whispertranscriber.ui.components.providerFamilyLabelForModel
@@ -97,7 +98,7 @@ class TranscriptionPresentationTest {
     }
 
     @Test
-    fun postTranscriptionWorkSpec_roundTripsThroughWorkerInputData() {
+    fun postTranscriptionWorkSpec_roundTripsThroughQueuedJobPersistenceHelpers() {
         val spec = PostTranscriptionWorkSpec(
             summarizeAfterTranscription = true,
             notifyResult = true,
@@ -107,11 +108,29 @@ class TranscriptionPresentationTest {
             ),
         )
 
-        val restored = PostTranscriptionWorkSpec.fromInputData(
-            spec.toInputData(jobId = 42, speakerLabelPrefix = "Speaker"),
-        )
+        val restored = TranscriptionJob(
+            uri = "content://test/audio.wav",
+            displayName = "audio.wav",
+            executionBackend = JobExecutionBackend.USER_INITIATED_JOB.name,
+            summarizeAfterTranscription = spec.summarizeAfterTranscription,
+            notifyResult = spec.notifyResult,
+            queuedSummarizerProviderName = spec.summarizationSettings.provider.name,
+            queuedSummarizerCustomModelName = spec.summarizationSettings.customModelName,
+        ).postTranscriptionWorkSpec()
 
         assertEquals(spec, restored)
+    }
+
+    @Test
+    fun postTranscriptionWorkSpec_returnsNullWhenQueuedJobHasNoFollowUpWork() {
+        val restored = TranscriptionJob(
+            uri = "content://test/audio.wav",
+            displayName = "audio.wav",
+            summarizeAfterTranscription = false,
+            notifyResult = false,
+        )
+
+        assertNull(restored.postTranscriptionWorkSpec())
     }
 
     @Test

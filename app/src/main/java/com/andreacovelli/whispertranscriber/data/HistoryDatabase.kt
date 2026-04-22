@@ -51,6 +51,11 @@ data class TranscriptionJob(
     val stagedFilePath: String? = null,
     val providerName: String = "MICROSOFT_MAI_TRANSCRIBE",
     val requestedModel: String? = null,
+    val executionBackend: String = "WORK_MANAGER",
+    val summarizeAfterTranscription: Boolean = false,
+    val notifyResult: Boolean = false,
+    val queuedSummarizerProviderName: String = "",
+    val queuedSummarizerCustomModelName: String = "",
     val status: String = "Queued",
     val progress: Float = 0f,
     val transcript: String = "",
@@ -170,6 +175,20 @@ interface TranscriptionJobDao {
     @Query("UPDATE active_jobs SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: Int, status: String)
 
+    @Query("UPDATE active_jobs SET executionBackend = :executionBackend WHERE id = :id")
+    suspend fun updateExecutionBackend(id: Int, executionBackend: String)
+
+    @Query(
+        """
+        UPDATE active_jobs
+        SET isRunning = 0,
+            status = 'Queued'
+        WHERE id = :id
+          AND isRunning = 1
+        """,
+    )
+    suspend fun resetRunningToQueued(id: Int): Int
+
     @Query(
         """
         UPDATE active_jobs
@@ -200,6 +219,24 @@ interface TranscriptionJobDao {
     @Query("SELECT * FROM active_jobs WHERE status = 'Queued' ORDER BY timestamp ASC")
     suspend fun getQueuedJobs(): List<TranscriptionJob>
 
+    @Query("SELECT * FROM active_jobs WHERE status = 'Queued' ORDER BY timestamp ASC, id ASC LIMIT 1")
+    suspend fun getOldestQueuedJob(): TranscriptionJob?
+
+    @Query("SELECT COUNT(*) FROM active_jobs WHERE isRunning = 1 OR status = 'Retry scheduled'")
+    suspend fun countBlockingJobs(): Int
+
+    @Query(
+        """
+        UPDATE active_jobs
+        SET isRunning = 1,
+            status = :status
+        WHERE id = :jobId
+          AND isRunning = 0
+          AND status IN ('Queued', 'Retry scheduled')
+        """,
+    )
+    suspend fun claimJobForExecution(jobId: Int, status: String): Int
+
     @Query(
         """
         UPDATE active_jobs
@@ -219,11 +256,25 @@ interface TranscriptionJobDao {
             autoSummaryAttempted = 0,
             historyId = historyId,
             providerName = :providerName,
-            requestedModel = :requestedModel
+            requestedModel = :requestedModel,
+            executionBackend = :executionBackend,
+            summarizeAfterTranscription = :summarizeAfterTranscription,
+            notifyResult = :notifyResult,
+            queuedSummarizerProviderName = :queuedSummarizerProviderName,
+            queuedSummarizerCustomModelName = :queuedSummarizerCustomModelName
         WHERE id = :jobId
         """,
     )
-    suspend fun retryById(jobId: Int, providerName: String, requestedModel: String?): Int
+    suspend fun retryById(
+        jobId: Int,
+        providerName: String,
+        requestedModel: String?,
+        executionBackend: String,
+        summarizeAfterTranscription: Boolean,
+        notifyResult: Boolean,
+        queuedSummarizerProviderName: String,
+        queuedSummarizerCustomModelName: String,
+    ): Int
 
     @Query("SELECT * FROM active_jobs WHERE isRunning = 0 AND status != 'Queued'")
     suspend fun getCompletedJobs(): List<TranscriptionJob>
@@ -330,7 +381,7 @@ interface TranscriptionJobSummarizationDao {
 
 @Database(
     entities = [TranscriptionHistory::class, TranscriptionHistoryFts::class, TranscriptionJob::class],
-    version = 12,
+    version = 13,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -453,6 +504,18 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE active_jobs ADD COLUMN executionBackend TEXT NOT NULL DEFAULT 'WORK_MANAGER'")
+                db.execSQL("ALTER TABLE active_jobs ADD COLUMN summarizeAfterTranscription INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE active_jobs ADD COLUMN notifyResult INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE active_jobs ADD COLUMN queuedSummarizerProviderName TEXT NOT NULL DEFAULT ''")
+                db.execSQL(
+                    "ALTER TABLE active_jobs ADD COLUMN queuedSummarizerCustomModelName TEXT NOT NULL DEFAULT ''",
+                )
+            }
+        }
+
         val MIGRATIONS = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -465,6 +528,7 @@ abstract class AppDatabase : RoomDatabase() {
             MIGRATION_9_10,
             MIGRATION_10_11,
             MIGRATION_11_12,
+            MIGRATION_12_13,
         )
 
         private fun createBuilder(context: Context) = Room.databaseBuilder(

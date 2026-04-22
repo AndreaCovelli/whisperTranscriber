@@ -93,6 +93,12 @@ class TranscriptionRepository @Inject constructor(
         jobDao.updateStatus(id, status)
     }
 
+    suspend fun updateExecutionBackend(id: Int, executionBackend: String) {
+        jobDao.updateExecutionBackend(id, executionBackend)
+    }
+
+    suspend fun resetRunningToQueued(id: Int): Boolean = jobDao.resetRunningToQueued(id) > 0
+
     suspend fun setSummarizing(id: Int, isSummarizing: Boolean) {
         jobSummarizationDao.setSummarizing(id, isSummarizing)
     }
@@ -141,8 +147,32 @@ class TranscriptionRepository @Inject constructor(
 
     suspend fun getQueuedJobs(): List<TranscriptionJob> = jobDao.getQueuedJobs()
 
-    suspend fun retryJob(jobId: Int, providerName: String, requestedModel: String?): Boolean =
-        jobDao.retryById(jobId, providerName, requestedModel) > 0
+    suspend fun getOldestQueuedJob(): TranscriptionJob? = jobDao.getOldestQueuedJob()
+
+    suspend fun countBlockingJobs(): Int = jobDao.countBlockingJobs()
+
+    suspend fun claimJobForExecution(jobId: Int, status: String): Boolean =
+        jobDao.claimJobForExecution(jobId, status) > 0
+
+    suspend fun retryJob(
+        jobId: Int,
+        providerName: String,
+        requestedModel: String?,
+        executionBackend: String,
+        summarizeAfterTranscription: Boolean,
+        notifyResult: Boolean,
+        queuedSummarizerProviderName: String,
+        queuedSummarizerCustomModelName: String,
+    ): Boolean = jobDao.retryById(
+        jobId = jobId,
+        providerName = providerName,
+        requestedModel = requestedModel,
+        executionBackend = executionBackend,
+        summarizeAfterTranscription = summarizeAfterTranscription,
+        notifyResult = notifyResult,
+        queuedSummarizerProviderName = queuedSummarizerProviderName,
+        queuedSummarizerCustomModelName = queuedSummarizerCustomModelName,
+    ) > 0
 
     suspend fun clearCompletedJobs(): List<String> {
         val completedJobs = jobDao.getCompletedJobs()

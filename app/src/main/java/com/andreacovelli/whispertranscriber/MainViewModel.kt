@@ -329,6 +329,7 @@ class MainViewModel @Inject constructor(
 
         viewModelScope.launch(ioDispatcher) {
             queueService.cleanupOldTempFiles(tempFileMaxAgeMs = TimeUnit.DAYS.toMillis(3))
+            queueService.resumePendingQueue()
         }
     }
 
