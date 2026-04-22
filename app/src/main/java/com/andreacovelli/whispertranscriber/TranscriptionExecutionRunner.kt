@@ -69,17 +69,22 @@ class TranscriptionExecutionRunner @Inject constructor(
     ): JobRunOutcome {
         backgroundShareNotifier.cancelRetryScheduled(jobId)
         backgroundShareNotifier.cancelBackgroundProcessing(jobId)
-        val job = repository.claimJobForExecution(jobId, "Starting...")
-            ?: return when (repository.getJob(jobId)?.status) {
-                "Cancelled" -> JobRunOutcome.Success
-                null -> JobRunOutcome.Failure
-                else -> JobRunOutcome.Skipped
-            }
+        val job =
+            repository.claimJobForExecution(jobId, applicationContext.getString(R.string.transcription_status_starting))
+                ?: return when (repository.getJob(jobId)?.status) {
+                    "Cancelled" -> JobRunOutcome.Success
+                    null -> JobRunOutcome.Failure
+                    else -> JobRunOutcome.Skipped
+                }
         val displayName = job.displayName
         val postTranscriptionWorkSpec = job.postTranscriptionWorkSpec()
 
         return try {
-            onProgressNotification(jobId, displayName, "Processing: ${job.displayName}")
+            onProgressNotification(
+                jobId,
+                displayName,
+                applicationContext.getString(R.string.transcription_notification_processing, job.displayName),
+            )
 
             if (job.transcript.isNotBlank()) {
                 resumePostTranscriptionWork(jobId, displayName, job.transcript, postTranscriptionWorkSpec)
@@ -262,44 +267,68 @@ class TranscriptionExecutionRunner @Inject constructor(
         onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
     ): PreparedAudioInput {
         val reasonSuffix = inputMimeType?.let { "($it)" } ?: "(Unknown format)"
-        val providerName = if (usingMicrosoftSpeech) "Microsoft Speech" else "Gemini"
+        val providerName = uploadProviderName(usingMicrosoftSpeech)
         repository.updateStatusAndProgress(
             jobId,
-            "Format not natively supported by $providerName $reasonSuffix. Converting to 16 kHz WAV...",
+            applicationContext.getString(
+                R.string.transcription_status_conversion_required,
+                providerName,
+                reasonSuffix,
+            ),
             0f,
         )
-        onProgressNotification(jobId, displayName, "Converting audio...")
+        onProgressNotification(
+            jobId,
+            displayName,
+            applicationContext.getString(R.string.transcription_notification_converting),
+        )
         val outputFile = withContext(ioDispatcher) {
             File.createTempFile("${QueuedAudioStore.CONVERTED_FILE_PREFIX}$jobId", ".wav", app.cacheDir)
         }
+        var converted = false
+        var lastReportedProgressBucket = -1
         try {
             HardwareAudioConverter.convertTo16kMonoWav(
                 context = app,
                 inputUri = uri,
                 outputFile = outputFile,
                 onProgress = { progress ->
-                    repository.updateStatusAndProgress(
-                        jobId,
-                        "Converting to 16 kHz WAV: ${"%.1f".format(progress * 100)}%",
-                        progress,
-                    )
+                    val normalizedProgress = progress.coerceIn(0f, 1f)
+                    val progressBucket = if (normalizedProgress >= 1f) {
+                        100
+                    } else {
+                        ((normalizedProgress * 100).toInt() / 5) * 5
+                    }
+                    if (progressBucket > lastReportedProgressBucket) {
+                        lastReportedProgressBucket = progressBucket
+                        repository.updateStatusAndProgress(
+                            jobId,
+                            applicationContext.getString(
+                                R.string.transcription_status_converting_progress,
+                                normalizedProgress * 100,
+                            ),
+                            normalizedProgress,
+                        )
+                    }
                 },
             )
-        } catch (e: IOException) {
-            runCatching { outputFile.delete() }
-            throw e
-        } catch (e: IllegalArgumentException) {
-            runCatching { outputFile.delete() }
-            throw e
-        } catch (e: IllegalStateException) {
-            runCatching { outputFile.delete() }
-            throw e
+            converted = true
+        } finally {
+            if (!converted) {
+                runCatching { outputFile.delete() }
+            }
         }
         return if (usingMicrosoftSpeech) {
-            repository.updateStatus(jobId, "Converted audio ready for Microsoft Speech...")
+            repository.updateStatus(
+                jobId,
+                applicationContext.getString(R.string.transcription_status_converted_ready_microsoft),
+            )
             PreparedAudioInput.MicrosoftSpeech(file = outputFile, mimeType = "audio/wav", tempFileToClean = outputFile)
         } else {
-            repository.updateStatus(jobId, "Converted audio ready for Gemini...")
+            repository.updateStatus(
+                jobId,
+                applicationContext.getString(R.string.transcription_status_converted_ready_gemini),
+            )
             PreparedAudioInput.Gemini(file = outputFile, mimeType = "audio/wav", tempFileToClean = outputFile)
         }
     }
@@ -315,7 +344,11 @@ class TranscriptionExecutionRunner @Inject constructor(
     ): PreparedAudioInput = if (usingMicrosoftSpeech) {
         val reusableLocalFile = reusableLocalFileForUri(uri)
         if (reusableLocalFile != null) {
-            repository.updateStatusAndProgress(jobId, "Preparing local audio for Microsoft Speech upload...", 1f)
+            repository.updateStatusAndProgress(
+                jobId,
+                applicationContext.getString(R.string.transcription_status_preparing_local_microsoft),
+                1f,
+            )
             PreparedAudioInput.MicrosoftSpeech(
                 file = reusableLocalFile,
                 mimeType = inputMimeType,
@@ -324,18 +357,33 @@ class TranscriptionExecutionRunner @Inject constructor(
         } else {
             repository.updateStatusAndProgress(
                 jobId,
-                "Format supported ($inputMimeType). Copying audio for Microsoft Speech...",
+                applicationContext.getString(
+                    R.string.transcription_status_copying_supported_microsoft,
+                    inputMimeType,
+                ),
                 0.5f,
             )
-            onProgressNotification(jobId, displayName, "Copying audio...")
+            onProgressNotification(
+                jobId,
+                displayName,
+                applicationContext.getString(R.string.transcription_notification_copying),
+            )
             val tempFile = copyInputToTempFile(app, jobId, uri)
-            repository.updateStatusAndProgress(jobId, "Preparing for Microsoft Speech upload...", 1f)
+            repository.updateStatusAndProgress(
+                jobId,
+                applicationContext.getString(R.string.transcription_status_preparing_upload_microsoft),
+                1f,
+            )
             PreparedAudioInput.MicrosoftSpeech(file = tempFile, mimeType = inputMimeType, tempFileToClean = tempFile)
         }
     } else {
         val reusableLocalFile = reusableLocalFileForUri(uri)
         if (reusableLocalFile != null) {
-            repository.updateStatusAndProgress(jobId, "Preparing local audio for Gemini upload...", 1f)
+            repository.updateStatusAndProgress(
+                jobId,
+                applicationContext.getString(R.string.transcription_status_preparing_local_gemini),
+                1f,
+            )
             PreparedAudioInput.Gemini(
                 file = reusableLocalFile,
                 mimeType = inputMimeType,
@@ -344,12 +392,23 @@ class TranscriptionExecutionRunner @Inject constructor(
         } else {
             repository.updateStatusAndProgress(
                 jobId,
-                "Format supported ($inputMimeType). Copying audio for Gemini...",
+                applicationContext.getString(
+                    R.string.transcription_status_copying_supported_gemini,
+                    inputMimeType,
+                ),
                 0.5f,
             )
-            onProgressNotification(jobId, displayName, "Copying audio...")
+            onProgressNotification(
+                jobId,
+                displayName,
+                applicationContext.getString(R.string.transcription_notification_copying),
+            )
             val tempFile = copyInputToTempFile(app, jobId, uri)
-            repository.updateStatusAndProgress(jobId, "Preparing for Gemini upload...", 1f)
+            repository.updateStatusAndProgress(
+                jobId,
+                applicationContext.getString(R.string.transcription_status_preparing_upload_gemini),
+                1f,
+            )
             PreparedAudioInput.Gemini(file = tempFile, mimeType = inputMimeType, tempFileToClean = tempFile)
         }
     }
@@ -357,14 +416,17 @@ class TranscriptionExecutionRunner @Inject constructor(
     private suspend fun copyInputToTempFile(app: Application, jobId: Int, uri: Uri): File = withContext(ioDispatcher) {
         val contentResolver = app.contentResolver
         val tempFile = File.createTempFile("${QueuedAudioStore.DIRECT_FILE_PREFIX}$jobId", ".tmp", app.cacheDir)
+        var copied = false
         try {
             contentResolver.openInputStream(uri)?.use { input ->
                 tempFile.outputStream().use(input::copyTo)
             } ?: throw IOException("Failed to read input audio file.")
+            copied = true
             tempFile
-        } catch (e: IOException) {
-            runCatching { tempFile.delete() }
-            throw e
+        } finally {
+            if (!copied) {
+                runCatching { tempFile.delete() }
+            }
         }
     }
 
@@ -395,11 +457,11 @@ class TranscriptionExecutionRunner @Inject constructor(
         transcriber.transcribe().collect { result ->
             when (result) {
                 is TranscriptionResult.Loading -> {
-                    val providerPrefix = when (providerExecution) {
-                        ProviderExecution.MicrosoftSpeech -> "Microsoft Speech"
-                        is ProviderExecution.Gemini -> "Gemini"
-                    }
-                    val providerMessage = "$providerPrefix: ${result.message}"
+                    val providerMessage = applicationContext.getString(
+                        R.string.transcription_status_provider_message,
+                        providerDisplayName(providerExecution),
+                        result.message,
+                    )
                     repository.updateStatus(jobId, providerMessage)
                     onProgressNotification(jobId, displayName, providerMessage)
                 }
@@ -488,6 +550,17 @@ class TranscriptionExecutionRunner @Inject constructor(
 
     private suspend fun persistCompletedTranscription(jobId: Int, displayName: String, data: TranscriptionData) {
         repository.persistCompletedTranscription(jobId, displayName, data)
+    }
+
+    private fun uploadProviderName(usingMicrosoftSpeech: Boolean): String = if (usingMicrosoftSpeech) {
+        applicationContext.getString(R.string.provider_option_microsoft_speech)
+    } else {
+        applicationContext.getString(R.string.transcription_provider_gemini)
+    }
+
+    private fun providerDisplayName(providerExecution: ProviderExecution): String = when (providerExecution) {
+        ProviderExecution.MicrosoftSpeech -> applicationContext.getString(R.string.provider_option_microsoft_speech)
+        is ProviderExecution.Gemini -> applicationContext.getString(R.string.transcription_provider_gemini)
     }
 
     private suspend fun resumePostTranscriptionWork(
