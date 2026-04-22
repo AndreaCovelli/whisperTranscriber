@@ -349,11 +349,16 @@ class TranscriptionExecutionRunner @Inject constructor(
 
     private suspend fun copyInputToTempFile(app: Application, jobId: Int, uri: Uri): File = withContext(ioDispatcher) {
         val contentResolver = app.contentResolver
-        contentResolver.openInputStream(uri)?.use { input ->
-            File.createTempFile("${QueuedAudioStore.DIRECT_FILE_PREFIX}$jobId", ".tmp", app.cacheDir).apply {
-                outputStream().use(input::copyTo)
-            }
-        } ?: error("Failed to read input audio file.")
+        val tempFile = File.createTempFile("${QueuedAudioStore.DIRECT_FILE_PREFIX}$jobId", ".tmp", app.cacheDir)
+        try {
+            contentResolver.openInputStream(uri)?.use { input ->
+                tempFile.outputStream().use(input::copyTo)
+            } ?: throw IOException("Failed to read input audio file.")
+            tempFile
+        } catch (e: IOException) {
+            runCatching { tempFile.delete() }
+            throw e
+        }
     }
 
     private fun reusableLocalFileForUri(uri: Uri): File? {
