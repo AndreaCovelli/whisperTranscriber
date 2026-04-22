@@ -133,6 +133,28 @@ class HistoryFtsSyncInstrumentedTest {
         }
     }
 
+    @Test
+    fun migrationToVersion13_addsExecutionBackendAndQueuedFollowUpColumns() {
+        val databaseName = "history-queued-execution-migration-test.db"
+        migrationHelper.createDatabase(databaseName, 12).close()
+
+        val migratedDb = Room.databaseBuilder(context, AppDatabase::class.java, databaseName)
+            .addMigrations(*AppDatabase.MIGRATIONS)
+            .build()
+
+        try {
+            migratedDb.openHelper.readableDatabase.query(
+                "SELECT executionBackend, summarizeAfterTranscription, notifyResult, " +
+                    "queuedSummarizerProviderName, queuedSummarizerCustomModelName FROM active_jobs",
+            ).use { cursor ->
+                assertEquals(5, cursor.columnCount)
+            }
+        } finally {
+            migratedDb.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
     private fun ftsMatches(query: String): Boolean = ftsMatches(db, query)
 
     private fun ftsMatches(database: AppDatabase, query: String): Boolean {

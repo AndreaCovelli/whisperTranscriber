@@ -6,7 +6,6 @@ import com.andreacovelli.whispertranscriber.data.HistoryRepository
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.data.TranscriptionJobDao
-import com.andreacovelli.whispertranscriber.data.TranscriptionJobSummarizationDao
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -15,7 +14,6 @@ import kotlinx.coroutines.flow.Flow
 class TranscriptionRepository @Inject constructor(
     private val db: AppDatabase,
     private val jobDao: TranscriptionJobDao,
-    private val jobSummarizationDao: TranscriptionJobSummarizationDao,
     private val historyRepository: HistoryRepository,
 ) {
 
@@ -23,15 +21,13 @@ class TranscriptionRepository @Inject constructor(
 
     suspend fun addJob(job: TranscriptionJob): Long = jobDao.insert(job)
 
-    suspend fun insertHistory(historyItem: TranscriptionHistory): Int = historyRepository.insert(historyItem)
-
     suspend fun upsertHistoryForSummarization(
         job: TranscriptionJob,
         summary: String,
         summaryProviderName: String,
         summaryModel: String,
     ): Int = db.withTransaction {
-        val existingHistoryId = job.historyId
+        val existingHistoryId = jobDao.getHistoryIdByJobId(job.id)
         if (existingHistoryId != null) {
             val updatedRows = historyRepository.updateSummary(
                 existingHistoryId,
@@ -59,72 +55,57 @@ class TranscriptionRepository @Inject constructor(
         newHistoryId
     }
 
-    suspend fun updateRunning(id: Int, isRunning: Boolean, status: String) {
-        jobDao.updateRunning(id, isRunning, status)
-    }
-
     suspend fun updateStatusAndProgress(id: Int, status: String, progress: Float) {
         jobDao.updateStatusAndProgress(id, status, progress)
     }
 
-    suspend fun updateResult(
-        id: Int,
-        transcript: String,
-        language: String,
-        model: String,
-        historyId: Int?,
-        progress: Float,
-        isRunning: Boolean,
-        status: String,
-        error: String?,
-    ) {
-        jobDao.updateResult(id, transcript, language, model, historyId, progress, isRunning, status, error)
-    }
+    suspend fun persistCompletedTranscription(id: Int, displayName: String, data: TranscriptionData) =
+        db.withTransaction {
+            val normalizedLanguage = data.language.ifBlank { "Unknown" }
+            val historyId = historyRepository.insert(
+                TranscriptionHistory(
+                    text = data.text,
+                    language = normalizedLanguage,
+                    model = data.model,
+                    displayName = displayName,
+                ),
+            )
+            jobDao.updateResult(
+                id = id,
+                transcript = data.text,
+                language = normalizedLanguage,
+                model = data.model,
+                historyId = historyId,
+                progress = 1f,
+                isRunning = false,
+                status = "Completed",
+                error = null,
+            )
+        }
 
     suspend fun updateError(id: Int, error: String, isRunning: Boolean, status: String) {
         jobDao.updateError(id, error, isRunning, status)
     }
 
-    suspend fun markRetryScheduled(id: Int, status: String) {
-        jobDao.markRetryScheduled(id, status)
+    suspend fun markRetryScheduled(id: Int) {
+        jobDao.markRetryScheduled(id)
     }
 
     suspend fun updateStatus(id: Int, status: String) {
         jobDao.updateStatus(id, status)
     }
 
-    suspend fun setSummarizing(id: Int, isSummarizing: Boolean) {
-        jobSummarizationDao.setSummarizing(id, isSummarizing)
+    suspend fun updateExecutionBackend(id: Int, executionBackend: String) {
+        jobDao.updateExecutionBackend(id, executionBackend)
     }
 
-    suspend fun updateSummaryStatus(id: Int, status: String) {
-        jobSummarizationDao.updateSummaryStatus(id, status)
+    suspend fun resetRunningToQueued(id: Int): Boolean = jobDao.resetRunningToQueued(id) > 0
+
+    suspend fun markRunningAsCompleted(id: Int) {
+        jobDao.markRunningAsCompleted(id)
     }
 
-    suspend fun succeedSummarization(id: Int, summary: String, summaryProviderName: String, summaryModel: String) {
-        jobSummarizationDao.succeedSummarization(id, summary, summaryProviderName, summaryModel)
-    }
-
-    suspend fun failSummarization(id: Int, error: String?) {
-        jobSummarizationDao.failSummarization(id, error)
-    }
-
-    suspend fun cancelSummarization(id: Int): Boolean = jobSummarizationDao.cancelSummarization(id) > 0
-
-    suspend fun claimAutoSummary(id: Int, providerName: String, modelName: String): Boolean =
-        jobSummarizationDao.claimAutoSummary(id, providerName, modelName) > 0
-
-    suspend fun claimManualSummary(id: Int, providerName: String, modelName: String): Boolean =
-        jobSummarizationDao.claimManualSummary(id, providerName, modelName) > 0
-
-    suspend fun resetStaleSummaries(): Int = jobSummarizationDao.resetStaleSummaries()
-
-    suspend fun clearJobSummary(jobId: Int) {
-        db.withTransaction {
-            jobSummarizationDao.clearJobSummaryFields(jobId)
-            historyRepository.updateSummaryByJobId(jobId, "", "", "")
-        }
-    }
+    suspend fun resetStaleJobs(): Int = jobDao.resetAllRunningToQueued()
 
     suspend fun clearJobTranscription(jobId: Int) {
         db.withTransaction {
@@ -139,10 +120,37 @@ class TranscriptionRepository @Inject constructor(
 
     suspend fun getJob(jobId: Int): TranscriptionJob? = jobDao.getJobById(jobId)
 
-    suspend fun getQueuedJobs(): List<TranscriptionJob> = jobDao.getQueuedJobs()
+    suspend fun getOldestQueuedJob(): TranscriptionJob? = jobDao.getOldestQueuedJob()
 
-    suspend fun retryJob(jobId: Int, providerName: String, requestedModel: String?): Boolean =
-        jobDao.retryById(jobId, providerName, requestedModel) > 0
+    suspend fun countBlockingJobs(): Int = jobDao.countBlockingJobs()
+
+    suspend fun claimJobForExecution(jobId: Int, status: String): TranscriptionJob? = db.withTransaction {
+        if (jobDao.claimJobForExecution(jobId, status) > 0) {
+            jobDao.getJobById(jobId)
+        } else {
+            null
+        }
+    }
+
+    suspend fun retryJob(
+        jobId: Int,
+        providerName: String,
+        requestedModel: String?,
+        executionBackend: String,
+        summarizeAfterTranscription: Boolean,
+        notifyResult: Boolean,
+        queuedSummarizerProviderName: String,
+        queuedSummarizerCustomModelName: String,
+    ): Boolean = jobDao.retryById(
+        jobId = jobId,
+        providerName = providerName,
+        requestedModel = requestedModel,
+        executionBackend = executionBackend,
+        summarizeAfterTranscription = summarizeAfterTranscription,
+        notifyResult = notifyResult,
+        queuedSummarizerProviderName = queuedSummarizerProviderName,
+        queuedSummarizerCustomModelName = queuedSummarizerCustomModelName,
+    ) > 0
 
     suspend fun clearCompletedJobs(): List<String> {
         val completedJobs = jobDao.getCompletedJobs()

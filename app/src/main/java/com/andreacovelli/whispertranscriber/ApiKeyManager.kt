@@ -218,20 +218,27 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
     private suspend fun getApiKey(key: Preferences.Key<String>): CharArray? {
         val prefs = context.dataStore.data.firstOrNull() ?: return null
         val enc = prefs[key] ?: return null
+        var bytes: ByteArray? = null
+        var decodedChars: CharArray? = null
+        var charBuffer: java.nio.CharBuffer? = null
         return try {
-            val bytes = KeystoreCrypto.decryptFromBase64(enc) ?: return null
-            val cb = StandardCharsets.UTF_8.decode(java.nio.ByteBuffer.wrap(bytes))
-            val chars = CharArray(cb.remaining())
-            cb.get(chars)
-            bytes.fill(0)
-            if (cb.hasArray()) cb.array().fill('\u0000')
-            chars
+            bytes = KeystoreCrypto.decryptFromBase64(enc) ?: return null
+            charBuffer = StandardCharsets.UTF_8.decode(java.nio.ByteBuffer.wrap(bytes))
+            decodedChars = CharArray(charBuffer.remaining())
+            charBuffer.get(decodedChars)
+            decodedChars.copyOf()
         } catch (e: GeneralSecurityException) {
             Log.w("ApiKeyManager", "Failed to decrypt API key", e)
             null
         } catch (e: IllegalArgumentException) {
             Log.w("ApiKeyManager", "Failed to decode stored API key", e)
             null
+        } finally {
+            bytes?.fill(0)
+            decodedChars?.fill('\u0000')
+            if (charBuffer?.hasArray() == true) {
+                charBuffer.array().fill('\u0000')
+            }
         }
     }
 
