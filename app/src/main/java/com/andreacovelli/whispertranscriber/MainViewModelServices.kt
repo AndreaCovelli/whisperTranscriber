@@ -63,13 +63,13 @@ class TranscriptionQueueService @Inject constructor(
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
     companion object {
-        private const val QUEUED_JOB_ID_INPUT = "jobId"
-        private const val QUEUED_JOB_DISPLAY_NAME_INPUT = "displayName"
+        internal const val QUEUED_JOB_ID_INPUT = "jobId"
+        internal const val QUEUED_JOB_DISPLAY_NAME_INPUT = "displayName"
         private const val SPEAKER_LABEL_PREFIX_INPUT = "speakerLabelPrefix"
         private const val STAGED_FILE_PREFIX = "staged_"
         private const val STAGED_AUDIO_DIR = "queued_audio"
-        private const val CONVERTED_FILE_PREFIX = "converted_"
-        private const val DIRECT_FILE_PREFIX = "direct_"
+        internal const val CONVERTED_FILE_PREFIX = "converted_"
+        internal const val DIRECT_FILE_PREFIX = "direct_"
     }
 
     suspend fun enqueueSharedAudio(
@@ -374,12 +374,13 @@ class TranscriptionQueueService @Inject constructor(
 
         val jobScheduler = context.getSystemService(JobScheduler::class.java) ?: return false
         if (!jobScheduler.canRunUserInitiatedJobs()) return false
+        val schedulerJobId = backgroundShareSchedulerJobId(job.id)
 
         val extras = PersistableBundle().apply {
             putInt(QUEUED_JOB_ID_INPUT, job.id)
             putString(QUEUED_JOB_DISPLAY_NAME_INPUT, job.displayName)
         }
-        val jobInfo = JobInfo.Builder(job.id, ComponentName(context, BackgroundShareJobService::class.java))
+        val jobInfo = JobInfo.Builder(schedulerJobId, ComponentName(context, BackgroundShareJobService::class.java))
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
             .setBackoffCriteria(30_000L, JobInfo.BACKOFF_POLICY_EXPONENTIAL)
             .setExtras(extras)
@@ -397,7 +398,7 @@ class TranscriptionQueueService @Inject constructor(
         workManager.cancelUniqueWork(jobWorkName(job.id))
         workManager.cancelAllWorkByTag(jobTag(job.id))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            context.getSystemService(JobScheduler::class.java)?.cancel(job.id)
+            context.getSystemService(JobScheduler::class.java)?.cancel(backgroundShareSchedulerJobId(job.id))
         }
     }
 

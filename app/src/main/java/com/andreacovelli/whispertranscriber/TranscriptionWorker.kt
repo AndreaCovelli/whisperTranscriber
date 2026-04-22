@@ -82,7 +82,7 @@ class TranscriptionWorker @AssistedInject constructor(
     }
 
     override suspend fun doWork(): Result {
-        val jobId = inputData.getInt("jobId", -1)
+        val jobId = inputData.getInt(TranscriptionQueueService.QUEUED_JOB_ID_INPUT, -1)
         if (jobId == -1) return Result.failure()
 
         return when (

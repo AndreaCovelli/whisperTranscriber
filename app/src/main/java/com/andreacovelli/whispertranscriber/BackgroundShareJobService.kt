@@ -33,10 +33,12 @@ class BackgroundShareJobService : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return false
 
-        val jobId = params.extras.getInt(EXTRA_JOB_ID, -1)
+        val jobId = params.extras.getInt(TranscriptionQueueService.QUEUED_JOB_ID_INPUT, -1)
         if (jobId == -1) return false
 
-        val displayName = params.extras.getString(EXTRA_DISPLAY_NAME).orEmpty().ifBlank {
+        val displayName = params.extras.getString(
+            TranscriptionQueueService.QUEUED_JOB_DISPLAY_NAME_INPUT,
+        ).orEmpty().ifBlank {
             getString(R.string.background_share_generic_audio_label)
         }
         runningParams[jobId] = params
@@ -79,7 +81,7 @@ class BackgroundShareJobService : JobService() {
     }
 
     override fun onStopJob(params: JobParameters): Boolean {
-        val jobId = params.extras.getInt(EXTRA_JOB_ID, -1)
+        val jobId = params.extras.getInt(TranscriptionQueueService.QUEUED_JOB_ID_INPUT, -1)
         if (jobId != -1) {
             runningJobs.remove(jobId)?.cancel()
             runningParams.remove(jobId)
@@ -111,9 +113,4 @@ class BackgroundShareJobService : JobService() {
     }
 
     private fun notificationId(jobId: Int): Int = 200_000 + jobId
-
-    companion object {
-        private const val EXTRA_JOB_ID = "jobId"
-        private const val EXTRA_DISPLAY_NAME = "displayName"
-    }
 }

@@ -16,5 +16,9 @@ class WhisperTranscriberApp :
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
             .setWorkerFactory(workerFactory)
+            .setJobSchedulerJobIdRange(
+                WORK_MANAGER_JOB_ID_RANGE_MIN,
+                WORK_MANAGER_JOB_ID_RANGE_MAX,
+            )
             .build()
 }
