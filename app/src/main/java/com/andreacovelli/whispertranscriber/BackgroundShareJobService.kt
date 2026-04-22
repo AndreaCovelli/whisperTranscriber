@@ -1,5 +1,6 @@
 package com.andreacovelli.whispertranscriber
 
+import android.annotation.SuppressLint
 import android.app.job.JobParameters
 import android.app.job.JobService
 import android.os.Build
@@ -12,6 +13,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
+@SuppressLint("SpecifyJobSchedulerIdRange") // WorkManager range is configured in WhisperTranscriberApp.
 @AndroidEntryPoint
 class BackgroundShareJobService : JobService() {
     @Inject

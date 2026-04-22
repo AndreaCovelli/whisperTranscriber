@@ -1,3 +1,5 @@
+@file:Suppress("unused")
+
 package com.andreacovelli.whispertranscriber
 
 import android.os.Build
