@@ -23,12 +23,18 @@ class TranscriptionRepositoryInstrumentedTest {
     private lateinit var db: AppDatabase
     private lateinit var repository: TranscriptionRepository
     private lateinit var historyRepository: RoomHistoryRepository
+    private lateinit var summarizationRepository: TranscriptionSummarizationRepository
 
     @Before
     fun setUp() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
         historyRepository = RoomHistoryRepository(db.transcriptionHistoryDao())
+        summarizationRepository = TranscriptionSummarizationRepository(
+            db = db,
+            jobSummarizationDao = db.transcriptionJobSummarizationDao(),
+            historyRepository = historyRepository,
+        )
         repository = TranscriptionRepository(
             db = db,
             jobDao = db.transcriptionJobDao(),
@@ -83,6 +89,49 @@ class TranscriptionRepositoryInstrumentedTest {
         assertEquals("GEMINI_FLASH", restoredHistory?.summaryProviderName)
         assertEquals("gemini-2.5-flash", restoredHistory?.summaryModel)
         assertEquals(restoredHistoryId, updatedJob?.historyId)
+    }
+
+    @Test
+    fun succeedSummarization_updatesJobAndHistorySummary() = runBlocking {
+        val historyId = historyRepository.insert(
+            TranscriptionHistory(
+                text = "Transcript text",
+                language = "en",
+                model = "whisper-1",
+                displayName = "meeting.wav",
+            ),
+        )
+        val jobId = repository.addJob(
+            TranscriptionJob(
+                uri = "content://test/meeting.wav",
+                displayName = "meeting.wav",
+                transcript = "Transcript text",
+                language = "en",
+                model = "whisper-1",
+                historyId = historyId,
+                isSummarizing = true,
+                summaryStatus = "Summarizing...",
+            ),
+        ).toInt()
+
+        summarizationRepository.succeedSummarization(
+            id = jobId,
+            summary = "New summary",
+            summaryProviderName = "GEMINI_FLASH",
+            summaryModel = "gemini-2.5-flash",
+        )
+
+        val updatedJob = repository.getJob(jobId)
+        val updatedHistory = db.transcriptionHistoryDao().getById(historyId)
+
+        assertEquals("New summary", updatedJob?.summary)
+        assertEquals("GEMINI_FLASH", updatedJob?.summaryProviderName)
+        assertEquals("gemini-2.5-flash", updatedJob?.summaryModel)
+        assertEquals("Summary generated", updatedJob?.summaryStatus)
+        assertFalse(updatedJob?.isSummarizing ?: true)
+        assertEquals("New summary", updatedHistory?.summary)
+        assertEquals("GEMINI_FLASH", updatedHistory?.summaryProviderName)
+        assertEquals("gemini-2.5-flash", updatedHistory?.summaryModel)
     }
 
     @Test

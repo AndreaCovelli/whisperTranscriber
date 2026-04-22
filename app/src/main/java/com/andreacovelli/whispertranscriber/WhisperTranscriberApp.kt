@@ -3,11 +3,11 @@ package com.andreacovelli.whispertranscriber
 import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
-import com.andreacovelli.whispertranscriber.di.IoDispatcher
+import com.andreacovelli.whispertranscriber.di.ApplicationScope
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 @HiltAndroidApp
 class WhisperTranscriberApp :
@@ -20,12 +20,12 @@ class WhisperTranscriberApp :
     lateinit var repository: TranscriptionRepository
 
     @Inject
-    @IoDispatcher
-    lateinit var ioDispatcher: CoroutineDispatcher
+    @ApplicationScope
+    lateinit var applicationScope: CoroutineScope
 
     override fun onCreate() {
         super.onCreate()
-        runBlocking(ioDispatcher) {
+        applicationScope.launch {
             repository.resetStaleJobs()
         }
     }

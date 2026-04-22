@@ -22,7 +22,10 @@ class TranscriptionSummarizationRepository @Inject constructor(
     }
 
     suspend fun succeedSummarization(id: Int, summary: String, summaryProviderName: String, summaryModel: String) {
-        jobSummarizationDao.succeedSummarization(id, summary, summaryProviderName, summaryModel)
+        db.withTransaction {
+            jobSummarizationDao.succeedSummarization(id, summary, summaryProviderName, summaryModel)
+            historyRepository.updateSummaryByJobId(id, summary, summaryProviderName, summaryModel)
+        }
     }
 
     suspend fun failSummarization(id: Int, error: String?) {
