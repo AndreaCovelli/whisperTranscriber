@@ -154,10 +154,12 @@ class TranscriptionRepository @Inject constructor(
         queuedSummarizerCustomModelName = queuedSummarizerCustomModelName,
     ) > 0
 
-    suspend fun clearCompletedJobs(): List<CompletedJobCleanup> {
+    suspend fun clearCompletedJobs(): List<CompletedJobCleanup> = db.withTransaction {
         val completedJobs = jobDao.getCompletedJobs()
-        jobDao.clearCompleted()
-        return completedJobs.map { job ->
+        if (completedJobs.isNotEmpty()) {
+            jobDao.deleteByIds(completedJobs.map(TranscriptionJob::id))
+        }
+        completedJobs.map { job ->
             CompletedJobCleanup(
                 jobId = job.id,
                 stagedFilePath = job.stagedFilePath,

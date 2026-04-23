@@ -70,8 +70,5 @@ class BackgroundShareResultNotificationReceiver : BroadcastReceiver() {
     }
 }
 
-private inline fun <reified T : Enum<T>> enumValueOfOrNull(value: String): T? = try {
-    enumValueOf<T>(value)
-} catch (_: IllegalArgumentException) {
-    null
-}
+private inline fun <reified T : Enum<T>> enumValueOfOrNull(value: String): T? =
+    enumValues<T>().firstOrNull { entry -> entry.name == value }
