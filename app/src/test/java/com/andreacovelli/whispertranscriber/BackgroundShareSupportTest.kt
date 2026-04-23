@@ -66,17 +66,22 @@ class BackgroundShareSupportTest {
     }
 
     @Test
-    fun isLikelySentenceBreak_rejectsCommonAbbreviations() {
-        val text = "Met Mr. Smith yesterday."
+    fun splitNotificationTextPages_avoidsAbbreviationBoundaries() {
+        val text = "Met Mr. Smith yesterday. Then left."
 
-        assertFalse(isLikelySentenceBreak(text, text.indexOf(' ', startIndex = text.indexOf('.'))))
+        val pages = splitNotificationTextPages(text, maxChars = 18)
+
+        assertEquals("Met Mr. Smith ", pages.first())
+        assertEquals(text, pages.joinToString(separator = ""))
     }
 
     @Test
-    fun isLikelySentenceBreak_acceptsRealSentenceBoundary() {
-        val text = "Met Smith yesterday. Then left."
+    fun splitNotificationTextPages_prefersSentenceBoundaryWithoutUppercaseCue() {
+        val text = "prima frase. seconda frase."
 
-        assertTrue(isLikelySentenceBreak(text, text.indexOf(' ', startIndex = text.indexOf('.'))))
+        val pages = splitNotificationTextPages(text, maxChars = 20)
+
+        assertEquals(listOf("prima frase. ", "seconda frase."), pages)
     }
 
     @Test

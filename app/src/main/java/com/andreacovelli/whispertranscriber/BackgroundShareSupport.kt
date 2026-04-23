@@ -15,6 +15,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.text.BreakIterator
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.random.Random
@@ -103,10 +104,15 @@ private fun findParagraphBreak(text: String, start: Int, windowEnd: Int): Int? {
 }
 
 private fun findSentenceBreak(text: String, start: Int, windowEnd: Int): Int? {
-    for (index in (windowEnd - 1) downTo (start + 1)) {
-        if (isLikelySentenceBreak(text, index)) {
-            return index + 1
+    val iterator = BreakIterator.getSentenceInstance()
+    iterator.setText(text)
+
+    var boundary = iterator.preceding(windowEnd + 1)
+    while (boundary != BreakIterator.DONE && boundary > start) {
+        if (boundary <= windowEnd && isPreferredSentenceBoundary(text, start, boundary)) {
+            return boundary
         }
+        boundary = iterator.previous()
     }
     return null
 }
@@ -121,24 +127,14 @@ private fun findWordBreak(text: String, start: Int, windowEnd: Int): Int? {
     return if (index >= start) index + 1 else null
 }
 
-internal fun isLikelySentenceBreak(text: String, whitespaceIndex: Int): Boolean {
-    if (whitespaceIndex !in 1 until text.length) return false
-    if (!text[whitespaceIndex].isWhitespace()) return false
+private fun isPreferredSentenceBoundary(text: String, start: Int, boundary: Int): Boolean {
+    val punctuationIndex = text.lastIndexOfFirstNonWhitespace(before = boundary)
+    if (punctuationIndex < start) return false
 
-    val punctuationIndex = whitespaceIndex - 1
-    val punctuation = text[punctuationIndex]
-    if (punctuation !in ".!?") return false
+    if (text[punctuationIndex] != '.') return true
 
-    if (punctuation == '.') {
-        val precedingToken = extractSentenceBoundaryToken(text, punctuationIndex)
-        if (precedingToken.lowercase() in sentenceBoundaryAbbreviations) return false
-    }
-
-    val nextNonWhitespaceIndex = text.indexOfFirstFrom(whitespaceIndex + 1) { !it.isWhitespace() }
-    if (nextNonWhitespaceIndex == -1) return true
-
-    val nextChar = text[nextNonWhitespaceIndex]
-    return nextChar.isUpperCase() || nextChar.isDigit() || nextChar in "\"'(["
+    val precedingToken = extractSentenceBoundaryToken(text, punctuationIndex)
+    return precedingToken.lowercase() !in sentenceBoundaryAbbreviations
 }
 
 private fun extractSentenceBoundaryToken(text: String, punctuationIndex: Int): String {
@@ -149,9 +145,9 @@ private fun extractSentenceBoundaryToken(text: String, punctuationIndex: Int): S
     return text.substring(start + 1, punctuationIndex)
 }
 
-private inline fun CharSequence.indexOfFirstFrom(startIndex: Int, predicate: (Char) -> Boolean): Int {
-    for (index in startIndex until length) {
-        if (predicate(this[index])) return index
+private fun CharSequence.lastIndexOfFirstNonWhitespace(before: Int): Int {
+    for (index in before - 1 downTo 0) {
+        if (!this[index].isWhitespace()) return index
     }
     return -1
 }
