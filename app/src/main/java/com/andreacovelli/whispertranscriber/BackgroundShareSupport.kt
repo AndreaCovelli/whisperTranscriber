@@ -13,11 +13,11 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.random.Random
-import androidx.core.net.toUri
 
 data class PostTranscriptionWorkSpec(
     val summarizeAfterTranscription: Boolean,
