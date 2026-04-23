@@ -159,18 +159,25 @@ class TranscriptionQueueService @Inject constructor(
         val job = repository.getJob(jobId)
         repository.updateError(jobId, "Cancelled", false, "Cancelled")
         cancelScheduledExecution(job)
+        backgroundShareNotifier.cancelResult(jobId)
         backgroundShareNotifier.cancelRetryScheduled(jobId)
         backgroundShareNotifier.cancelBackgroundProcessing(jobId)
         scheduleNextQueuedJobIfIdle()
     }
 
     suspend fun clearCompletedJobs() {
-        repository.clearCompletedJobs().forEach(queuedAudioStore::deleteStagedFile)
+        repository.clearCompletedJobs().forEach { completedJob ->
+            backgroundShareNotifier.cancelResult(completedJob.jobId)
+            backgroundShareNotifier.cancelRetryScheduled(completedJob.jobId)
+            backgroundShareNotifier.cancelBackgroundProcessing(completedJob.jobId)
+            completedJob.stagedFilePath?.let(queuedAudioStore::deleteStagedFile)
+        }
     }
 
     suspend fun deleteJob(jobId: Int) {
         val job = repository.getJob(jobId)
         cancelScheduledExecution(job)
+        backgroundShareNotifier.cancelResult(jobId)
         backgroundShareNotifier.cancelRetryScheduled(jobId)
         backgroundShareNotifier.cancelBackgroundProcessing(jobId)
         queuedAudioStore.deleteStagedFile(repository.deleteJob(jobId))
@@ -185,6 +192,7 @@ class TranscriptionQueueService @Inject constructor(
     ) {
         val existingJob = repository.getJob(jobId)
         cancelScheduledExecution(existingJob)
+        backgroundShareNotifier.cancelResult(jobId)
         backgroundShareNotifier.cancelRetryScheduled(jobId)
         backgroundShareNotifier.cancelBackgroundProcessing(jobId)
         val requestedModel = resolveRequestedModel(provider, customModelName)

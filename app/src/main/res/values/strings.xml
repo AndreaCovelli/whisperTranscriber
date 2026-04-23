@@ -44,6 +44,9 @@
     <string name="background_share_summary_failed_title">Could not process: %1$s</string>
     <string name="background_share_preparing_notification_body">Preparing shared audio…</string>
     <string name="background_share_waiting_to_start_notification_body">Queued. Waiting to start…</string>
+    <string name="background_share_result_previous">Previous</string>
+    <string name="background_share_result_next">Next</string>
+    <string name="background_share_result_part_label">Part %1$d of %2$d</string>
     <string name="transcription_background_notification_title">Processing in background: %1$s</string>
     <string name="transcription_provider_gemini">Gemini</string>
     <string name="transcription_status_starting">Starting…</string>

@@ -10,6 +10,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 
+data class CompletedJobCleanup(val jobId: Int, val stagedFilePath: String?)
+
 @Singleton
 class TranscriptionRepository @Inject constructor(
     private val db: AppDatabase,
@@ -152,10 +154,15 @@ class TranscriptionRepository @Inject constructor(
         queuedSummarizerCustomModelName = queuedSummarizerCustomModelName,
     ) > 0
 
-    suspend fun clearCompletedJobs(): List<String> {
+    suspend fun clearCompletedJobs(): List<CompletedJobCleanup> {
         val completedJobs = jobDao.getCompletedJobs()
         jobDao.clearCompleted()
-        return completedJobs.mapNotNull { it.stagedFilePath }
+        return completedJobs.map { job ->
+            CompletedJobCleanup(
+                jobId = job.id,
+                stagedFilePath = job.stagedFilePath,
+            )
+        }
     }
 
     suspend fun deleteJob(jobId: Int): String? {

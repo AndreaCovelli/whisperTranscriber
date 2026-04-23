@@ -24,12 +24,188 @@ data class PostTranscriptionWorkSpec(
     val summarizationSettings: SummarizationSettings,
 )
 
+internal const val RESULT_TEXT_PAGE_MAX_LENGTH = 500
+
+internal enum class BackgroundShareResultKind {
+    TRANSCRIPTION,
+    SUMMARY,
+}
+
+internal data class BackgroundShareResultPage(val text: String, val index: Int, val total: Int) {
+    val hasPrevious: Boolean
+        get() = index > 0
+
+    val hasNext: Boolean
+        get() = index < total - 1
+}
+
+internal fun splitNotificationTextPages(text: String, maxChars: Int = RESULT_TEXT_PAGE_MAX_LENGTH): List<String> {
+    require(maxChars > 0) { "Page size must be positive." }
+    if (text.isEmpty()) return listOf("")
+
+    val pages = mutableListOf<String>()
+    var start = 0
+    while (start < text.length) {
+        val windowEnd = minOf(start + maxChars, text.length)
+        if (windowEnd == text.length) {
+            pages += text.substring(start)
+            break
+        }
+
+        val splitEnd = findPreferredPageBreak(text, start, windowEnd) ?: windowEnd
+        pages += text.substring(start, splitEnd)
+        start = splitEnd
+    }
+
+    return pages
+}
+
+internal fun resolveNotificationTextPage(
+    text: String,
+    pageIndex: Int,
+    maxChars: Int = RESULT_TEXT_PAGE_MAX_LENGTH,
+): BackgroundShareResultPage {
+    val pages = splitNotificationTextPages(text, maxChars)
+    val resolvedIndex = pageIndex.coerceIn(0, pages.lastIndex)
+    return BackgroundShareResultPage(
+        text = pages[resolvedIndex],
+        index = resolvedIndex,
+        total = pages.size,
+    )
+}
+
+private fun findPreferredPageBreak(text: String, start: Int, windowEnd: Int): Int? {
+    findParagraphBreak(text, start, windowEnd)?.let { return it }
+    findSentenceBreak(text, start, windowEnd)?.let { return it }
+    findLineBreak(text, start, windowEnd)?.let { return it }
+    return findWordBreak(text, start, windowEnd)
+}
+
+private fun findParagraphBreak(text: String, start: Int, windowEnd: Int): Int? {
+    val index = text.lastIndexOf("\n\n", startIndex = windowEnd - 2)
+    return if (index >= start) index + 2 else null
+}
+
+private fun findSentenceBreak(text: String, start: Int, windowEnd: Int): Int? {
+    for (index in (windowEnd - 1) downTo (start + 1)) {
+        if (text[index].isWhitespace() && text[index - 1] in ".!?") {
+            return index + 1
+        }
+    }
+    return null
+}
+
+private fun findLineBreak(text: String, start: Int, windowEnd: Int): Int? {
+    val index = text.lastIndexOf('\n', startIndex = windowEnd - 1)
+    return if (index >= start) index + 1 else null
+}
+
+private fun findWordBreak(text: String, start: Int, windowEnd: Int): Int? {
+    val index = text.lastIndexOf(' ', startIndex = windowEnd - 1)
+    return if (index >= start) index + 1 else null
+}
+
+private fun buildResultNotificationTitle(
+    context: Context,
+    displayName: String,
+    resultKind: BackgroundShareResultKind,
+): String = when (resultKind) {
+    BackgroundShareResultKind.TRANSCRIPTION ->
+        context.getString(R.string.background_share_transcription_ready_title, displayName)
+    BackgroundShareResultKind.SUMMARY ->
+        context.getString(R.string.background_share_summary_ready_title, displayName)
+}
+
+private fun buildResultPageLabel(context: Context, page: BackgroundShareResultPage): String? = if (page.total > 1) {
+    context.getString(R.string.background_share_result_part_label, page.index + 1, page.total)
+} else {
+    null
+}
+
+private fun createResultPagePendingIntent(
+    context: Context,
+    jobId: Int,
+    displayName: String,
+    resultKind: BackgroundShareResultKind,
+    pageIndex: Int,
+    action: String,
+): PendingIntent {
+    val intent = Intent(context, BackgroundShareResultNotificationReceiver::class.java).apply {
+        this.action = action
+        putExtra(BackgroundShareResultNotificationReceiver.EXTRA_JOB_ID, jobId)
+        putExtra(BackgroundShareResultNotificationReceiver.EXTRA_DISPLAY_NAME, displayName)
+        putExtra(BackgroundShareResultNotificationReceiver.EXTRA_RESULT_KIND, resultKind.name)
+        putExtra(BackgroundShareResultNotificationReceiver.EXTRA_PAGE_INDEX, pageIndex)
+    }
+    return PendingIntent.getBroadcast(
+        context,
+        "$action|$jobId|${resultKind.name}|$pageIndex".hashCode(),
+        intent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+}
+
+private fun buildResultNotification(
+    context: Context,
+    displayName: String,
+    resultKind: BackgroundShareResultKind,
+    page: BackgroundShareResultPage,
+    jobId: Int,
+    openAppPendingIntent: PendingIntent,
+): NotificationCompat.Builder {
+    val pageLabel = buildResultPageLabel(context, page)
+    return NotificationCompat.Builder(context, BackgroundShareNotifier.RESULT_CHANNEL_ID)
+        .setSmallIcon(R.drawable.ic_notification)
+        .setContentTitle(buildResultNotificationTitle(context, displayName, resultKind))
+        .setContentText(page.text.trim())
+        .setSubText(pageLabel)
+        .setStyle(
+            NotificationCompat.BigTextStyle()
+                .bigText(page.text)
+                .setSummaryText(pageLabel),
+        )
+        .setContentIntent(openAppPendingIntent)
+        .setOnlyAlertOnce(true)
+        .setAutoCancel(true)
+        .setGroup(BackgroundShareNotifier.RESULT_GROUP_KEY)
+        .apply {
+            if (page.hasPrevious) {
+                addAction(
+                    0,
+                    context.getString(R.string.background_share_result_previous),
+                    createResultPagePendingIntent(
+                        context = context,
+                        jobId = jobId,
+                        displayName = displayName,
+                        resultKind = resultKind,
+                        pageIndex = page.index - 1,
+                        action = BackgroundShareResultNotificationReceiver.ACTION_PREVIOUS_RESULT_PAGE,
+                    ),
+                )
+            }
+            if (page.hasNext) {
+                addAction(
+                    0,
+                    context.getString(R.string.background_share_result_next),
+                    createResultPagePendingIntent(
+                        context = context,
+                        jobId = jobId,
+                        displayName = displayName,
+                        resultKind = resultKind,
+                        pageIndex = page.index + 1,
+                        action = BackgroundShareResultNotificationReceiver.ACTION_NEXT_RESULT_PAGE,
+                    ),
+                )
+            }
+        }
+}
+
 @Singleton
 class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext private val context: Context) {
     companion object {
-        private const val RESULT_CHANNEL_ID = "background_share_results"
+        internal const val RESULT_CHANNEL_ID = "background_share_results"
         private const val RESULT_CHANNEL_NAME = "Shared audio results"
-        private const val RESULT_GROUP_KEY = "background_share_result_group"
+        internal const val RESULT_GROUP_KEY = "background_share_result_group"
         private const val PROCESSING_GROUP_KEY = "background_share_processing_group"
         private const val RESULT_NOTIFICATION_OFFSET = 20_000
         private const val GENERIC_FAILURE_NOTIFICATION_OFFSET = 40_000
@@ -50,17 +226,19 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
         PackageManager.PERMISSION_GRANTED
 
     fun showSummary(jobId: Int, displayName: String, summary: String) {
-        showResult(
+        showResultPage(
             jobId = jobId,
-            title = context.getString(R.string.background_share_summary_ready_title, displayName),
+            displayName = displayName,
+            resultKind = BackgroundShareResultKind.SUMMARY,
             text = summary,
         )
     }
 
     fun showTranscription(jobId: Int, displayName: String, transcript: String) {
-        showResult(
+        showResultPage(
             jobId = jobId,
-            title = context.getString(R.string.background_share_transcription_ready_title, displayName),
+            displayName = displayName,
+            resultKind = BackgroundShareResultKind.TRANSCRIPTION,
             text = transcript,
         )
     }
@@ -126,17 +304,34 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
         NotificationManagerCompat.from(context).cancel(PREPARING_SHARE_NOTIFICATION_ID)
     }
 
-    private fun showResult(jobId: Int, title: String, text: String) {
+    fun cancelResult(jobId: Int) {
+        NotificationManagerCompat.from(context).cancel(resultNotificationId(jobId))
+    }
+
+    internal fun showResultPage(
+        jobId: Int,
+        displayName: String,
+        resultKind: BackgroundShareResultKind,
+        text: String,
+        pageIndex: Int = 0,
+    ) {
+        val normalizedText = text.trim()
+        if (normalizedText.isEmpty()) {
+            cancelResult(jobId)
+            return
+        }
+
+        val page = resolveNotificationTextPage(normalizedText, pageIndex)
         notify(
-            id = RESULT_NOTIFICATION_OFFSET + jobId,
-            builder = NotificationCompat.Builder(context, RESULT_CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle(title)
-                .setContentText(text)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-                .setContentIntent(createOpenAppPendingIntent())
-                .setAutoCancel(true)
-                .setGroup(RESULT_GROUP_KEY),
+            id = resultNotificationId(jobId),
+            builder = buildResultNotification(
+                context = context,
+                displayName = displayName,
+                resultKind = resultKind,
+                page = page,
+                jobId = jobId,
+                openAppPendingIntent = createOpenAppPendingIntent(),
+            ),
         )
     }
 
@@ -223,4 +418,6 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
     private fun retryNotificationId(jobId: Int): Int = RETRY_NOTIFICATION_OFFSET + jobId
 
     private fun processingNotificationId(jobId: Int): Int = PROCESSING_NOTIFICATION_OFFSET + jobId
+
+    private fun resultNotificationId(jobId: Int): Int = RESULT_NOTIFICATION_OFFSET + jobId
 }
