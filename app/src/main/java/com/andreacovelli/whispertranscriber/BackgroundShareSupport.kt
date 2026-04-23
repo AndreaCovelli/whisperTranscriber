@@ -26,7 +26,7 @@ data class PostTranscriptionWorkSpec(
     val summarizationSettings: SummarizationSettings,
 )
 
-internal const val RESULT_TEXT_PAGE_MAX_LENGTH = 500
+internal const val RESULT_TEXT_PAGE_MAX_LENGTH = 420
 private const val LIST_ITEM_BREAK_LOOKAHEAD = 120
 
 internal enum class BackgroundShareResultKind {
@@ -64,13 +64,17 @@ internal fun splitNotificationTextPages(text: String, maxChars: Int = RESULT_TEX
     val pages = mutableListOf<String>()
     var start = 0
     while (start < text.length) {
-        val softWindowEnd = minOf(start + maxChars, text.length)
+        val hardWindowEnd = minOf(start + maxChars, text.length)
+        val softWindowEnd = if (maxChars > LIST_ITEM_BREAK_LOOKAHEAD) {
+            minOf(start + (maxChars - LIST_ITEM_BREAK_LOOKAHEAD), text.length)
+        } else {
+            hardWindowEnd
+        }
         if (softWindowEnd == text.length) {
             pages += text.substring(start)
             break
         }
 
-        val hardWindowEnd = minOf(softWindowEnd + LIST_ITEM_BREAK_LOOKAHEAD, text.length)
         val splitEnd = findPreferredPageBreak(text, start, softWindowEnd, hardWindowEnd) ?: softWindowEnd
         pages += text.substring(start, splitEnd)
         start = splitEnd

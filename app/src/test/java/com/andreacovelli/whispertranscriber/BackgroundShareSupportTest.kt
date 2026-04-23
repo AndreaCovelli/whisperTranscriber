@@ -86,7 +86,7 @@ class BackgroundShareSupportTest {
 
     @Test
     fun splitNotificationTextPages_prefersBulletBoundaryBeyondSoftLimit() {
-        val repeatedSegment = "vicinanza temporale a ".repeat(23)
+        val repeatedSegment = "vicinanza temporale a ".repeat(18)
         val text = buildString {
             append("- ")
             append(repeatedSegment)
@@ -100,6 +100,23 @@ class BackgroundShareSupportTest {
         assertTrue(pages[0].startsWith("- "))
         assertTrue(pages[0].endsWith("\n"))
         assertEquals("- Avviare, dopo alcuni minuti, la verifica finale.", pages[1])
+        assertEquals(text, pages.joinToString(separator = ""))
+    }
+
+    @Test
+    fun splitNotificationTextPages_neverExceedsHardLimitWhenBulletLookaheadCannotFit() {
+        val repeatedSegment = "vicinanza temporale a ".repeat(23)
+        val text = buildString {
+            append("- ")
+            append(repeatedSegment)
+            append("\n")
+            append("- Avviare, dopo alcuni minuti, la verifica finale.")
+        }
+
+        val pages = splitNotificationTextPages(text)
+
+        assertTrue(pages.size > 1)
+        assertTrue(pages.all { page -> page.length <= RESULT_TEXT_PAGE_MAX_LENGTH })
         assertEquals(text, pages.joinToString(separator = ""))
     }
 
