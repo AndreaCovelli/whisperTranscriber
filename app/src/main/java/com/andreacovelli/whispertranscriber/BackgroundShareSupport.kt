@@ -238,7 +238,7 @@ private fun buildResultNotification(
         .setSubText(pageLabel)
         .setStyle(
             NotificationCompat.BigTextStyle()
-                .bigText(page.text)
+                .bigText(page.text.trim())
                 .setSummaryText(pageLabel),
         )
         .setContentIntent(openAppPendingIntent)
