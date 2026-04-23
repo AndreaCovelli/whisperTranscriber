@@ -212,6 +212,59 @@ class HistoryFtsSyncInstrumentedTest {
                 )
                 """.trimIndent(),
             )
+            execSQL(
+                """
+                INSERT INTO active_jobs(
+                    uri,
+                    displayName,
+                    providerName,
+                    executionBackend,
+                    summarizeAfterTranscription,
+                    notifyResult,
+                    queuedSummarizerProviderName,
+                    queuedSummarizerCustomModelName,
+                    status,
+                    progress,
+                    transcript,
+                    language,
+                    model,
+                    summary,
+                    summaryProviderName,
+                    summaryModel,
+                    summaryStatus,
+                    isRunning,
+                    isSummarizing,
+                    autoSummaryAttempted,
+                    retryCount,
+                    speakerDiarizationEnabled,
+                    timestamp
+                ) VALUES (
+                    'content://test/audio-2.wav',
+                    'audio-2.wav',
+                    'GEMINI_FLASH',
+                    'WORK_MANAGER',
+                    0,
+                    0,
+                    '',
+                    '',
+                    'Cancelled',
+                    0,
+                    '',
+                    '',
+                    '',
+                    '',
+                    '',
+                    '',
+                    'Error',
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    223456789
+                )
+                """.trimIndent(),
+            )
             close()
         }
 
@@ -221,11 +274,14 @@ class HistoryFtsSyncInstrumentedTest {
 
         try {
             migratedDb.openHelper.readableDatabase.query(
-                "SELECT status, summaryStatus FROM active_jobs",
+                "SELECT status, summaryStatus FROM active_jobs ORDER BY timestamp",
             ).use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals(JOB_STATUS_COMPLETED, cursor.getString(0))
                 assertEquals(SUMMARY_STATUS_SUMMARIZING, cursor.getString(1))
+                assertTrue(cursor.moveToNext())
+                assertEquals(JOB_STATUS_CANCELLED, cursor.getString(0))
+                assertEquals(SUMMARY_STATUS_ERROR, cursor.getString(1))
             }
         } finally {
             migratedDb.close()

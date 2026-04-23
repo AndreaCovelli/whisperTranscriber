@@ -322,7 +322,7 @@ class TranscriptionRepositoryInstrumentedTest {
                 uri = "content://test/cancelled.wav",
                 displayName = "cancelled.wav",
                 stagedFilePath = "/tmp/cancelled.wav",
-                status = "Cancelled",
+                status = JOB_STATUS_CANCELLED,
                 isRunning = false,
             ),
         ).toInt()

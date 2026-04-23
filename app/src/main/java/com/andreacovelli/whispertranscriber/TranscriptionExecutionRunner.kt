@@ -72,7 +72,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         val job =
             repository.claimJobForExecution(jobId, applicationContext.getString(R.string.transcription_status_starting))
                 ?: return when (repository.getJob(jobId)?.status) {
-                    "Cancelled" -> JobRunOutcome.Success
+                    JOB_STATUS_CANCELLED -> JobRunOutcome.Success
                     null -> JobRunOutcome.Failure
                     else -> JobRunOutcome.Skipped
                 }
@@ -102,7 +102,7 @@ class TranscriptionExecutionRunner @Inject constructor(
                 val stagedUri = when (val resolution = QueuedAudioInputResolver.resolve(job)) {
                     is QueuedAudioInputResolution.Ready -> resolution.uri
                     is QueuedAudioInputResolution.MissingStagedFile -> {
-                        repository.updateError(jobId, resolution.message, false, "Error")
+                        repository.updateError(jobId, resolution.message, false, JOB_STATUS_ERROR)
                         notifyPostTranscriptionFailure(
                             postTranscriptionWorkSpec = postTranscriptionWorkSpec,
                             jobId = jobId,
@@ -173,7 +173,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         message: String,
     ) {
         backgroundShareNotifier.cancelBackgroundProcessing(jobId)
-        repository.updateError(jobId, message, false, "Error")
+        repository.updateError(jobId, message, false, JOB_STATUS_ERROR)
         notifyPostTranscriptionFailure(postTranscriptionWorkSpec, jobId, displayName, message)
     }
 

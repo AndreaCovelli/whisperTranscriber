@@ -157,7 +157,7 @@ class TranscriptionQueueService @Inject constructor(
 
     suspend fun cancelJob(jobId: Int) {
         val job = repository.getJob(jobId)
-        repository.updateError(jobId, "Cancelled", false, "Cancelled")
+        repository.updateError(jobId, "Cancelled", false, JOB_STATUS_CANCELLED)
         cancelScheduledExecution(job)
         backgroundShareNotifier.cancelResult(jobId)
         backgroundShareNotifier.cancelRetryScheduled(jobId)

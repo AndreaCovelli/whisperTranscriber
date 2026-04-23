@@ -361,6 +361,8 @@ class TranscriptionPresentationTest {
     @Test
     fun displayStatusHelpers_mapInternalStatusesToDisplayLabels() {
         assertEquals(DISPLAY_JOB_STATUS_CLEARED, displayJobStatus(JOB_STATUS_CLEARED))
+        assertEquals(DISPLAY_JOB_STATUS_ERROR, displayJobStatus(JOB_STATUS_ERROR))
+        assertEquals(DISPLAY_JOB_STATUS_CANCELLED, displayJobStatus(JOB_STATUS_CANCELLED))
         assertEquals(DISPLAY_SUMMARY_STATUS_SUMMARIZING, displaySummaryStatus(SUMMARY_STATUS_SUMMARIZING))
     }
 
