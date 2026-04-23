@@ -304,8 +304,8 @@ interface TranscriptionJobDao {
     @Query("DELETE FROM active_jobs WHERE id = :jobId")
     suspend fun deleteById(jobId: Int)
 
-    @Query("DELETE FROM active_jobs WHERE isRunning = 0 AND status != 'Queued'")
-    suspend fun clearCompleted()
+    @Query("DELETE FROM active_jobs WHERE id IN (:jobIds)")
+    suspend fun deleteByIds(jobIds: List<Int>)
 }
 
 @Dao

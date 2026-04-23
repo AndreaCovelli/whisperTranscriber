@@ -13,6 +13,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -266,5 +267,48 @@ class TranscriptionRepositoryInstrumentedTest {
         assertTrue(retried)
         assertEquals("Queued", updatedJob?.status)
         assertEquals(0, updatedJob?.retryCount)
+    }
+
+    @Test
+    fun clearCompletedJobs_returnsCleanupInfoForDeletedSnapshotOnly() = runBlocking {
+        val completedJobId = repository.addJob(
+            TranscriptionJob(
+                uri = "content://test/completed.wav",
+                displayName = "completed.wav",
+                stagedFilePath = "/tmp/completed.wav",
+                status = "Completed",
+                isRunning = false,
+            ),
+        ).toInt()
+        val cancelledJobId = repository.addJob(
+            TranscriptionJob(
+                uri = "content://test/cancelled.wav",
+                displayName = "cancelled.wav",
+                stagedFilePath = "/tmp/cancelled.wav",
+                status = "Cancelled",
+                isRunning = false,
+            ),
+        ).toInt()
+        val queuedJobId = repository.addJob(
+            TranscriptionJob(
+                uri = "content://test/queued.wav",
+                displayName = "queued.wav",
+                status = "Queued",
+                isRunning = false,
+            ),
+        ).toInt()
+
+        val clearedJobs = repository.clearCompletedJobs()
+
+        assertEquals(
+            listOf(
+                CompletedJobCleanup(jobId = completedJobId, stagedFilePath = "/tmp/completed.wav"),
+                CompletedJobCleanup(jobId = cancelledJobId, stagedFilePath = "/tmp/cancelled.wav"),
+            ),
+            clearedJobs.sortedBy(CompletedJobCleanup::jobId),
+        )
+        assertEquals(queuedJobId, repository.getJob(queuedJobId)?.id)
+        assertNull(repository.getJob(completedJobId))
+        assertNull(repository.getJob(cancelledJobId))
     }
 }
