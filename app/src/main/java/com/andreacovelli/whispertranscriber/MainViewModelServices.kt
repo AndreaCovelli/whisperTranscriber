@@ -578,6 +578,7 @@ class SummarizationService @Inject constructor(
     private val settings: ApiKeyManager,
     private val repository: TranscriptionRepository,
     private val summarizationRepository: TranscriptionSummarizationRepository,
+    @param:ApplicationContext private val applicationContext: Context,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
     suspend fun summarize(
@@ -585,6 +586,7 @@ class SummarizationService @Inject constructor(
         settings: SummarizationSettings,
         allowResummarize: Boolean,
         fallbackStatusMessage: String = "",
+        onStatusUpdate: suspend (String) -> Unit = {},
     ): SummarizationResult {
         val summarizerSelection = try {
             resolveSummarizerSelection(settings)
@@ -623,7 +625,9 @@ class SummarizationService @Inject constructor(
                 summarizingCleared = true
                 SummarizationResult(statusMessage = "Nothing to summarize for ${job.displayName}.")
             } else {
-                summarizationRepository.updateSummaryStatus(jobId, "Summarizing...")
+                val summarizingMessage = applicationContext.getString(R.string.transcription_notification_summarizing)
+                summarizationRepository.updateSummaryStatus(jobId, summarizingMessage)
+                onStatusUpdate(summarizingMessage)
                 val apiKey = requireGeminiApiKey()
                 val summary = try {
                     requestSummary(text, apiKey, summarizerSelection.modelName)

@@ -87,7 +87,13 @@ class TranscriptionExecutionRunner @Inject constructor(
             )
 
             if (job.transcript.isNotBlank()) {
-                resumePostTranscriptionWork(jobId, displayName, job.transcript, postTranscriptionWorkSpec)
+                resumePostTranscriptionWork(
+                    jobId = jobId,
+                    displayName = displayName,
+                    transcript = job.transcript,
+                    postTranscriptionWorkSpec = postTranscriptionWorkSpec,
+                    onProgressNotification = onProgressNotification,
+                )
                 backgroundShareNotifier.cancelBackgroundProcessing(jobId)
                 JobRunOutcome.Success
             } else {
@@ -203,7 +209,13 @@ class TranscriptionExecutionRunner @Inject constructor(
                 onProgressNotification = onProgressNotification,
             )
             persistCompletedTranscription(jobId, displayName, result)
-            resumePostTranscriptionWork(jobId, displayName, result.text, postTranscriptionWorkSpec)
+            resumePostTranscriptionWork(
+                jobId = jobId,
+                displayName = displayName,
+                transcript = result.text,
+                postTranscriptionWorkSpec = postTranscriptionWorkSpec,
+                onProgressNotification = onProgressNotification,
+            )
         } finally {
             preparedInput?.tempFileToClean?.let { file ->
                 runCatching { file.delete() }
@@ -568,6 +580,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         displayName: String,
         transcript: String,
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec?,
+        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
     ) {
         if (postTranscriptionWorkSpec?.summarizeAfterTranscription == true) {
             val summarizationResult = summarizationService.summarize(
@@ -575,6 +588,11 @@ class TranscriptionExecutionRunner @Inject constructor(
                 settings = postTranscriptionWorkSpec.summarizationSettings,
                 allowResummarize = false,
                 fallbackStatusMessage = "Completed",
+                onStatusUpdate = { statusMessage ->
+                    if (postTranscriptionWorkSpec.notifyResult) {
+                        onProgressNotification(jobId, displayName, statusMessage)
+                    }
+                },
             )
             repository.markRunningAsCompleted(jobId)
             if (postTranscriptionWorkSpec.notifyResult) {

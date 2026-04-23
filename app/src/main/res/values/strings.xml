@@ -53,6 +53,7 @@
     <string name="transcription_notification_processing">Processing: %1$s</string>
     <string name="transcription_notification_converting">Converting audio…</string>
     <string name="transcription_notification_copying">Copying audio…</string>
+    <string name="transcription_notification_summarizing">Summarizing...</string>
     <string name="transcription_status_conversion_required">Format not natively supported by %1$s %2$s. Converting to 16 kHz WAV…</string>
     <string name="transcription_status_converting_progress">Converting to 16 kHz WAV: %1$.1f%%</string>
     <string name="transcription_status_converted_ready_microsoft">Converted audio ready for Microsoft Speech…</string>

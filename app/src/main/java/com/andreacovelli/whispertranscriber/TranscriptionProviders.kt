@@ -111,7 +111,6 @@ internal class MicrosoftSpeechTranscriber(
                     e,
                 )
             }
-            emit(TranscriptionResult.Loading("Success"))
             emit(
                 TranscriptionResult.Success(
                     TranscriptionData(
@@ -195,7 +194,6 @@ internal class GeminiTranscriber(
                 } catch (e: JSONException) {
                     throw IllegalStateException("Failed to parse Gemini response: $json", e)
                 }
-                emit(TranscriptionResult.Loading("Success"))
                 emit(
                     TranscriptionResult.Success(
                         TranscriptionData(
