@@ -2,6 +2,7 @@ package com.andreacovelli.whispertranscriber
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -62,5 +63,39 @@ class BackgroundShareSupportTest {
         assertEquals(3, page.total)
         assertTrue(page.hasPrevious)
         assertTrue(page.hasNext)
+    }
+
+    @Test
+    fun isLikelySentenceBreak_rejectsCommonAbbreviations() {
+        val text = "Met Mr. Smith yesterday."
+
+        assertFalse(isLikelySentenceBreak(text, text.indexOf(' ', startIndex = text.indexOf('.'))))
+    }
+
+    @Test
+    fun isLikelySentenceBreak_acceptsRealSentenceBoundary() {
+        val text = "Met Smith yesterday. Then left."
+
+        assertTrue(isLikelySentenceBreak(text, text.indexOf(' ', startIndex = text.indexOf('.'))))
+    }
+
+    @Test
+    fun buildResultPageIntentData_distinguishesNotificationActions() {
+        val previousUri = buildResultPageIntentData(
+            packageName = "com.andreacovelli.whispertranscriber",
+            jobId = 12,
+            resultKind = BackgroundShareResultKind.SUMMARY,
+            pageIndex = 1,
+            action = BackgroundShareResultNotificationReceiver.ACTION_PREVIOUS_RESULT_PAGE,
+        )
+        val nextUri = buildResultPageIntentData(
+            packageName = "com.andreacovelli.whispertranscriber",
+            jobId = 12,
+            resultKind = BackgroundShareResultKind.SUMMARY,
+            pageIndex = 2,
+            action = BackgroundShareResultNotificationReceiver.ACTION_NEXT_RESULT_PAGE,
+        )
+
+        assertNotEquals(previousUri, nextUri)
     }
 }

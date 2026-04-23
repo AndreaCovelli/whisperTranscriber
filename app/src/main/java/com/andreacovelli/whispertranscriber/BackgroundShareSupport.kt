@@ -17,6 +17,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.random.Random
+import androidx.core.net.toUri
 
 data class PostTranscriptionWorkSpec(
     val summarizeAfterTranscription: Boolean,
@@ -30,6 +31,21 @@ internal enum class BackgroundShareResultKind {
     TRANSCRIPTION,
     SUMMARY,
 }
+
+private val sentenceBoundaryAbbreviations = setOf(
+    "dr",
+    "etc",
+    "e.g",
+    "i.e",
+    "jr",
+    "mr",
+    "mrs",
+    "ms",
+    "prof",
+    "sr",
+    "st",
+    "vs",
+)
 
 internal data class BackgroundShareResultPage(val text: String, val index: Int, val total: Int) {
     val hasPrevious: Boolean
@@ -88,7 +104,7 @@ private fun findParagraphBreak(text: String, start: Int, windowEnd: Int): Int? {
 
 private fun findSentenceBreak(text: String, start: Int, windowEnd: Int): Int? {
     for (index in (windowEnd - 1) downTo (start + 1)) {
-        if (text[index].isWhitespace() && text[index - 1] in ".!?") {
+        if (isLikelySentenceBreak(text, index)) {
             return index + 1
         }
     }
@@ -103,6 +119,41 @@ private fun findLineBreak(text: String, start: Int, windowEnd: Int): Int? {
 private fun findWordBreak(text: String, start: Int, windowEnd: Int): Int? {
     val index = text.lastIndexOf(' ', startIndex = windowEnd - 1)
     return if (index >= start) index + 1 else null
+}
+
+internal fun isLikelySentenceBreak(text: String, whitespaceIndex: Int): Boolean {
+    if (whitespaceIndex !in 1 until text.length) return false
+    if (!text[whitespaceIndex].isWhitespace()) return false
+
+    val punctuationIndex = whitespaceIndex - 1
+    val punctuation = text[punctuationIndex]
+    if (punctuation !in ".!?") return false
+
+    if (punctuation == '.') {
+        val precedingToken = extractSentenceBoundaryToken(text, punctuationIndex)
+        if (precedingToken.lowercase() in sentenceBoundaryAbbreviations) return false
+    }
+
+    val nextNonWhitespaceIndex = text.indexOfFirstFrom(whitespaceIndex + 1) { !it.isWhitespace() }
+    if (nextNonWhitespaceIndex == -1) return true
+
+    val nextChar = text[nextNonWhitespaceIndex]
+    return nextChar.isUpperCase() || nextChar.isDigit() || nextChar in "\"'(["
+}
+
+private fun extractSentenceBoundaryToken(text: String, punctuationIndex: Int): String {
+    var start = punctuationIndex - 1
+    while (start >= 0 && (text[start].isLetterOrDigit() || text[start] == '.')) {
+        start--
+    }
+    return text.substring(start + 1, punctuationIndex)
+}
+
+private inline fun CharSequence.indexOfFirstFrom(startIndex: Int, predicate: (Char) -> Boolean): Int {
+    for (index in startIndex until length) {
+        if (predicate(this[index])) return index
+    }
+    return -1
 }
 
 private fun buildResultNotificationTitle(
@@ -122,6 +173,25 @@ private fun buildResultPageLabel(context: Context, page: BackgroundShareResultPa
     null
 }
 
+internal fun buildResultPageIntentData(
+    packageName: String,
+    jobId: Int,
+    resultKind: BackgroundShareResultKind,
+    pageIndex: Int,
+    action: String,
+): String = buildString {
+    append("whispertranscriber://")
+    append(packageName)
+    append("/background-share-result-page/")
+    append(action)
+    append("?jobId=")
+    append(jobId)
+    append("&resultKind=")
+    append(resultKind.name)
+    append("&pageIndex=")
+    append(pageIndex)
+}
+
 private fun createResultPagePendingIntent(
     context: Context,
     jobId: Int,
@@ -132,6 +202,13 @@ private fun createResultPagePendingIntent(
 ): PendingIntent {
     val intent = Intent(context, BackgroundShareResultNotificationReceiver::class.java).apply {
         this.action = action
+        data = buildResultPageIntentData(
+            packageName = context.packageName,
+            jobId = jobId,
+            resultKind = resultKind,
+            pageIndex = pageIndex,
+            action = action,
+        ).toUri()
         putExtra(BackgroundShareResultNotificationReceiver.EXTRA_JOB_ID, jobId)
         putExtra(BackgroundShareResultNotificationReceiver.EXTRA_DISPLAY_NAME, displayName)
         putExtra(BackgroundShareResultNotificationReceiver.EXTRA_RESULT_KIND, resultKind.name)
@@ -139,7 +216,7 @@ private fun createResultPagePendingIntent(
     }
     return PendingIntent.getBroadcast(
         context,
-        "$action|$jobId|${resultKind.name}|$pageIndex".hashCode(),
+        0,
         intent,
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
