@@ -178,8 +178,14 @@ interface TranscriptionJobDao {
     suspend fun updateError(id: Int, error: String, isRunning: Boolean, status: String)
 
     @Query(
-        "UPDATE active_jobs SET error = NULL, isRunning = 0, status = '" + JOB_STATUS_RETRY_SCHEDULED +
-            "', retryCount = retryCount + 1 WHERE id = :id",
+        """
+        UPDATE active_jobs
+        SET error = NULL,
+            isRunning = 0,
+            status = '$JOB_STATUS_RETRY_SCHEDULED',
+            retryCount = retryCount + 1
+        WHERE id = :id
+        """,
     )
     suspend fun markRetryScheduled(id: Int)
 
@@ -190,27 +196,55 @@ interface TranscriptionJobDao {
     suspend fun updateExecutionBackend(id: Int, executionBackend: String)
 
     @Query(
-        "UPDATE active_jobs SET isRunning = 0, status = '" + JOB_STATUS_QUEUED +
-            "' WHERE id = :id AND isRunning = 1",
+        """
+        UPDATE active_jobs
+        SET isRunning = 0,
+            status = '$JOB_STATUS_QUEUED'
+        WHERE id = :id
+          AND isRunning = 1
+        """,
     )
     suspend fun resetRunningToQueued(id: Int): Int
 
     @Query(
-        "UPDATE active_jobs SET isRunning = 0, status = '" + JOB_STATUS_COMPLETED +
-            "', progress = 1, error = NULL WHERE id = :id",
+        """
+        UPDATE active_jobs
+        SET isRunning = 0,
+            status = '$JOB_STATUS_COMPLETED',
+            progress = 1,
+            error = NULL
+        WHERE id = :id
+        """,
     )
     suspend fun markRunningAsCompleted(id: Int)
 
     @Query(
-        "UPDATE active_jobs SET isRunning = 0, status = '" + JOB_STATUS_QUEUED +
-            "' WHERE isRunning = 1 OR status = '" + JOB_STATUS_RETRY_SCHEDULED + "'",
+        """
+        UPDATE active_jobs
+        SET isRunning = 0,
+            status = '$JOB_STATUS_QUEUED'
+        WHERE isRunning = 1
+           OR status = '$JOB_STATUS_RETRY_SCHEDULED'
+        """,
     )
     suspend fun resetAllRunningToQueued(): Int
 
     @Query(
-        "UPDATE active_jobs SET transcript = '', language = '', model = '', summary = '', " +
-            "summaryProviderName = '', summaryModel = '', status = '" + JOB_STATUS_CLEARED +
-            "' WHERE id = :id",
+        """
+        UPDATE active_jobs
+        SET transcript = '',
+            language = '',
+            model = '',
+            summary = '',
+            summaryProviderName = '',
+            summaryModel = '',
+            summaryStatus = '',
+            error = NULL,
+            summaryError = NULL,
+            progress = 0,
+            status = '$JOB_STATUS_CLEARED'
+        WHERE id = :id
+        """,
     )
     suspend fun clearTranscriptionResult(id: Int)
 
@@ -227,31 +261,66 @@ interface TranscriptionJobDao {
     suspend fun updateHistoryId(jobId: Int, historyId: Int)
 
     @Query(
-        "SELECT * FROM active_jobs WHERE status = '" + JOB_STATUS_QUEUED + "' ORDER BY timestamp ASC, id ASC LIMIT 1",
+        """
+        SELECT *
+        FROM active_jobs
+        WHERE status = '$JOB_STATUS_QUEUED'
+        ORDER BY timestamp ASC, id ASC
+        LIMIT 1
+        """,
     )
     suspend fun getOldestQueuedJob(): TranscriptionJob?
 
     @Query(
-        "SELECT COUNT(*) FROM active_jobs WHERE isRunning = 1 OR status IN ('" +
-            JOB_STATUS_RETRY_SCHEDULED + "')",
+        """
+        SELECT COUNT(*)
+        FROM active_jobs
+        WHERE isRunning = 1
+           OR status = '$JOB_STATUS_RETRY_SCHEDULED'
+        """,
     )
     suspend fun countBlockingJobs(): Int
 
     @Query(
-        "UPDATE active_jobs SET isRunning = 1, status = :status WHERE id = :jobId AND isRunning = 0 " +
-            "AND status IN ('" + JOB_STATUS_QUEUED + "', '" + JOB_STATUS_RETRY_SCHEDULED + "')",
+        """
+        UPDATE active_jobs
+        SET isRunning = 1,
+            status = :status
+        WHERE id = :jobId
+          AND isRunning = 0
+          AND status IN ('$JOB_STATUS_QUEUED', '$JOB_STATUS_RETRY_SCHEDULED')
+        """,
     )
     suspend fun claimJobForExecution(jobId: Int, status: String): Int
 
     @Query(
-        "UPDATE active_jobs SET status = '" + JOB_STATUS_QUEUED + "', progress = 0, transcript = '', " +
-            "language = '', model = '', summary = '', summaryProviderName = '', summaryModel = '', " +
-            "summaryStatus = '', error = NULL, summaryError = NULL, isRunning = 0, isSummarizing = 0, " +
-            "autoSummaryAttempted = 0, retryCount = 0, historyId = historyId, providerName = :providerName, " +
-            "requestedModel = :requestedModel, executionBackend = :executionBackend, " +
-            "summarizeAfterTranscription = :summarizeAfterTranscription, notifyResult = :notifyResult, " +
-            "queuedSummarizerProviderName = :queuedSummarizerProviderName, " +
-            "queuedSummarizerCustomModelName = :queuedSummarizerCustomModelName WHERE id = :jobId",
+        """
+        UPDATE active_jobs
+        SET status = '$JOB_STATUS_QUEUED',
+            progress = 0,
+            transcript = '',
+            language = '',
+            model = '',
+            summary = '',
+            summaryProviderName = '',
+            summaryModel = '',
+            summaryStatus = '',
+            error = NULL,
+            summaryError = NULL,
+            isRunning = 0,
+            isSummarizing = 0,
+            autoSummaryAttempted = 0,
+            retryCount = 0,
+            historyId = historyId,
+            providerName = :providerName,
+            requestedModel = :requestedModel,
+            executionBackend = :executionBackend,
+            summarizeAfterTranscription = :summarizeAfterTranscription,
+            notifyResult = :notifyResult,
+            queuedSummarizerProviderName = :queuedSummarizerProviderName,
+            queuedSummarizerCustomModelName = :queuedSummarizerCustomModelName
+        WHERE id = :jobId
+        """,
     )
     suspend fun retryById(
         jobId: Int,
@@ -265,7 +334,12 @@ interface TranscriptionJobDao {
     ): Int
 
     @Query(
-        "SELECT * FROM active_jobs WHERE isRunning = 0 AND status != '" + JOB_STATUS_QUEUED + "'",
+        """
+        SELECT *
+        FROM active_jobs
+        WHERE isRunning = 0
+          AND status != '$JOB_STATUS_QUEUED'
+        """,
     )
     suspend fun getCompletedJobs(): List<TranscriptionJob>
 
@@ -299,38 +373,80 @@ interface TranscriptionJobSummarizationDao {
     suspend fun clearJobSummaryFields(id: Int)
 
     @Query(
-        "UPDATE active_jobs SET isSummarizing = 0, summary = :summary, " +
-            "summaryProviderName = :summaryProviderName, summaryModel = :summaryModel, summaryStatus = '" +
-            SUMMARY_STATUS_GENERATED + "', summaryError = NULL WHERE id = :id",
+        """
+        UPDATE active_jobs
+        SET isSummarizing = 0,
+            summary = :summary,
+            summaryProviderName = :summaryProviderName,
+            summaryModel = :summaryModel,
+            summaryStatus = '$SUMMARY_STATUS_GENERATED',
+            summaryError = NULL
+        WHERE id = :id
+        """,
     )
     suspend fun succeedSummarization(id: Int, summary: String, summaryProviderName: String, summaryModel: String)
 
     @Query(
-        "UPDATE active_jobs SET isSummarizing = 0, summaryStatus = '" + SUMMARY_STATUS_ERROR +
-            "', summaryError = :error WHERE id = :id",
+        """
+        UPDATE active_jobs
+        SET isSummarizing = 0,
+            summaryStatus = '$SUMMARY_STATUS_ERROR',
+            summaryError = :error
+        WHERE id = :id
+        """,
     )
     suspend fun failSummarization(id: Int, error: String?)
 
     @Query(
-        "UPDATE active_jobs SET isSummarizing = 0, summaryStatus = '" + SUMMARY_STATUS_CANCELLED +
-            "', summaryError = NULL WHERE id = :id AND isSummarizing = 1",
+        """
+        UPDATE active_jobs
+        SET isSummarizing = 0,
+            summaryStatus = '$SUMMARY_STATUS_CANCELLED',
+            summaryError = NULL
+        WHERE id = :id
+          AND isSummarizing = 1
+        """,
     )
     suspend fun cancelSummarization(id: Int): Int
 
     @Query(
-        "UPDATE active_jobs SET isSummarizing = 1, summary = '', summaryProviderName = :providerName, " +
-            "summaryModel = :modelName, summaryStatus = '" + SUMMARY_STATUS_SUMMARIZING +
-            "', summaryError = NULL, autoSummaryAttempted = 1 WHERE id = :id AND isRunning = 0 " +
-            "AND isSummarizing = 0 AND autoSummaryAttempted = 0 AND transcript != '' AND summary = '' " +
-            "AND error IS NULL AND summaryError IS NULL",
+        """
+        UPDATE active_jobs
+        SET isSummarizing = 1,
+            summary = '',
+            summaryProviderName = :providerName,
+            summaryModel = :modelName,
+            summaryStatus = '$SUMMARY_STATUS_SUMMARIZING',
+            summaryError = NULL,
+            autoSummaryAttempted = 1
+        WHERE id = :id
+          AND isRunning = 0
+          AND isSummarizing = 0
+          AND autoSummaryAttempted = 0
+          AND transcript != ''
+          AND summary = ''
+          AND error IS NULL
+          AND summaryError IS NULL
+        """,
     )
     suspend fun claimAutoSummary(id: Int, providerName: String, modelName: String): Int
 
     @Query(
-        "UPDATE active_jobs SET isSummarizing = 1, summary = '', summaryProviderName = :providerName, " +
-            "summaryModel = :modelName, summaryStatus = '" + SUMMARY_STATUS_SUMMARIZING +
-            "', summaryError = NULL, autoSummaryAttempted = 1 WHERE id = :id AND isRunning = 0 " +
-            "AND isSummarizing = 0 AND transcript != '' AND error IS NULL",
+        """
+        UPDATE active_jobs
+        SET isSummarizing = 1,
+            summary = '',
+            summaryProviderName = :providerName,
+            summaryModel = :modelName,
+            summaryStatus = '$SUMMARY_STATUS_SUMMARIZING',
+            summaryError = NULL,
+            autoSummaryAttempted = 1
+        WHERE id = :id
+          AND isRunning = 0
+          AND isSummarizing = 0
+          AND transcript != ''
+          AND error IS NULL
+        """,
     )
     suspend fun claimManualSummary(id: Int, providerName: String, modelName: String): Int
 

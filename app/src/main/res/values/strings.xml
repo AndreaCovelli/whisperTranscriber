@@ -54,6 +54,10 @@
     <string name="transcription_notification_converting">Converting audio…</string>
     <string name="transcription_notification_copying">Copying audio…</string>
     <string name="transcription_notification_summarizing">Summarizing...</string>
+    <string name="summarization_status_nothing_to_summarize">Nothing to summarize for %1$s.</string>
+    <string name="summarization_status_generated">Summary generated.</string>
+    <string name="summarization_status_cancelled">Summary cancelled.</string>
+    <string name="summarization_status_nothing_to_stop">Nothing to stop.</string>
     <string name="transcription_status_conversion_required">Format not natively supported by %1$s %2$s. Converting to 16 kHz WAV…</string>
     <string name="transcription_status_converting_progress">Converting to 16 kHz WAV: %1$.1f%%</string>
     <string name="transcription_status_converted_ready_microsoft">Converted audio ready for Microsoft Speech…</string>

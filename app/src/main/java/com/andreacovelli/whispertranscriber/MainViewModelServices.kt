@@ -623,7 +623,12 @@ class SummarizationService @Inject constructor(
                 summarizationRepository.setSummarizing(jobId, false)
                 summarizationRepository.updateSummaryStatus(jobId, "")
                 summarizingCleared = true
-                SummarizationResult(statusMessage = "Nothing to summarize for ${job.displayName}.")
+                SummarizationResult(
+                    statusMessage = applicationContext.getString(
+                        R.string.summarization_status_nothing_to_summarize,
+                        job.displayName,
+                    ),
+                )
             } else {
                 val summarizingMessage = applicationContext.getString(R.string.transcription_notification_summarizing)
                 summarizationRepository.updateSummaryStatus(jobId, SUMMARY_STATUS_SUMMARIZING)
@@ -647,7 +652,9 @@ class SummarizationService @Inject constructor(
                     summaryProviderName = summarizerSelection.provider.name,
                     summaryModel = summary.model,
                 )
-                SummarizationResult(statusMessage = "Summary generated.")
+                SummarizationResult(
+                    statusMessage = applicationContext.getString(R.string.summarization_status_generated),
+                )
             }
         } catch (e: CancellationException) {
             throw e
@@ -671,7 +678,11 @@ class SummarizationService @Inject constructor(
 
     suspend fun cancelSummary(jobId: Int): String {
         val cancelled = summarizationRepository.cancelSummarization(jobId)
-        return if (cancelled) "Summary cancelled." else "Nothing to stop."
+        return if (cancelled) {
+            applicationContext.getString(R.string.summarization_status_cancelled)
+        } else {
+            applicationContext.getString(R.string.summarization_status_nothing_to_stop)
+        }
     }
 
     private suspend fun requireGeminiApiKey(): CharArray {

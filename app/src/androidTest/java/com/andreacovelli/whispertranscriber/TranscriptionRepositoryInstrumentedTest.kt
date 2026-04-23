@@ -270,6 +270,43 @@ class TranscriptionRepositoryInstrumentedTest {
     }
 
     @Test
+    fun clearJobTranscription_resetsJobStateFields() = runBlocking {
+        val jobId = repository.addJob(
+            TranscriptionJob(
+                uri = "content://test/clear.wav",
+                displayName = "clear.wav",
+                status = JOB_STATUS_COMPLETED,
+                progress = 1f,
+                transcript = "Transcript text",
+                language = "en",
+                model = "gemini-2.5-flash",
+                summary = "Summary text",
+                summaryProviderName = "GEMINI_FLASH",
+                summaryModel = "gemini-2.5-flash",
+                summaryStatus = SUMMARY_STATUS_GENERATED,
+                error = "old error",
+                summaryError = "old summary error",
+            ),
+        ).toInt()
+
+        repository.clearJobTranscription(jobId)
+
+        val updatedJob = repository.getJob(jobId)
+
+        assertEquals(JOB_STATUS_CLEARED, updatedJob?.status)
+        assertEquals(0f, updatedJob?.progress)
+        assertEquals("", updatedJob?.transcript)
+        assertEquals("", updatedJob?.language)
+        assertEquals("", updatedJob?.model)
+        assertEquals("", updatedJob?.summary)
+        assertEquals("", updatedJob?.summaryProviderName)
+        assertEquals("", updatedJob?.summaryModel)
+        assertEquals("", updatedJob?.summaryStatus)
+        assertNull(updatedJob?.error)
+        assertNull(updatedJob?.summaryError)
+    }
+
+    @Test
     fun clearCompletedJobs_returnsCleanupInfoForDeletedSnapshotOnly() = runBlocking {
         val completedJobId = repository.addJob(
             TranscriptionJob(
