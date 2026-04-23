@@ -150,7 +150,7 @@ class TranscriptionRepositoryInstrumentedTest {
                 model = "whisper-1",
                 historyId = historyId,
                 isSummarizing = true,
-                summaryStatus = "Summarizing...",
+                summaryStatus = SUMMARY_STATUS_SUMMARIZING,
             ),
         ).toInt()
 
@@ -167,7 +167,7 @@ class TranscriptionRepositoryInstrumentedTest {
         assertEquals("New summary", updatedJob?.summary)
         assertEquals("GEMINI_FLASH", updatedJob?.summaryProviderName)
         assertEquals("gemini-2.5-flash", updatedJob?.summaryModel)
-        assertEquals("Summary generated", updatedJob?.summaryStatus)
+        assertEquals(SUMMARY_STATUS_GENERATED, updatedJob?.summaryStatus)
         assertFalse(updatedJob?.isSummarizing ?: true)
         assertEquals("New summary", updatedHistory?.summary)
         assertEquals("GEMINI_FLASH", updatedHistory?.summaryProviderName)
@@ -189,7 +189,7 @@ class TranscriptionRepositoryInstrumentedTest {
 
         val updatedJob = repository.getJob(jobId)
 
-        assertEquals("Retry scheduled", updatedJob?.status)
+        assertEquals(JOB_STATUS_RETRY_SCHEDULED, updatedJob?.status)
         assertFalse(updatedJob?.isRunning ?: true)
         assertEquals(1, updatedJob?.retryCount)
         assertEquals(1, repository.countBlockingJobs())
@@ -209,7 +209,7 @@ class TranscriptionRepositoryInstrumentedTest {
             TranscriptionJob(
                 uri = "content://test/retry-scheduled.wav",
                 displayName = "retry-scheduled.wav",
-                status = "Retry scheduled",
+                status = JOB_STATUS_RETRY_SCHEDULED,
                 isRunning = false,
             ),
         ).toInt()
@@ -217,7 +217,7 @@ class TranscriptionRepositoryInstrumentedTest {
             TranscriptionJob(
                 uri = "content://test/queued.wav",
                 displayName = "queued.wav",
-                status = "Queued",
+                status = JOB_STATUS_QUEUED,
                 isRunning = false,
             ),
         ).toInt()
@@ -228,11 +228,11 @@ class TranscriptionRepositoryInstrumentedTest {
         val untouchedQueuedJob = repository.getJob(queuedJobId)
 
         assertEquals(2, resetCount)
-        assertEquals("Queued", staleJob?.status)
+        assertEquals(JOB_STATUS_QUEUED, staleJob?.status)
         assertFalse(staleJob?.isRunning ?: true)
-        assertEquals("Queued", retryScheduledJob?.status)
+        assertEquals(JOB_STATUS_QUEUED, retryScheduledJob?.status)
         assertFalse(retryScheduledJob?.isRunning ?: true)
-        assertEquals("Queued", untouchedQueuedJob?.status)
+        assertEquals(JOB_STATUS_QUEUED, untouchedQueuedJob?.status)
         assertFalse(untouchedQueuedJob?.isRunning ?: true)
         assertEquals(0, repository.countBlockingJobs())
         assertNotNull(repository.claimJobForExecution(staleJobId, "Starting..."))
@@ -245,7 +245,7 @@ class TranscriptionRepositoryInstrumentedTest {
             TranscriptionJob(
                 uri = "content://test/retry-reset.wav",
                 displayName = "retry-reset.wav",
-                status = "Retry scheduled",
+                status = JOB_STATUS_RETRY_SCHEDULED,
                 retryCount = 2,
                 error = "timeout",
             ),
@@ -265,7 +265,7 @@ class TranscriptionRepositoryInstrumentedTest {
         val updatedJob = repository.getJob(jobId)
 
         assertTrue(retried)
-        assertEquals("Queued", updatedJob?.status)
+        assertEquals(JOB_STATUS_QUEUED, updatedJob?.status)
         assertEquals(0, updatedJob?.retryCount)
     }
 
@@ -276,7 +276,7 @@ class TranscriptionRepositoryInstrumentedTest {
                 uri = "content://test/completed.wav",
                 displayName = "completed.wav",
                 stagedFilePath = "/tmp/completed.wav",
-                status = "Completed",
+                status = JOB_STATUS_COMPLETED,
                 isRunning = false,
             ),
         ).toInt()
@@ -293,7 +293,7 @@ class TranscriptionRepositoryInstrumentedTest {
             TranscriptionJob(
                 uri = "content://test/queued.wav",
                 displayName = "queued.wav",
-                status = "Queued",
+                status = JOB_STATUS_QUEUED,
                 isRunning = false,
             ),
         ).toInt()

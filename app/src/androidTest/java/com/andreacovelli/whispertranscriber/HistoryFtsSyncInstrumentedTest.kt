@@ -155,6 +155,84 @@ class HistoryFtsSyncInstrumentedTest {
         }
     }
 
+    @Test
+    fun migrationToVersion14_normalizesPersistedJobAndSummaryStatuses() {
+        val databaseName = "history-status-normalization-migration-test.db"
+        migrationHelper.createDatabase(databaseName, 13).apply {
+            execSQL(
+                """
+                INSERT INTO active_jobs(
+                    uri,
+                    displayName,
+                    providerName,
+                    executionBackend,
+                    summarizeAfterTranscription,
+                    notifyResult,
+                    queuedSummarizerProviderName,
+                    queuedSummarizerCustomModelName,
+                    status,
+                    progress,
+                    transcript,
+                    language,
+                    model,
+                    summary,
+                    summaryProviderName,
+                    summaryModel,
+                    summaryStatus,
+                    isRunning,
+                    isSummarizing,
+                    autoSummaryAttempted,
+                    retryCount,
+                    speakerDiarizationEnabled,
+                    timestamp
+                ) VALUES (
+                    'content://test/audio.wav',
+                    'audio.wav',
+                    'GEMINI_FLASH',
+                    'WORK_MANAGER',
+                    0,
+                    0,
+                    '',
+                    '',
+                    'Completed',
+                    1,
+                    'Transcript',
+                    'en',
+                    'gemini-2.5-flash',
+                    '',
+                    '',
+                    '',
+                    'Summarizing...',
+                    0,
+                    1,
+                    1,
+                    0,
+                    0,
+                    123456789
+                )
+                """.trimIndent(),
+            )
+            close()
+        }
+
+        val migratedDb = Room.databaseBuilder(context, AppDatabase::class.java, databaseName)
+            .addMigrations(*AppDatabase.MIGRATIONS)
+            .build()
+
+        try {
+            migratedDb.openHelper.readableDatabase.query(
+                "SELECT status, summaryStatus FROM active_jobs",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(JOB_STATUS_COMPLETED, cursor.getString(0))
+                assertEquals(SUMMARY_STATUS_SUMMARIZING, cursor.getString(1))
+            }
+        } finally {
+            migratedDb.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
     private fun ftsMatches(query: String): Boolean = ftsMatches(db, query)
 
     private fun ftsMatches(database: AppDatabase, query: String): Boolean {

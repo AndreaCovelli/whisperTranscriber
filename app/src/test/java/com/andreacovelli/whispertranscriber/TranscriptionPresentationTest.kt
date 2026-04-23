@@ -274,7 +274,7 @@ class TranscriptionPresentationTest {
     @Test
     fun buildBatchProgressState_returnsNullForSingleJob() {
         val jobs = listOf(
-            testUiJob(id = 1, batchId = "batch-a", status = "Queued"),
+            testUiJob(id = 1, batchId = "batch-a", status = DISPLAY_JOB_STATUS_QUEUED),
         )
 
         assertNull(buildBatchProgressState(jobs))
@@ -283,11 +283,11 @@ class TranscriptionPresentationTest {
     @Test
     fun buildBatchProgressState_usesLatestActiveMultiFileBatch() {
         val jobs = listOf(
-            testUiJob(id = 1, timestamp = 1_000L, batchId = "batch-old", status = "Completed"),
-            testUiJob(id = 2, timestamp = 2_000L, batchId = "batch-old", status = "Completed"),
-            testUiJob(id = 3, timestamp = 3_000L, batchId = "batch-new", status = "Completed"),
+            testUiJob(id = 1, timestamp = 1_000L, batchId = "batch-old", status = DISPLAY_JOB_STATUS_COMPLETED),
+            testUiJob(id = 2, timestamp = 2_000L, batchId = "batch-old", status = DISPLAY_JOB_STATUS_COMPLETED),
+            testUiJob(id = 3, timestamp = 3_000L, batchId = "batch-new", status = DISPLAY_JOB_STATUS_COMPLETED),
             testUiJob(id = 4, timestamp = 4_000L, batchId = "batch-new", status = "Transcribing", isRunning = true),
-            testUiJob(id = 5, timestamp = 5_000L, batchId = "batch-new", status = "Queued"),
+            testUiJob(id = 5, timestamp = 5_000L, batchId = "batch-new", status = DISPLAY_JOB_STATUS_QUEUED),
         )
 
         assertEquals(
@@ -306,9 +306,9 @@ class TranscriptionPresentationTest {
                 status = "Transcribing",
                 isRunning = true,
             ),
-            testUiJob(id = 51, timestamp = 1_000L, batchId = "batch-running", status = "Completed"),
-            testUiJob(id = 10, timestamp = 2_000L, batchId = "batch-newer", status = "Queued"),
-            testUiJob(id = 11, timestamp = 2_000L, batchId = "batch-newer", status = "Queued"),
+            testUiJob(id = 51, timestamp = 1_000L, batchId = "batch-running", status = DISPLAY_JOB_STATUS_COMPLETED),
+            testUiJob(id = 10, timestamp = 2_000L, batchId = "batch-newer", status = DISPLAY_JOB_STATUS_QUEUED),
+            testUiJob(id = 11, timestamp = 2_000L, batchId = "batch-newer", status = DISPLAY_JOB_STATUS_QUEUED),
         )
 
         assertEquals(
@@ -320,10 +320,10 @@ class TranscriptionPresentationTest {
     @Test
     fun buildBatchProgressState_prefersEarliestQueuedTimestampOverHigherId() {
         val jobs = listOf(
-            testUiJob(id = 50, timestamp = 1_000L, batchId = "batch-oldest", status = "Queued"),
-            testUiJob(id = 51, timestamp = 1_000L, batchId = "batch-oldest", status = "Completed"),
-            testUiJob(id = 10, timestamp = 2_000L, batchId = "batch-newer", status = "Queued"),
-            testUiJob(id = 11, timestamp = 2_000L, batchId = "batch-newer", status = "Completed"),
+            testUiJob(id = 50, timestamp = 1_000L, batchId = "batch-oldest", status = DISPLAY_JOB_STATUS_QUEUED),
+            testUiJob(id = 51, timestamp = 1_000L, batchId = "batch-oldest", status = DISPLAY_JOB_STATUS_COMPLETED),
+            testUiJob(id = 10, timestamp = 2_000L, batchId = "batch-newer", status = DISPLAY_JOB_STATUS_QUEUED),
+            testUiJob(id = 11, timestamp = 2_000L, batchId = "batch-newer", status = DISPLAY_JOB_STATUS_COMPLETED),
         )
 
         assertEquals(
@@ -339,7 +339,7 @@ class TranscriptionPresentationTest {
             testUiJob(
                 id = 1,
                 batchId = "",
-                status = "Cleared",
+                status = DISPLAY_JOB_STATUS_CLEARED,
                 transcript = "",
             ).shouldShowRetranscribeAction(),
         )
@@ -352,10 +352,16 @@ class TranscriptionPresentationTest {
             testUiJob(
                 id = 1,
                 batchId = "",
-                status = "Completed",
+                status = DISPLAY_JOB_STATUS_COMPLETED,
                 transcript = "",
             ).shouldShowRetranscribeAction(),
         )
+    }
+
+    @Test
+    fun displayStatusHelpers_mapInternalStatusesToDisplayLabels() {
+        assertEquals(DISPLAY_JOB_STATUS_CLEARED, displayJobStatus(JOB_STATUS_CLEARED))
+        assertEquals(DISPLAY_SUMMARY_STATUS_SUMMARIZING, displaySummaryStatus(SUMMARY_STATUS_SUMMARIZING))
     }
 
     @Test

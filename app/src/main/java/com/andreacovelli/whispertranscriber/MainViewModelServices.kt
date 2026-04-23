@@ -119,7 +119,7 @@ class TranscriptionQueueService @Inject constructor(
                         persistedPostTranscriptionConfig.queuedSummarizerCustomModelName,
                         batchId = batchId,
                         speakerDiarizationEnabled = speakerDiarizationEnabled,
-                        status = "Queued",
+                        status = JOB_STATUS_QUEUED,
                         progress = 0f,
                         isRunning = false,
                     ),
@@ -626,7 +626,7 @@ class SummarizationService @Inject constructor(
                 SummarizationResult(statusMessage = "Nothing to summarize for ${job.displayName}.")
             } else {
                 val summarizingMessage = applicationContext.getString(R.string.transcription_notification_summarizing)
-                summarizationRepository.updateSummaryStatus(jobId, summarizingMessage)
+                summarizationRepository.updateSummaryStatus(jobId, SUMMARY_STATUS_SUMMARIZING)
                 onStatusUpdate(summarizingMessage)
                 val apiKey = requireGeminiApiKey()
                 val summary = try {

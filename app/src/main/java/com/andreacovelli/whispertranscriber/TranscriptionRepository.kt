@@ -80,7 +80,7 @@ class TranscriptionRepository @Inject constructor(
                 historyId = historyId,
                 progress = 1f,
                 isRunning = false,
-                status = "Completed",
+                status = JOB_STATUS_COMPLETED,
                 error = null,
             )
         }

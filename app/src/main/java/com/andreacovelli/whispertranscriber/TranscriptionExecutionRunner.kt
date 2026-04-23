@@ -587,7 +587,7 @@ class TranscriptionExecutionRunner @Inject constructor(
                 jobId = jobId,
                 settings = postTranscriptionWorkSpec.summarizationSettings,
                 allowResummarize = false,
-                fallbackStatusMessage = "Completed",
+                fallbackStatusMessage = displayJobStatus(JOB_STATUS_COMPLETED),
                 onStatusUpdate = { statusMessage ->
                     if (postTranscriptionWorkSpec.notifyResult) {
                         onProgressNotification(jobId, displayName, statusMessage)
