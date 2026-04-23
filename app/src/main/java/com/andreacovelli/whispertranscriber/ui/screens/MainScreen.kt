@@ -48,6 +48,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.andreacovelli.whispertranscriber.ApiKeyState
+import com.andreacovelli.whispertranscriber.DISPLAY_JOB_STATUS_QUEUED
+import com.andreacovelli.whispertranscriber.DISPLAY_JOB_STATUS_RETRY_SCHEDULED
 import com.andreacovelli.whispertranscriber.MainViewModel
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.TranscriptionJobState
@@ -146,7 +148,8 @@ private fun MainScreenContent(
     }
 }
 
-private fun TranscriptionJobState.isQueuedLike(): Boolean = status == "Queued" || status == "Retry scheduled"
+private fun TranscriptionJobState.isQueuedLike(): Boolean =
+    status == DISPLAY_JOB_STATUS_QUEUED || status == DISPLAY_JOB_STATUS_RETRY_SCHEDULED
 
 @Composable
 private fun MainJobCard(

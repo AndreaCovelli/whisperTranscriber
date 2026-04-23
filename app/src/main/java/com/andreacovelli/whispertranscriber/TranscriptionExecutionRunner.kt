@@ -72,7 +72,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         val job =
             repository.claimJobForExecution(jobId, applicationContext.getString(R.string.transcription_status_starting))
                 ?: return when (repository.getJob(jobId)?.status) {
-                    "Cancelled" -> JobRunOutcome.Success
+                    JOB_STATUS_CANCELLED -> JobRunOutcome.Success
                     null -> JobRunOutcome.Failure
                     else -> JobRunOutcome.Skipped
                 }
@@ -87,7 +87,13 @@ class TranscriptionExecutionRunner @Inject constructor(
             )
 
             if (job.transcript.isNotBlank()) {
-                resumePostTranscriptionWork(jobId, displayName, job.transcript, postTranscriptionWorkSpec)
+                resumePostTranscriptionWork(
+                    jobId = jobId,
+                    displayName = displayName,
+                    transcript = job.transcript,
+                    postTranscriptionWorkSpec = postTranscriptionWorkSpec,
+                    onProgressNotification = onProgressNotification,
+                )
                 backgroundShareNotifier.cancelBackgroundProcessing(jobId)
                 JobRunOutcome.Success
             } else {
@@ -96,7 +102,7 @@ class TranscriptionExecutionRunner @Inject constructor(
                 val stagedUri = when (val resolution = QueuedAudioInputResolver.resolve(job)) {
                     is QueuedAudioInputResolution.Ready -> resolution.uri
                     is QueuedAudioInputResolution.MissingStagedFile -> {
-                        repository.updateError(jobId, resolution.message, false, "Error")
+                        repository.updateError(jobId, resolution.message, false, JOB_STATUS_ERROR)
                         notifyPostTranscriptionFailure(
                             postTranscriptionWorkSpec = postTranscriptionWorkSpec,
                             jobId = jobId,
@@ -167,7 +173,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         message: String,
     ) {
         backgroundShareNotifier.cancelBackgroundProcessing(jobId)
-        repository.updateError(jobId, message, false, "Error")
+        repository.updateError(jobId, message, false, JOB_STATUS_ERROR)
         notifyPostTranscriptionFailure(postTranscriptionWorkSpec, jobId, displayName, message)
     }
 
@@ -203,7 +209,13 @@ class TranscriptionExecutionRunner @Inject constructor(
                 onProgressNotification = onProgressNotification,
             )
             persistCompletedTranscription(jobId, displayName, result)
-            resumePostTranscriptionWork(jobId, displayName, result.text, postTranscriptionWorkSpec)
+            resumePostTranscriptionWork(
+                jobId = jobId,
+                displayName = displayName,
+                transcript = result.text,
+                postTranscriptionWorkSpec = postTranscriptionWorkSpec,
+                onProgressNotification = onProgressNotification,
+            )
         } finally {
             preparedInput?.tempFileToClean?.let { file ->
                 runCatching { file.delete() }
@@ -568,13 +580,19 @@ class TranscriptionExecutionRunner @Inject constructor(
         displayName: String,
         transcript: String,
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec?,
+        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
     ) {
         if (postTranscriptionWorkSpec?.summarizeAfterTranscription == true) {
             val summarizationResult = summarizationService.summarize(
                 jobId = jobId,
                 settings = postTranscriptionWorkSpec.summarizationSettings,
                 allowResummarize = false,
-                fallbackStatusMessage = "Completed",
+                fallbackStatusMessage = displayJobStatus(JOB_STATUS_COMPLETED),
+                onStatusUpdate = { statusMessage ->
+                    if (postTranscriptionWorkSpec.notifyResult) {
+                        onProgressNotification(jobId, displayName, statusMessage)
+                    }
+                },
             )
             repository.markRunningAsCompleted(jobId)
             if (postTranscriptionWorkSpec.notifyResult) {

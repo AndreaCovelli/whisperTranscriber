@@ -85,6 +85,53 @@ class BackgroundShareSupportTest {
     }
 
     @Test
+    fun splitNotificationTextPages_prefersBulletBoundaryBeyondSoftLimit() {
+        val repeatedSegment = "vicinanza temporale a ".repeat(18)
+        val text = buildString {
+            append("- ")
+            append(repeatedSegment)
+            append("\n")
+            append("- Avviare, dopo alcuni minuti, la verifica finale.")
+        }
+
+        val pages = splitNotificationTextPages(text, maxChars = 500)
+
+        assertEquals(2, pages.size)
+        assertTrue(pages[0].startsWith("- "))
+        assertTrue(pages[0].endsWith("\n"))
+        assertEquals("- Avviare, dopo alcuni minuti, la verifica finale.", pages[1])
+        assertEquals(text, pages.joinToString(separator = ""))
+    }
+
+    @Test
+    fun splitNotificationTextPages_neverExceedsHardLimitWhenBulletLookaheadCannotFit() {
+        val repeatedSegment = "vicinanza temporale a ".repeat(23)
+        val text = buildString {
+            append("- ")
+            append(repeatedSegment)
+            append("\n")
+            append("- Avviare, dopo alcuni minuti, la verifica finale.")
+        }
+
+        val pages = splitNotificationTextPages(text)
+
+        assertTrue(pages.size > 1)
+        assertTrue(pages.all { page -> page.length <= RESULT_TEXT_PAGE_MAX_LENGTH })
+        assertEquals(text, pages.joinToString(separator = ""))
+    }
+
+    @Test
+    fun splitNotificationTextPages_splitsInsideSingleOversizedBulletWhenNeeded() {
+        val text = "- " + "abcdef ".repeat(90)
+
+        val pages = splitNotificationTextPages(text, maxChars = 60)
+
+        assertTrue(pages.size > 1)
+        assertTrue(pages.first().length <= 60)
+        assertEquals(text, pages.joinToString(separator = ""))
+    }
+
+    @Test
     fun buildResultPageIntentData_distinguishesNotificationActions() {
         val previousUri = buildResultPageIntentData(
             packageName = "com.andreacovelli.whispertranscriber",

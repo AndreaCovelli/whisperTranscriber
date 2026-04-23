@@ -73,7 +73,7 @@ data class TranscriptionJobState(
     val displayName: String = "",
     val provider: TranscriptionProvider = TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
     val requestedModel: String = "",
-    val status: String = "Queued",
+    val status: String = DISPLAY_JOB_STATUS_QUEUED,
     val progress: Float = 0f, // 0..1 conversion progress
     val transcript: String = "",
     val language: String = "",
@@ -98,7 +98,7 @@ fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     displayName = displayName,
     provider = decodeHistoricalTranscriptionProvider(providerName),
     requestedModel = requestedModel.orEmpty(),
-    status = status,
+    status = displayJobStatus(status),
     progress = progress,
     transcript = transcript,
     language = language,
@@ -108,7 +108,7 @@ fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
         .takeIf(String::isNotBlank)
         ?.let(::decodeHistoricalSummarizerProvider),
     summaryModel = summaryModel,
-    summaryStatus = summaryStatus,
+    summaryStatus = displaySummaryStatus(summaryStatus),
     autoSummaryAttempted = autoSummaryAttempted,
     batchId = batchId.orEmpty(),
     historyId = historyId,

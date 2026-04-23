@@ -26,7 +26,8 @@ data class PostTranscriptionWorkSpec(
     val summarizationSettings: SummarizationSettings,
 )
 
-internal const val RESULT_TEXT_PAGE_MAX_LENGTH = 500
+internal const val RESULT_TEXT_PAGE_MAX_LENGTH = 420
+private const val LIST_ITEM_BREAK_LOOKAHEAD = 120
 
 internal enum class BackgroundShareResultKind {
     TRANSCRIPTION,
@@ -63,13 +64,18 @@ internal fun splitNotificationTextPages(text: String, maxChars: Int = RESULT_TEX
     val pages = mutableListOf<String>()
     var start = 0
     while (start < text.length) {
-        val windowEnd = minOf(start + maxChars, text.length)
-        if (windowEnd == text.length) {
+        val hardWindowEnd = minOf(start + maxChars, text.length)
+        val softWindowEnd = if (maxChars > LIST_ITEM_BREAK_LOOKAHEAD) {
+            minOf(start + (maxChars - LIST_ITEM_BREAK_LOOKAHEAD), text.length)
+        } else {
+            hardWindowEnd
+        }
+        if (softWindowEnd == text.length) {
             pages += text.substring(start)
             break
         }
 
-        val splitEnd = findPreferredPageBreak(text, start, windowEnd) ?: windowEnd
+        val splitEnd = findPreferredPageBreak(text, start, softWindowEnd, hardWindowEnd) ?: softWindowEnd
         pages += text.substring(start, splitEnd)
         start = splitEnd
     }
@@ -91,11 +97,77 @@ internal fun resolveNotificationTextPage(
     )
 }
 
-private fun findPreferredPageBreak(text: String, start: Int, windowEnd: Int): Int? {
-    findParagraphBreak(text, start, windowEnd)?.let { return it }
-    findSentenceBreak(text, start, windowEnd)?.let { return it }
-    findLineBreak(text, start, windowEnd)?.let { return it }
-    return findWordBreak(text, start, windowEnd)
+private fun findPreferredPageBreak(text: String, start: Int, softWindowEnd: Int, hardWindowEnd: Int): Int? {
+    findListItemBreak(text, start, softWindowEnd, hardWindowEnd)?.let { return it }
+    findParagraphBreak(text, start, softWindowEnd)?.let { return it }
+    findSentenceBreak(text, start, softWindowEnd)?.let { return it }
+    findLineBreak(text, start, softWindowEnd)?.let { return it }
+    return findWordBreak(text, start, softWindowEnd)
+}
+
+private fun findListItemBreak(text: String, start: Int, softWindowEnd: Int, hardWindowEnd: Int): Int? {
+    val listItemStarts = findListItemLineStarts(text, start, hardWindowEnd)
+    if (listItemStarts.isEmpty()) return null
+
+    val previousListItemStart = listItemStarts.lastOrNull { it <= softWindowEnd }
+    if (previousListItemStart != null && previousListItemStart > start) {
+        return previousListItemStart
+    }
+
+    return if (previousListItemStart != null) {
+        listItemStarts.firstOrNull { it > softWindowEnd }
+    } else {
+        null
+    }
+}
+
+private fun findListItemLineStarts(text: String, start: Int, endInclusive: Int): List<Int> {
+    val result = mutableListOf<Int>()
+    var lineStart = if (start == 0) {
+        0
+    } else {
+        text.lastIndexOf('\n', start - 1).let { newlineIndex -> if (newlineIndex == -1) 0 else newlineIndex + 1 }
+    }
+
+    while (lineStart <= endInclusive && lineStart < text.length) {
+        if (isListItemLineStart(text, lineStart)) {
+            result += lineStart
+        }
+
+        val nextLineBreak = text.indexOf('\n', lineStart)
+        if (nextLineBreak == -1) break
+        lineStart = nextLineBreak + 1
+    }
+
+    return result
+}
+
+private fun isListItemLineStart(text: String, lineStart: Int): Boolean {
+    var index = lineStart
+    while (index < text.length && (text[index] == ' ' || text[index] == '\t')) {
+        index++
+    }
+    if (index >= text.length) return false
+
+    val marker = text[index]
+    if ((marker == '-' || marker == '*' || marker == '•') && index + 1 < text.length &&
+        text[index + 1].isWhitespace()
+    ) {
+        return true
+    }
+
+    if (!marker.isDigit()) return false
+
+    var digitEnd = index + 1
+    while (digitEnd < text.length && text[digitEnd].isDigit()) {
+        digitEnd++
+    }
+
+    if (digitEnd >= text.length) return false
+    val orderedMarker = text[digitEnd]
+    return (orderedMarker == '.' || orderedMarker == ')') &&
+        digitEnd + 1 < text.length &&
+        text[digitEnd + 1].isWhitespace()
 }
 
 private fun findParagraphBreak(text: String, start: Int, windowEnd: Int): Int? {

@@ -14,6 +14,16 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.andreacovelli.whispertranscriber.JOB_STATUS_CANCELLED
+import com.andreacovelli.whispertranscriber.JOB_STATUS_CLEARED
+import com.andreacovelli.whispertranscriber.JOB_STATUS_COMPLETED
+import com.andreacovelli.whispertranscriber.JOB_STATUS_ERROR
+import com.andreacovelli.whispertranscriber.JOB_STATUS_QUEUED
+import com.andreacovelli.whispertranscriber.JOB_STATUS_RETRY_SCHEDULED
+import com.andreacovelli.whispertranscriber.SUMMARY_STATUS_CANCELLED
+import com.andreacovelli.whispertranscriber.SUMMARY_STATUS_ERROR
+import com.andreacovelli.whispertranscriber.SUMMARY_STATUS_GENERATED
+import com.andreacovelli.whispertranscriber.SUMMARY_STATUS_SUMMARIZING
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "transcription_history")
@@ -56,7 +66,7 @@ data class TranscriptionJob(
     val notifyResult: Boolean = false,
     val queuedSummarizerProviderName: String = "",
     val queuedSummarizerCustomModelName: String = "",
-    val status: String = "Queued",
+    val status: String = JOB_STATUS_QUEUED,
     val progress: Float = 0f,
     val transcript: String = "",
     val language: String = "",
@@ -174,7 +184,7 @@ interface TranscriptionJobDao {
         UPDATE active_jobs
         SET error = NULL,
             isRunning = 0,
-            status = 'Retry scheduled',
+            status = '$JOB_STATUS_RETRY_SCHEDULED',
             retryCount = retryCount + 1
         WHERE id = :id
         """,
@@ -191,7 +201,7 @@ interface TranscriptionJobDao {
         """
         UPDATE active_jobs
         SET isRunning = 0,
-            status = 'Queued'
+            status = '$JOB_STATUS_QUEUED'
         WHERE id = :id
           AND isRunning = 1
         """,
@@ -202,7 +212,7 @@ interface TranscriptionJobDao {
         """
         UPDATE active_jobs
         SET isRunning = 0,
-            status = 'Completed',
+            status = '$JOB_STATUS_COMPLETED',
             progress = 1,
             error = NULL
         WHERE id = :id
@@ -210,7 +220,15 @@ interface TranscriptionJobDao {
     )
     suspend fun markRunningAsCompleted(id: Int)
 
-    @Query("UPDATE active_jobs SET isRunning = 0, status = 'Queued' WHERE isRunning = 1 OR status = 'Retry scheduled'")
+    @Query(
+        """
+        UPDATE active_jobs
+        SET isRunning = 0,
+            status = '$JOB_STATUS_QUEUED'
+        WHERE isRunning = 1
+           OR status = '$JOB_STATUS_RETRY_SCHEDULED'
+        """,
+    )
     suspend fun resetAllRunningToQueued(): Int
 
     @Query(
@@ -222,7 +240,11 @@ interface TranscriptionJobDao {
             summary = '',
             summaryProviderName = '',
             summaryModel = '',
-            status = 'Cleared'
+            summaryStatus = '',
+            error = NULL,
+            summaryError = NULL,
+            progress = 0,
+            status = '$JOB_STATUS_CLEARED'
         WHERE id = :id
         """,
     )
@@ -240,10 +262,25 @@ interface TranscriptionJobDao {
     @Query("UPDATE active_jobs SET historyId = :historyId WHERE id = :jobId")
     suspend fun updateHistoryId(jobId: Int, historyId: Int)
 
-    @Query("SELECT * FROM active_jobs WHERE status = 'Queued' ORDER BY timestamp ASC, id ASC LIMIT 1")
+    @Query(
+        """
+        SELECT *
+        FROM active_jobs
+        WHERE status = '$JOB_STATUS_QUEUED'
+        ORDER BY timestamp ASC, id ASC
+        LIMIT 1
+        """,
+    )
     suspend fun getOldestQueuedJob(): TranscriptionJob?
 
-    @Query("SELECT COUNT(*) FROM active_jobs WHERE isRunning = 1 OR status = 'Retry scheduled'")
+    @Query(
+        """
+        SELECT COUNT(*)
+        FROM active_jobs
+        WHERE isRunning = 1
+           OR status = '$JOB_STATUS_RETRY_SCHEDULED'
+        """,
+    )
     suspend fun countBlockingJobs(): Int
 
     @Query(
@@ -253,7 +290,7 @@ interface TranscriptionJobDao {
             status = :status
         WHERE id = :jobId
           AND isRunning = 0
-          AND status IN ('Queued', 'Retry scheduled')
+          AND status IN ('$JOB_STATUS_QUEUED', '$JOB_STATUS_RETRY_SCHEDULED')
         """,
     )
     suspend fun claimJobForExecution(jobId: Int, status: String): Int
@@ -261,7 +298,7 @@ interface TranscriptionJobDao {
     @Query(
         """
         UPDATE active_jobs
-        SET status = 'Queued',
+        SET status = '$JOB_STATUS_QUEUED',
             progress = 0,
             transcript = '',
             language = '',
@@ -298,7 +335,14 @@ interface TranscriptionJobDao {
         queuedSummarizerCustomModelName: String,
     ): Int
 
-    @Query("SELECT * FROM active_jobs WHERE isRunning = 0 AND status != 'Queued'")
+    @Query(
+        """
+        SELECT *
+        FROM active_jobs
+        WHERE isRunning = 0
+          AND status != '$JOB_STATUS_QUEUED'
+        """,
+    )
     suspend fun getCompletedJobs(): List<TranscriptionJob>
 
     @Query("DELETE FROM active_jobs WHERE id = :jobId")
@@ -337,21 +381,32 @@ interface TranscriptionJobSummarizationDao {
             summary = :summary,
             summaryProviderName = :summaryProviderName,
             summaryModel = :summaryModel,
-            summaryStatus = 'Summary generated',
+            summaryStatus = '$SUMMARY_STATUS_GENERATED',
             summaryError = NULL
         WHERE id = :id
         """,
     )
     suspend fun succeedSummarization(id: Int, summary: String, summaryProviderName: String, summaryModel: String)
 
-    @Query("UPDATE active_jobs SET isSummarizing = 0, summaryStatus = 'Error', summaryError = :error WHERE id = :id")
+    @Query(
+        """
+        UPDATE active_jobs
+        SET isSummarizing = 0,
+            summaryStatus = '$SUMMARY_STATUS_ERROR',
+            summaryError = :error
+        WHERE id = :id
+        """,
+    )
     suspend fun failSummarization(id: Int, error: String?)
 
     @Query(
         """
         UPDATE active_jobs
-        SET isSummarizing = 0, summaryStatus = 'Cancelled', summaryError = NULL
-        WHERE id = :id AND isSummarizing = 1
+        SET isSummarizing = 0,
+            summaryStatus = '$SUMMARY_STATUS_CANCELLED',
+            summaryError = NULL
+        WHERE id = :id
+          AND isSummarizing = 1
         """,
     )
     suspend fun cancelSummarization(id: Int): Int
@@ -363,7 +418,7 @@ interface TranscriptionJobSummarizationDao {
             summary = '',
             summaryProviderName = :providerName,
             summaryModel = :modelName,
-            summaryStatus = 'Summarizing...',
+            summaryStatus = '$SUMMARY_STATUS_SUMMARIZING',
             summaryError = NULL,
             autoSummaryAttempted = 1
         WHERE id = :id
@@ -385,7 +440,7 @@ interface TranscriptionJobSummarizationDao {
             summary = '',
             summaryProviderName = :providerName,
             summaryModel = :modelName,
-            summaryStatus = 'Summarizing...',
+            summaryStatus = '$SUMMARY_STATUS_SUMMARIZING',
             summaryError = NULL,
             autoSummaryAttempted = 1
         WHERE id = :id
@@ -403,7 +458,7 @@ interface TranscriptionJobSummarizationDao {
 
 @Database(
     entities = [TranscriptionHistory::class, TranscriptionHistoryFts::class, TranscriptionJob::class],
-    version = 13,
+    version = 14,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -539,6 +594,37 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    UPDATE active_jobs
+                    SET status = CASE status
+                        WHEN 'Queued' THEN '$JOB_STATUS_QUEUED'
+                        WHEN 'Retry scheduled' THEN '$JOB_STATUS_RETRY_SCHEDULED'
+                        WHEN 'Completed' THEN '$JOB_STATUS_COMPLETED'
+                        WHEN 'Cleared' THEN '$JOB_STATUS_CLEARED'
+                        WHEN 'Error' THEN '$JOB_STATUS_ERROR'
+                        WHEN 'Cancelled' THEN '$JOB_STATUS_CANCELLED'
+                        ELSE status
+                    END
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    UPDATE active_jobs
+                    SET summaryStatus = CASE summaryStatus
+                        WHEN 'Summarizing...' THEN '$SUMMARY_STATUS_SUMMARIZING'
+                        WHEN 'Summary generated' THEN '$SUMMARY_STATUS_GENERATED'
+                        WHEN 'Error' THEN '$SUMMARY_STATUS_ERROR'
+                        WHEN 'Cancelled' THEN '$SUMMARY_STATUS_CANCELLED'
+                        ELSE summaryStatus
+                    END
+                    """.trimIndent(),
+                )
+            }
+        }
+
         val MIGRATIONS = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -552,6 +638,7 @@ abstract class AppDatabase : RoomDatabase() {
             MIGRATION_10_11,
             MIGRATION_11_12,
             MIGRATION_12_13,
+            MIGRATION_13_14,
         )
 
         private fun createBuilder(context: Context) = Room.databaseBuilder(

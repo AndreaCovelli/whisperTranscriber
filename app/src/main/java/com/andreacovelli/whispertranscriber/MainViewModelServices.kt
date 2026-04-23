@@ -119,7 +119,7 @@ class TranscriptionQueueService @Inject constructor(
                         persistedPostTranscriptionConfig.queuedSummarizerCustomModelName,
                         batchId = batchId,
                         speakerDiarizationEnabled = speakerDiarizationEnabled,
-                        status = "Queued",
+                        status = JOB_STATUS_QUEUED,
                         progress = 0f,
                         isRunning = false,
                     ),
@@ -157,7 +157,7 @@ class TranscriptionQueueService @Inject constructor(
 
     suspend fun cancelJob(jobId: Int) {
         val job = repository.getJob(jobId)
-        repository.updateError(jobId, "Cancelled", false, "Cancelled")
+        repository.updateError(jobId, "Cancelled", false, JOB_STATUS_CANCELLED)
         cancelScheduledExecution(job)
         backgroundShareNotifier.cancelResult(jobId)
         backgroundShareNotifier.cancelRetryScheduled(jobId)
@@ -578,6 +578,7 @@ class SummarizationService @Inject constructor(
     private val settings: ApiKeyManager,
     private val repository: TranscriptionRepository,
     private val summarizationRepository: TranscriptionSummarizationRepository,
+    @param:ApplicationContext private val applicationContext: Context,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
     suspend fun summarize(
@@ -585,6 +586,7 @@ class SummarizationService @Inject constructor(
         settings: SummarizationSettings,
         allowResummarize: Boolean,
         fallbackStatusMessage: String = "",
+        onStatusUpdate: suspend (String) -> Unit = {},
     ): SummarizationResult {
         val summarizerSelection = try {
             resolveSummarizerSelection(settings)
@@ -621,9 +623,16 @@ class SummarizationService @Inject constructor(
                 summarizationRepository.setSummarizing(jobId, false)
                 summarizationRepository.updateSummaryStatus(jobId, "")
                 summarizingCleared = true
-                SummarizationResult(statusMessage = "Nothing to summarize for ${job.displayName}.")
+                SummarizationResult(
+                    statusMessage = applicationContext.getString(
+                        R.string.summarization_status_nothing_to_summarize,
+                        job.displayName,
+                    ),
+                )
             } else {
-                summarizationRepository.updateSummaryStatus(jobId, "Summarizing...")
+                val summarizingMessage = applicationContext.getString(R.string.transcription_notification_summarizing)
+                summarizationRepository.updateSummaryStatus(jobId, SUMMARY_STATUS_SUMMARIZING)
+                onStatusUpdate(summarizingMessage)
                 val apiKey = requireGeminiApiKey()
                 val summary = try {
                     requestSummary(text, apiKey, summarizerSelection.modelName)
@@ -643,7 +652,9 @@ class SummarizationService @Inject constructor(
                     summaryProviderName = summarizerSelection.provider.name,
                     summaryModel = summary.model,
                 )
-                SummarizationResult(statusMessage = "Summary generated.")
+                SummarizationResult(
+                    statusMessage = applicationContext.getString(R.string.summarization_status_generated),
+                )
             }
         } catch (e: CancellationException) {
             throw e
@@ -667,7 +678,11 @@ class SummarizationService @Inject constructor(
 
     suspend fun cancelSummary(jobId: Int): String {
         val cancelled = summarizationRepository.cancelSummarization(jobId)
-        return if (cancelled) "Summary cancelled." else "Nothing to stop."
+        return if (cancelled) {
+            applicationContext.getString(R.string.summarization_status_cancelled)
+        } else {
+            applicationContext.getString(R.string.summarization_status_nothing_to_stop)
+        }
     }
 
     private suspend fun requireGeminiApiKey(): CharArray {

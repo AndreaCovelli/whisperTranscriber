@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.andreacovelli.whispertranscriber.DISPLAY_JOB_STATUS_CLEARED
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.TranscriptionJobState
 import com.andreacovelli.whispertranscriber.TranscriptionProvider
@@ -215,7 +216,7 @@ private fun RetranscribeSection(job: TranscriptionJobState, actions: Transcripti
 }
 
 internal fun TranscriptionJobState.shouldShowRetranscribeAction(): Boolean =
-    error == null && (isRunning || transcript.isNotBlank() || status == "Cleared")
+    error == null && (isRunning || transcript.isNotBlank() || status == DISPLAY_JOB_STATUS_CLEARED)
 
 @Composable
 private fun JobPrimaryActions(
