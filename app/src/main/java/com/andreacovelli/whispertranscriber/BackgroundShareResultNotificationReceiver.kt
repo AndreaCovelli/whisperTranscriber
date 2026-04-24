@@ -25,10 +25,25 @@ class BackgroundShareResultNotificationReceiver : BroadcastReceiver() {
     lateinit var applicationScope: CoroutineScope
 
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != ACTION_PREVIOUS_RESULT_PAGE && intent.action != ACTION_NEXT_RESULT_PAGE) return
-
         val jobId = intent.getIntExtra(EXTRA_JOB_ID, -1)
         if (jobId == -1) return
+
+        if (intent.action == ACTION_DISMISS_RESULT_PAGE) {
+            backgroundShareNotifier.clearCache(jobId)
+            return
+        }
+
+        if (intent.action == ACTION_OPEN_RESULT_PAGE) {
+            backgroundShareNotifier.clearCache(jobId)
+            val mainIntent = Intent(context, MainActivity::class.java).apply {
+                flags =
+                    Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            }
+            context.startActivity(mainIntent)
+            return
+        }
+
+        if (intent.action != ACTION_PREVIOUS_RESULT_PAGE && intent.action != ACTION_NEXT_RESULT_PAGE) return
 
         val displayName = intent.getStringExtra(EXTRA_DISPLAY_NAME).orEmpty()
         val resultKind = intent.getStringExtra(EXTRA_RESULT_KIND)
@@ -39,6 +54,10 @@ class BackgroundShareResultNotificationReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         applicationScope.launch {
             try {
+                if (backgroundShareNotifier.showCachedResultPage(jobId, resultKind, pageIndex)) {
+                    return@launch
+                }
+
                 val job = repository.getJob(jobId)
                 val text = when (resultKind) {
                     BackgroundShareResultKind.TRANSCRIPTION -> job?.transcript.orEmpty()
@@ -66,6 +85,10 @@ class BackgroundShareResultNotificationReceiver : BroadcastReceiver() {
             "com.andreacovelli.whispertranscriber.action.PREVIOUS_RESULT_PAGE"
         const val ACTION_NEXT_RESULT_PAGE =
             "com.andreacovelli.whispertranscriber.action.NEXT_RESULT_PAGE"
+        const val ACTION_DISMISS_RESULT_PAGE =
+            "com.andreacovelli.whispertranscriber.action.DISMISS_RESULT_PAGE"
+        const val ACTION_OPEN_RESULT_PAGE =
+            "com.andreacovelli.whispertranscriber.action.OPEN_RESULT_PAGE"
         const val EXTRA_JOB_ID = "jobId"
         const val EXTRA_DISPLAY_NAME = "displayName"
         const val EXTRA_RESULT_KIND = "resultKind"

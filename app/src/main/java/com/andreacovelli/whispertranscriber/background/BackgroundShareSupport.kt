@@ -22,6 +22,7 @@ import com.andreacovelli.whispertranscriber.TranscriptionWorker
 import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.text.BreakIterator
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.random.Random
@@ -54,6 +55,8 @@ private val sentenceBoundaryAbbreviations = setOf(
     "st",
     "vs",
 )
+
+internal data class CachedShareResult(val displayName: String, val pages: List<String>)
 
 internal data class BackgroundShareResultPage(val text: String, val index: Int, val total: Int) {
     val hasPrevious: Boolean
@@ -296,13 +299,38 @@ private fun createResultPagePendingIntent(
     )
 }
 
+private fun createResultOpenAppPendingIntent(context: Context, jobId: Int): PendingIntent {
+    val intent = Intent(context, BackgroundShareResultNotificationReceiver::class.java).apply {
+        action = BackgroundShareResultNotificationReceiver.ACTION_OPEN_RESULT_PAGE
+        putExtra(BackgroundShareResultNotificationReceiver.EXTRA_JOB_ID, jobId)
+    }
+    return PendingIntent.getBroadcast(
+        context,
+        jobId,
+        intent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+}
+
+private fun createResultDismissPendingIntent(context: Context, jobId: Int): PendingIntent {
+    val intent = Intent(context, BackgroundShareResultNotificationReceiver::class.java).apply {
+        action = BackgroundShareResultNotificationReceiver.ACTION_DISMISS_RESULT_PAGE
+        putExtra(BackgroundShareResultNotificationReceiver.EXTRA_JOB_ID, jobId)
+    }
+    return PendingIntent.getBroadcast(
+        context,
+        jobId,
+        intent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+}
+
 private fun buildResultNotification(
     context: Context,
     displayName: String,
     resultKind: BackgroundShareResultKind,
     page: BackgroundShareResultPage,
     jobId: Int,
-    openAppPendingIntent: PendingIntent,
 ): NotificationCompat.Builder {
     val pageLabel = buildResultPageLabel(context, page)
     return NotificationCompat.Builder(context, BackgroundShareNotifier.RESULT_CHANNEL_ID)
@@ -315,7 +343,8 @@ private fun buildResultNotification(
                 .bigText(page.text.trim())
                 .setSummaryText(pageLabel),
         )
-        .setContentIntent(openAppPendingIntent)
+        .setContentIntent(createResultOpenAppPendingIntent(context, jobId))
+        .setDeleteIntent(createResultDismissPendingIntent(context, jobId))
         .setOnlyAlertOnce(true)
         .setAutoCancel(true)
         .setGroup(BackgroundShareNotifier.RESULT_GROUP_KEY)
@@ -352,6 +381,7 @@ private fun buildResultNotification(
 }
 
 @Singleton
+@Suppress("TooManyFunctions")
 class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext private val context: Context) {
     companion object {
         internal const val RESULT_CHANNEL_ID = "background_share_results"
@@ -366,6 +396,7 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
     }
 
     private val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    private val pageCache = ConcurrentHashMap<Pair<Int, BackgroundShareResultKind>, CachedShareResult>()
 
     init {
         ensureResultChannel()
@@ -456,7 +487,33 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
     }
 
     fun cancelResult(jobId: Int) {
+        clearCache(jobId)
         NotificationManagerCompat.from(context).cancel(resultNotificationId(jobId))
+    }
+
+    internal fun clearCache(jobId: Int) {
+        pageCache.keys.filter { it.first == jobId }.forEach { pageCache.remove(it) }
+    }
+
+    internal fun showCachedResultPage(jobId: Int, resultKind: BackgroundShareResultKind, pageIndex: Int): Boolean {
+        val cached = pageCache[jobId to resultKind] ?: return false
+        val resolvedIndex = pageIndex.coerceIn(0, cached.pages.lastIndex)
+        val page = BackgroundShareResultPage(
+            text = cached.pages[resolvedIndex],
+            index = resolvedIndex,
+            total = cached.pages.size,
+        )
+        notify(
+            id = resultNotificationId(jobId),
+            builder = buildResultNotification(
+                context = context,
+                displayName = cached.displayName,
+                resultKind = resultKind,
+                page = page,
+                jobId = jobId,
+            ),
+        )
+        return true
     }
 
     internal fun showResultPage(
@@ -472,18 +529,10 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
             return
         }
 
-        val page = resolveNotificationTextPage(normalizedText, pageIndex)
-        notify(
-            id = resultNotificationId(jobId),
-            builder = buildResultNotification(
-                context = context,
-                displayName = displayName,
-                resultKind = resultKind,
-                page = page,
-                jobId = jobId,
-                openAppPendingIntent = createOpenAppPendingIntent(),
-            ),
-        )
+        val pages = splitNotificationTextPages(normalizedText, RESULT_TEXT_PAGE_MAX_LENGTH)
+        pageCache[jobId to resultKind] = CachedShareResult(displayName, pages)
+
+        showCachedResultPage(jobId, resultKind, pageIndex)
     }
 
     fun buildProcessingNotification(jobId: Int, displayName: String, message: String): Notification = processingBuilder(
