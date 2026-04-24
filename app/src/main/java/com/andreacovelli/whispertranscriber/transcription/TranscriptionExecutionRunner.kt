@@ -1,13 +1,22 @@
-package com.andreacovelli.whispertranscriber
+package com.andreacovelli.whispertranscriber.transcription
 
 import android.app.Application
 import android.content.Context
 import android.database.SQLException
 import android.net.Uri
 import androidx.core.net.toUri
+import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.background.BackgroundShareNotifier
+import com.andreacovelli.whispertranscriber.background.PostTranscriptionWorkSpec
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
 import com.andreacovelli.whispertranscriber.media.HardwareAudioConverter
+import com.andreacovelli.whispertranscriber.queue.QueuedAudioStore
+import com.andreacovelli.whispertranscriber.queue.postTranscriptionWorkSpec
+import com.andreacovelli.whispertranscriber.services.SummarizationService
+import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
+import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
+import com.andreacovelli.whispertranscriber.settings.decodeStoredTranscriptionProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.IOException

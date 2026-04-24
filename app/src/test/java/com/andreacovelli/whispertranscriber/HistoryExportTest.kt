@@ -1,6 +1,9 @@
 package com.andreacovelli.whispertranscriber
 
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
+import com.andreacovelli.whispertranscriber.history.HistoryExportFormat
+import com.andreacovelli.whispertranscriber.history.buildHistoryExport
+import com.andreacovelli.whispertranscriber.history.writeHistoryExport
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail

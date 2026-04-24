@@ -11,10 +11,12 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
+import com.andreacovelli.whispertranscriber.background.BackgroundShareNotifier
+import com.andreacovelli.whispertranscriber.services.TranscriptionQueueService
+import com.andreacovelli.whispertranscriber.transcription.JobRunOutcome
+import com.andreacovelli.whispertranscriber.transcription.TranscriptionExecutionRunner
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
-
-internal class TransientWorkException(message: String, cause: Throwable? = null) : java.io.IOException(message, cause)
 
 @Suppress("unused")
 @HiltWorker

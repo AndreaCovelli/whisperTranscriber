@@ -24,6 +24,10 @@ import kotlinx.coroutines.flow.flowOf
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import com.andreacovelli.whispertranscriber.history.HistoryListRow
+import com.andreacovelli.whispertranscriber.history.HistoryDateBucket
+import com.andreacovelli.whispertranscriber.history.historyDateHeader
+import com.andreacovelli.whispertranscriber.history.historyListItem
 
 @RunWith(AndroidJUnit4::class)
 class HistoryGroupedListInstrumentedTest {

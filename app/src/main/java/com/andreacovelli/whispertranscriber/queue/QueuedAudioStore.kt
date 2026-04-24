@@ -1,4 +1,4 @@
-package com.andreacovelli.whispertranscriber
+package com.andreacovelli.whispertranscriber.queue
 
 import android.content.Context
 import android.database.SQLException

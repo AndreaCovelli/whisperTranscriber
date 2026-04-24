@@ -28,9 +28,9 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import com.andreacovelli.whispertranscriber.CustomModelValidation
 import com.andreacovelli.whispertranscriber.R
-import com.andreacovelli.whispertranscriber.TranscriptionProvider
+import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
+import com.andreacovelli.whispertranscriber.ui.main.CustomModelValidation
 
 @Composable
 fun ProviderSelector(

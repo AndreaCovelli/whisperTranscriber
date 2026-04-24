@@ -1,13 +1,8 @@
-package com.andreacovelli.whispertranscriber.ui.viewmodel
+package com.andreacovelli.whispertranscriber.ui.main
 
-import com.andreacovelli.whispertranscriber.ApiKeyManager
-import com.andreacovelli.whispertranscriber.CustomModelValidation
-import com.andreacovelli.whispertranscriber.KeyValidationState
-import com.andreacovelli.whispertranscriber.RegionValidationState
-import com.andreacovelli.whispertranscriber.SettingsScreenActions
-import com.andreacovelli.whispertranscriber.TranscriptionProvider
-import com.andreacovelli.whispertranscriber.UiState
-import com.andreacovelli.whispertranscriber.ValidationService
+import com.andreacovelli.whispertranscriber.services.ValidationService
+import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
+import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job

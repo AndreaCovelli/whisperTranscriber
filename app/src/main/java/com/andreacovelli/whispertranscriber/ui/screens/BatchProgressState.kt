@@ -1,8 +1,8 @@
 package com.andreacovelli.whispertranscriber.ui.screens
 
-import com.andreacovelli.whispertranscriber.DISPLAY_JOB_STATUS_QUEUED
-import com.andreacovelli.whispertranscriber.DISPLAY_JOB_STATUS_RETRY_SCHEDULED
-import com.andreacovelli.whispertranscriber.TranscriptionJobState
+import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_QUEUED
+import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_RETRY_SCHEDULED
+import com.andreacovelli.whispertranscriber.ui.main.TranscriptionJobState
 
 data class BatchProgressState(val currentFileNumber: Int, val totalFiles: Int, val completedFiles: Int)
 

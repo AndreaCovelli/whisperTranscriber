@@ -4,6 +4,9 @@ import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.andreacovelli.whispertranscriber.di.ApplicationScope
+import com.andreacovelli.whispertranscriber.queue.WORK_MANAGER_JOB_ID_RANGE_MAX
+import com.andreacovelli.whispertranscriber.queue.WORK_MANAGER_JOB_ID_RANGE_MIN
+import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope

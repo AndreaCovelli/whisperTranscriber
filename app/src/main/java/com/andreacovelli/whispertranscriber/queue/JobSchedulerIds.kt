@@ -1,4 +1,4 @@
-package com.andreacovelli.whispertranscriber
+package com.andreacovelli.whispertranscriber.queue
 
 const val WORK_MANAGER_JOB_ID_RANGE_MIN = 100_000
 const val WORK_MANAGER_JOB_ID_RANGE_MAX = 199_999

@@ -1,5 +1,6 @@
 package com.andreacovelli.whispertranscriber
 
+import com.andreacovelli.whispertranscriber.transcription.TranscriptionMimeSupport
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test

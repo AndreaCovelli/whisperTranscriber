@@ -1,9 +1,12 @@
 @file:Suppress("unused")
 
-package com.andreacovelli.whispertranscriber
+package com.andreacovelli.whispertranscriber.queue
 
 import android.os.Build
+import com.andreacovelli.whispertranscriber.background.PostTranscriptionWorkSpec
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
+import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
+import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 
 enum class JobExecutionBackend {
     WORK_MANAGER,

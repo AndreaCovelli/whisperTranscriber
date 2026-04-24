@@ -61,18 +61,19 @@ import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
-import com.andreacovelli.whispertranscriber.HistoryDateBucket
-import com.andreacovelli.whispertranscriber.HistoryDateLabel
-import com.andreacovelli.whispertranscriber.HistoryExportFormat
-import com.andreacovelli.whispertranscriber.HistoryListRow
-import com.andreacovelli.whispertranscriber.HistoryUiEvent
-import com.andreacovelli.whispertranscriber.HistoryViewModel
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
-import com.andreacovelli.whispertranscriber.extractHistorySearchTokens
-import com.andreacovelli.whispertranscriber.suggestedHistoryExportFileName
+import com.andreacovelli.whispertranscriber.history.HistoryDateBucket
+import com.andreacovelli.whispertranscriber.history.HistoryDateLabel
+import com.andreacovelli.whispertranscriber.history.HistoryExportFormat
+import com.andreacovelli.whispertranscriber.history.HistoryListRow
+import com.andreacovelli.whispertranscriber.history.extractHistorySearchTokens
+import com.andreacovelli.whispertranscriber.history.suggestedHistoryExportFileName
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCard
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCardActions
+import com.andreacovelli.whispertranscriber.ui.history.HistoryMsg
+import com.andreacovelli.whispertranscriber.ui.history.HistoryUiEvent
+import com.andreacovelli.whispertranscriber.ui.history.HistoryViewModel
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -91,17 +92,17 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
     val txtExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument(HistoryExportFormat.TXT.mimeType),
     ) { uri ->
-        uri?.let { historyViewModel.exportHistory(it, HistoryExportFormat.TXT) }
+        uri?.let { historyViewModel.dispatch(HistoryMsg.ExportHistory(it, HistoryExportFormat.TXT)) }
     }
     val csvExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument(HistoryExportFormat.CSV.mimeType),
     ) { uri ->
-        uri?.let { historyViewModel.exportHistory(it, HistoryExportFormat.CSV) }
+        uri?.let { historyViewModel.dispatch(HistoryMsg.ExportHistory(it, HistoryExportFormat.CSV)) }
     }
     val jsonExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument(HistoryExportFormat.JSON.mimeType),
     ) { uri ->
-        uri?.let { historyViewModel.exportHistory(it, HistoryExportFormat.JSON) }
+        uri?.let { historyViewModel.dispatch(HistoryMsg.ExportHistory(it, HistoryExportFormat.JSON)) }
     }
 
     ObserveHistoryEvents(
@@ -119,7 +120,7 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
         DeleteAllHistoryDialog(
             onDismiss = { showDeleteAllDialog = false },
             onConfirm = {
-                historyViewModel.deleteAllHistory()
+                historyViewModel.dispatch(HistoryMsg.DeleteAll)
                 showDeleteAllDialog = false
             },
         )
@@ -129,7 +130,7 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
             onDismiss = { showExportDialog = false },
             onExport = { format ->
                 showExportDialog = false
-                historyViewModel.prepareExport(format)
+                historyViewModel.dispatch(HistoryMsg.PrepareExport(format))
             },
         )
     }
@@ -297,7 +298,7 @@ private fun HistoryScreenContent(
         HistorySearchField(
             visible = pagedItems.itemCount > 0 || searchQuery.isNotEmpty(),
             searchQuery = searchQuery,
-            onSearchChange = historyViewModel::setSearchQuery,
+            onSearchChange = { historyViewModel.dispatch(HistoryMsg.SetSearchQuery(it)) },
         )
         HistoryContent(
             pagedItems = pagedItems,
@@ -377,11 +378,11 @@ private fun ColumnScope.HistoryContent(
                         ).show()
                     }
                 },
-                clearTranscript = { historyViewModel.clearTranscript(item) },
-                clearSummary = { historyViewModel.clearSummary(item) },
-                delete = { historyViewModel.deleteHistoryItem(item) },
-                shareTranscript = { historyViewModel.prepareShareTranscript(item) },
-                shareSummary = { historyViewModel.prepareShareSummary(item) },
+                clearTranscript = { historyViewModel.dispatch(HistoryMsg.ClearTranscript(item)) },
+                clearSummary = { historyViewModel.dispatch(HistoryMsg.ClearSummary(item)) },
+                delete = { historyViewModel.dispatch(HistoryMsg.DeleteItem(item)) },
+                shareTranscript = { historyViewModel.dispatch(HistoryMsg.PrepareShareTranscript(item)) },
+                shareSummary = { historyViewModel.dispatch(HistoryMsg.PrepareShareSummary(item)) },
             )
         }
     }

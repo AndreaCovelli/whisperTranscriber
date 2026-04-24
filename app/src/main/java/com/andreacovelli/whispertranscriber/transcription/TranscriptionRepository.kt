@@ -1,4 +1,4 @@
-package com.andreacovelli.whispertranscriber
+package com.andreacovelli.whispertranscriber.transcription
 
 import androidx.room.withTransaction
 import com.andreacovelli.whispertranscriber.data.AppDatabase

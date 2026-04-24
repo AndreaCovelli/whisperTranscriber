@@ -35,9 +35,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import com.andreacovelli.whispertranscriber.ApiKeyState
-import com.andreacovelli.whispertranscriber.KeyValidationState
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.settings.ApiKeyState
+import com.andreacovelli.whispertranscriber.ui.main.KeyValidationState
 import kotlinx.coroutines.launch
 
 @Composable

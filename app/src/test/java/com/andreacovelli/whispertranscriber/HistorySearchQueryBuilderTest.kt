@@ -1,5 +1,7 @@
 package com.andreacovelli.whispertranscriber
 
+import com.andreacovelli.whispertranscriber.history.buildHistorySearchQuery
+import com.andreacovelli.whispertranscriber.history.extractHistorySearchTokens
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

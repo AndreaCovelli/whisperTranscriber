@@ -1,6 +1,6 @@
 package com.andreacovelli.whispertranscriber.ui.components
 
-import com.andreacovelli.whispertranscriber.TranscriptionProvider
+import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 
 fun providerDisplayLabel(provider: TranscriptionProvider, customModelName: String): String = when (provider) {
     TranscriptionProvider.ELEVEN_LABS -> "ElevenLabs"

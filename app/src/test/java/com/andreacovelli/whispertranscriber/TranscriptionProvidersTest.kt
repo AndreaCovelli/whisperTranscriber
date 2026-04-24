@@ -1,5 +1,6 @@
 package com.andreacovelli.whispertranscriber
 
+import com.andreacovelli.whispertranscriber.transcription.buildGeminiSpeakerDiarizationPrompt
 import org.junit.Assert.assertTrue
 import org.junit.Test
 

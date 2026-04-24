@@ -18,6 +18,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
+import com.andreacovelli.whispertranscriber.summary.TranscriptionSummarizationRepository
+import com.andreacovelli.whispertranscriber.queue.JobExecutionBackend
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_RETRY_SCHEDULED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_COMPLETED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_CLEARED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_CANCELLED
+import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_SUMMARIZING
+import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_GENERATED
+import com.andreacovelli.whispertranscriber.transcription.CompletedJobCleanup
+import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 
 @RunWith(AndroidJUnit4::class)
 class TranscriptionRepositoryInstrumentedTest {

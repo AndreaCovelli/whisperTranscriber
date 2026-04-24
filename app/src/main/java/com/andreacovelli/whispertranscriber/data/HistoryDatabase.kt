@@ -14,16 +14,16 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
-import com.andreacovelli.whispertranscriber.JOB_STATUS_CANCELLED
-import com.andreacovelli.whispertranscriber.JOB_STATUS_CLEARED
-import com.andreacovelli.whispertranscriber.JOB_STATUS_COMPLETED
-import com.andreacovelli.whispertranscriber.JOB_STATUS_ERROR
-import com.andreacovelli.whispertranscriber.JOB_STATUS_QUEUED
-import com.andreacovelli.whispertranscriber.JOB_STATUS_RETRY_SCHEDULED
-import com.andreacovelli.whispertranscriber.SUMMARY_STATUS_CANCELLED
-import com.andreacovelli.whispertranscriber.SUMMARY_STATUS_ERROR
-import com.andreacovelli.whispertranscriber.SUMMARY_STATUS_GENERATED
-import com.andreacovelli.whispertranscriber.SUMMARY_STATUS_SUMMARIZING
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_CANCELLED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_CLEARED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_COMPLETED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_ERROR
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_RETRY_SCHEDULED
+import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_CANCELLED
+import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_ERROR
+import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_GENERATED
+import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_SUMMARIZING
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "transcription_history")
