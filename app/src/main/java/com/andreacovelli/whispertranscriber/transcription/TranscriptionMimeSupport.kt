@@ -1,4 +1,4 @@
-package com.andreacovelli.whispertranscriber
+package com.andreacovelli.whispertranscriber.transcription
 
 internal object TranscriptionMimeSupport {
     private val wavMimeTypes = setOf(

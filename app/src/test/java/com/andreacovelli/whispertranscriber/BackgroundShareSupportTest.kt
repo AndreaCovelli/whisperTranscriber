@@ -1,5 +1,10 @@
 package com.andreacovelli.whispertranscriber
 
+import com.andreacovelli.whispertranscriber.background.BackgroundShareResultKind
+import com.andreacovelli.whispertranscriber.background.RESULT_TEXT_PAGE_MAX_LENGTH
+import com.andreacovelli.whispertranscriber.background.buildResultPageIntentData
+import com.andreacovelli.whispertranscriber.background.resolveNotificationTextPage
+import com.andreacovelli.whispertranscriber.background.splitNotificationTextPages
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals

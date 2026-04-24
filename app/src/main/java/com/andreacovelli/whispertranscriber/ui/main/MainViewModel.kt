@@ -1,15 +1,31 @@
-package com.andreacovelli.whispertranscriber
+package com.andreacovelli.whispertranscriber.ui.main
 
 import android.content.Context
 import android.net.Uri
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.background.PostTranscriptionWorkSpec
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
+import com.andreacovelli.whispertranscriber.services.SummarizationService
+import com.andreacovelli.whispertranscriber.services.TranscriptionQueueService
+import com.andreacovelli.whispertranscriber.services.ValidationService
+import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
+import com.andreacovelli.whispertranscriber.settings.ApiKeyState
+import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
+import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
+import com.andreacovelli.whispertranscriber.settings.TranscriptionQueueSettings
+import com.andreacovelli.whispertranscriber.settings.decodeHistoricalSummarizerProvider
+import com.andreacovelli.whispertranscriber.settings.decodeHistoricalTranscriptionProvider
+import com.andreacovelli.whispertranscriber.summary.TranscriptionSummarizationRepository
+import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_QUEUED
+import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
+import com.andreacovelli.whispertranscriber.transcription.displayJobStatus
+import com.andreacovelli.whispertranscriber.transcription.displaySummaryStatus
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 import com.andreacovelli.whispertranscriber.ui.screens.buildBatchProgressState
-import com.andreacovelli.whispertranscriber.ui.viewmodel.MainSettingsDelegate
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.ConcurrentHashMap
@@ -137,8 +153,6 @@ private val TranscriptionJob.hasSummaryBlockingState: Boolean
 private val TranscriptionJob.isReadyForAutoSummary: Boolean
     get() = !hasSummaryBlockingState && transcript.isNotBlank() && summary.isBlank() && !autoSummaryAttempted
 
-data class TranscriptionData(val text: String, val language: String, val model: String)
-
 internal fun UiState.toTranscriptionQueueSettings(): TranscriptionQueueSettings = TranscriptionQueueSettings(
     provider = provider,
     customModelName = transcriptionCustomGeminiModelName,
@@ -169,12 +183,6 @@ internal fun resolveShareQueueSettings(
     persistedSettings
 }
 
-sealed interface TranscriptionResult {
-    data class Loading(val message: String) : TranscriptionResult
-    data class Success(val data: TranscriptionData) : TranscriptionResult
-    data class Error(val exception: Exception) : TranscriptionResult
-}
-
 @HiltViewModel
 class MainViewModel @Inject constructor(
     @param:ApplicationContext private val appContext: Context,
@@ -197,55 +205,13 @@ class MainViewModel @Inject constructor(
     private val summaryJobs = ConcurrentHashMap<Int, Job>()
     private val transcriptionSettingsHydrated = MutableStateFlow(false)
     private val settingsDelegate = MainSettingsDelegate(
-        uiState = _uiState,
+        getState = { _uiState.value },
+        dispatch = ::dispatch,
         settings = settings,
         validationService = validationService,
         scope = viewModelScope,
         ioDispatcher = ioDispatcher,
     )
-
-    val mainScreenActions = createMainScreenActions(
-        clearCompletedJobs = {
-            viewModelScope.launch {
-                queueService.clearCompletedJobs()
-            }
-        },
-        summarizeJob = { jobId -> runSummarization(jobId, allowResummarize = true) },
-        clearSummary = { jobId ->
-            viewModelScope.launch {
-                summarizationRepository.clearJobSummary(jobId)
-            }
-        },
-        clearTranscript = { jobId ->
-            viewModelScope.launch {
-                repository.clearJobTranscription(jobId)
-            }
-        },
-        retryJob = { jobId ->
-            viewModelScope.launch {
-                summaryJobs.remove(jobId)?.cancel()
-                queueService.retryJob(
-                    jobId,
-                    _uiState.value.provider,
-                    _uiState.value.transcriptionCustomGeminiModelName,
-                    resolveAutomaticSummarizationWorkSpecForQueue(),
-                )
-            }
-        },
-        cancelJob = { jobId ->
-            viewModelScope.launch {
-                queueService.cancelJob(jobId)
-            }
-        },
-        cancelSummary = ::cancelSummary,
-        deleteJob = { jobId ->
-            viewModelScope.launch {
-                queueService.deleteJob(jobId)
-            }
-        },
-    )
-
-    val settingsScreenActions = settingsDelegate.actions
 
     init {
         if (staleSummariesRecovered.compareAndSet(false, true)) {
@@ -257,49 +223,43 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             launch {
                 settings.transcriptionQueueSettingsFlow.collect { queueSettings ->
-                    _uiState.update {
-                        it.copy(
-                            provider = queueSettings.provider,
-                            transcriptionCustomGeminiModelName = queueSettings.customModelName,
-                            speakerDiarizationEnabled = queueSettings.speakerDiarizationEnabled,
-                        )
-                    }
+                    reduce(MainMsg.TranscriptionSettingsLoaded(queueSettings))
                     transcriptionSettingsHydrated.value = true
                 }
             }
             launch {
                 settings.summarizerProviderFlow.collect { p ->
-                    _uiState.update { it.copy(summarizerProvider = p) }
+                    reduce(MainMsg.SummarizerProviderLoaded(p))
                 }
             }
             launch {
                 settings.microsoftSpeechApiKeyStateFlow.collect { state ->
-                    _uiState.update { it.copy(microsoftSpeechApiKeyState = state) }
+                    reduce(MainMsg.MicrosoftSpeechApiKeyStateChanged(state))
                 }
             }
             launch {
                 settings.geminiApiKeyStateFlow.collect { state ->
-                    _uiState.update { it.copy(geminiApiKeyState = state) }
+                    reduce(MainMsg.GeminiApiKeyStateChanged(state))
                 }
             }
             launch {
                 settings.microsoftSpeechRegionFlow.collect { region ->
-                    _uiState.update { it.copy(microsoftSpeechRegion = region) }
+                    reduce(MainMsg.MicrosoftSpeechRegionLoaded(region))
                 }
             }
             launch {
                 settings.summarizerCustomGeminiModelNameFlow.collect { name ->
-                    _uiState.update { it.copy(summarizerCustomGeminiModelName = name.orEmpty()) }
+                    reduce(MainMsg.SummarizerCustomModelLoaded(name.orEmpty()))
                 }
             }
             launch {
                 settings.automaticSummarizationFlow.collect { enabled ->
-                    _uiState.update { it.copy(automaticSummarizationEnabled = enabled) }
+                    reduce(MainMsg.AutomaticSummarizationLoaded(enabled))
                 }
             }
             launch {
                 settings.backgroundShareSummaryNotificationsEnabledFlow.collect { enabled ->
-                    _uiState.update { it.copy(backgroundShareSummaryNotificationsEnabled = enabled) }
+                    reduce(MainMsg.BackgroundShareSummaryNotificationsLoaded(enabled))
                 }
             }
             launch {
@@ -307,12 +267,12 @@ class MainViewModel @Inject constructor(
                     val presentationState = withContext(ioDispatcher) {
                         buildJobPresentationState(jobsList)
                     }
-                    _uiState.update {
-                        it.copy(
+                    reduce(
+                        MainMsg.JobPresentationChanged(
                             jobs = presentationState.jobs,
                             batchProgressState = presentationState.batchProgressState,
-                        )
-                    }
+                        ),
+                    )
 
                     // Auto-summarization logic
                     if (_uiState.value.automaticSummarizationEnabled &&
@@ -334,13 +294,63 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun handleAudioShareMultiple(uris: List<Uri>) {
+    fun dispatch(msg: MainMsg) {
+        reduce(msg)
+        if (handleQueueMsg(msg)) return
+        handleSettingsMsg(msg)
+    }
+
+    private fun handleQueueMsg(msg: MainMsg): Boolean {
+        when (msg) {
+            is MainMsg.SharedAudioReceived -> enqueueSharedAudio(msg.uris)
+            MainMsg.ClearCompletedJobs -> viewModelScope.launch { queueService.clearCompletedJobs() }
+            is MainMsg.SummarizeJob -> runSummarization(msg.jobId, allowResummarize = msg.allowResummarize)
+            is MainMsg.ClearSummary -> viewModelScope.launch { summarizationRepository.clearJobSummary(msg.jobId) }
+            is MainMsg.ClearTranscript -> viewModelScope.launch { repository.clearJobTranscription(msg.jobId) }
+            is MainMsg.RetryJob -> retryJob(msg.jobId)
+            is MainMsg.CancelJob -> viewModelScope.launch { queueService.cancelJob(msg.jobId) }
+            is MainMsg.CancelSummary -> cancelSummary(msg.jobId)
+            is MainMsg.DeleteJob -> viewModelScope.launch { queueService.deleteJob(msg.jobId) }
+            else -> return false
+        }
+        return true
+    }
+
+    private fun handleSettingsMsg(msg: MainMsg): Boolean {
+        when (msg) {
+            is MainMsg.SetProvider -> settingsDelegate.actions.setProvider(msg.provider)
+            is MainMsg.SetSummarizerProvider -> settingsDelegate.actions.setSummarizerProvider(msg.provider)
+            is MainMsg.SetAutomaticSummarization -> settingsDelegate.actions.setAutomaticSummarization(msg.enabled)
+            is MainMsg.SetBackgroundShareSummaryNotificationsEnabled ->
+                settingsDelegate.actions.setBackgroundShareSummaryNotificationsEnabled(msg.enabled)
+            is MainMsg.SetSpeakerDiarization -> settingsDelegate.actions.setSpeakerDiarization(msg.enabled)
+            is MainMsg.SetMicrosoftSpeechRegion -> settingsDelegate.actions.setMicrosoftSpeechRegion(msg.region)
+            is MainMsg.SaveMicrosoftSpeechKey -> settingsDelegate.actions.saveMicrosoftSpeechKey(msg.key)
+            is MainMsg.SaveGeminiKey -> settingsDelegate.actions.saveGeminiKey(msg.key)
+            is MainMsg.ValidateTranscriptionModel -> settingsDelegate.actions.validateTranscriptionModel(msg.modelName)
+            is MainMsg.ValidateSummarizerModel -> settingsDelegate.actions.validateSummarizerModel(msg.modelName)
+            MainMsg.ResetMicrosoftSpeechRegionValidation ->
+                settingsDelegate.actions.resetMicrosoftSpeechRegionValidation()
+            MainMsg.ResetTranscriptionModelValidation -> settingsDelegate.actions.resetTranscriptionModelValidation()
+            MainMsg.ResetSummarizerModelValidation -> settingsDelegate.actions.resetSummarizerModelValidation()
+            MainMsg.ResetMicrosoftSpeechKeyValidation -> settingsDelegate.actions.resetMicrosoftSpeechKeyValidation()
+            MainMsg.ResetGeminiKeyValidation -> settingsDelegate.actions.resetGeminiKeyValidation()
+            MainMsg.ForgetMicrosoftSpeechKey -> settingsDelegate.actions.forgetMicrosoftSpeechKey()
+            MainMsg.ForgetGeminiKey -> settingsDelegate.actions.forgetGeminiKey()
+            else -> return false
+        }
+        return true
+    }
+
+    suspend fun loadMicrosoftSpeechKeyForDisplay(): String? = settingsDelegate.actions.loadMicrosoftSpeechKey()
+
+    suspend fun loadGeminiKeyForDisplay(): String? = settingsDelegate.actions.loadGeminiKey()
+
+    private fun enqueueSharedAudio(uris: List<Uri>) {
         if (uris.isEmpty()) return
 
         viewModelScope.launch {
-            _uiState.update {
-                it.copy(status = appContext.getString(R.string.main_queuing_files, uris.size))
-            }
+            reduce(MainMsg.StatusChanged(appContext.getString(R.string.main_queuing_files, uris.size)))
             val queueSettings = resolveTranscriptionQueueSettingsForShare()
             val result = queueService.enqueueSharedAudio(
                 uris = uris,
@@ -349,7 +359,19 @@ class MainViewModel @Inject constructor(
                 speakerDiarizationEnabled = queueSettings.speakerDiarizationEnabled,
                 postTranscriptionWorkSpec = resolveAutomaticSummarizationWorkSpecForQueue(),
             )
-            _uiState.update { it.copy(status = result.statusMessage) }
+            reduce(MainMsg.StatusChanged(result.statusMessage))
+        }
+    }
+
+    private fun retryJob(jobId: Int) {
+        viewModelScope.launch {
+            summaryJobs.remove(jobId)?.cancel()
+            queueService.retryJob(
+                jobId,
+                _uiState.value.provider,
+                _uiState.value.transcriptionCustomGeminiModelName,
+                resolveAutomaticSummarizationWorkSpecForQueue(),
+            )
         }
     }
 
@@ -363,9 +385,7 @@ class MainViewModel @Inject constructor(
                 allowResummarize = allowResummarize,
                 fallbackStatusMessage = currentState.status,
             )
-            _uiState.update { state ->
-                state.copy(status = result.statusMessage)
-            }
+            reduce(MainMsg.StatusChanged(result.statusMessage))
         }.also { job ->
             job.invokeOnCompletion {
                 summaryJobs.remove(jobId, job)
@@ -377,10 +397,12 @@ class MainViewModel @Inject constructor(
         summaryJobs.remove(jobId)?.cancel()
         viewModelScope.launch {
             val statusMessage = summarizationService.cancelSummary(jobId)
-            _uiState.update { state ->
-                state.copy(status = statusMessage)
-            }
+            reduce(MainMsg.StatusChanged(statusMessage))
         }
+    }
+
+    private fun reduce(msg: MainMsg) {
+        _uiState.update { state -> MainReducer.reduce(state, msg) }
     }
 
     override fun onCleared() {

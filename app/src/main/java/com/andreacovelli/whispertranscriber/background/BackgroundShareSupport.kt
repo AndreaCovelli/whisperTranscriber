@@ -1,4 +1,4 @@
-package com.andreacovelli.whispertranscriber
+package com.andreacovelli.whispertranscriber.background
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -14,6 +14,12 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import com.andreacovelli.whispertranscriber.BackgroundShareResultNotificationReceiver
+import com.andreacovelli.whispertranscriber.CancelTranscriptionNotificationReceiver
+import com.andreacovelli.whispertranscriber.MainActivity
+import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.TranscriptionWorker
+import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.text.BreakIterator
 import javax.inject.Inject

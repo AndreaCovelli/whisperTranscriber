@@ -1,4 +1,6 @@
-package com.andreacovelli.whispertranscriber
+package com.andreacovelli.whispertranscriber.ui.main
+
+import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 
 data class MainScreenActions(
     val clearCompletedJobs: () -> Unit,

@@ -5,6 +5,10 @@ import android.database.SQLException
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
+import com.andreacovelli.whispertranscriber.background.BackgroundShareNotifier
+import com.andreacovelli.whispertranscriber.background.PostTranscriptionWorkSpec
+import com.andreacovelli.whispertranscriber.services.TranscriptionQueueService
+import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
 import dagger.hilt.android.AndroidEntryPoint
 import java.io.IOException
 import javax.inject.Inject

@@ -1,23 +1,17 @@
-package com.andreacovelli.whispertranscriber.ui.viewmodel
+package com.andreacovelli.whispertranscriber.ui.main
 
-import com.andreacovelli.whispertranscriber.ApiKeyManager
-import com.andreacovelli.whispertranscriber.CustomModelValidation
-import com.andreacovelli.whispertranscriber.KeyValidationState
-import com.andreacovelli.whispertranscriber.RegionValidationState
-import com.andreacovelli.whispertranscriber.SettingsScreenActions
-import com.andreacovelli.whispertranscriber.TranscriptionProvider
-import com.andreacovelli.whispertranscriber.UiState
-import com.andreacovelli.whispertranscriber.ValidationService
+import com.andreacovelli.whispertranscriber.services.ValidationService
+import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
+import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 internal class MainSettingsDelegate(
-    private val uiState: MutableStateFlow<UiState>,
+    private val getState: () -> UiState,
+    private val dispatch: (MainMsg) -> Unit,
     private val settings: ApiKeyManager,
     private val validationService: ValidationService,
     private val scope: CoroutineScope,
@@ -80,7 +74,7 @@ internal class MainSettingsDelegate(
         microsoftValidationJob = scope.launch {
             val result = validationService.validateMicrosoftSpeechKey(
                 rawKey = trimmed,
-                region = uiState.value.microsoftSpeechRegion,
+                region = getState().microsoftSpeechRegion,
             )
             if (result.isValid) {
                 settings.saveMicrosoftSpeechApiKey(trimmed)
@@ -95,13 +89,6 @@ internal class MainSettingsDelegate(
     }
 
     private fun updateProviderSelection(provider: TranscriptionProvider) {
-        val speakerDiarizationEnabled = provider.isGemini() && uiState.value.speakerDiarizationEnabled
-        uiState.update {
-            it.copy(
-                provider = provider,
-                speakerDiarizationEnabled = speakerDiarizationEnabled,
-            )
-        }
         scope.launch {
             settings.saveProvider(provider)
             if (!provider.isGemini()) {
@@ -111,29 +98,25 @@ internal class MainSettingsDelegate(
     }
 
     private fun updateSummarizerProviderSelection(provider: TranscriptionProvider) {
-        uiState.update { it.copy(summarizerProvider = provider) }
         scope.launch {
             settings.saveSummarizerProvider(provider)
         }
     }
 
     private fun updateAutomaticSummarization(enabled: Boolean) {
-        uiState.update { it.copy(automaticSummarizationEnabled = enabled) }
         scope.launch {
             settings.saveAutomaticSummarization(enabled)
         }
     }
 
     private fun updateBackgroundShareSummaryNotificationsEnabled(enabled: Boolean) {
-        uiState.update { it.copy(backgroundShareSummaryNotificationsEnabled = enabled) }
         scope.launch {
             settings.saveBackgroundShareSummaryNotificationsEnabled(enabled)
         }
     }
 
     private fun updateSpeakerDiarization(enabled: Boolean) {
-        val normalized = uiState.value.provider.isGemini() && enabled
-        uiState.update { it.copy(speakerDiarizationEnabled = normalized) }
+        val normalized = getState().provider.isGemini() && enabled
         scope.launch {
             settings.saveSpeakerDiarization(normalized)
         }
@@ -158,12 +141,7 @@ internal class MainSettingsDelegate(
             if (result.isValid) {
                 val normalizedRegion = result.normalizedRegion.orEmpty()
                 settings.saveMicrosoftSpeechRegion(normalizedRegion)
-                uiState.update {
-                    it.copy(
-                        microsoftSpeechRegion = normalizedRegion,
-                        microsoftSpeechRegionValidation = RegionValidationState.Valid(normalizedRegion),
-                    )
-                }
+                dispatch(MainMsg.PersistedMicrosoftSpeechRegion(normalizedRegion))
             } else {
                 updateRegionValidationState(
                     RegionValidationState.Error(result.errorMessage ?: "Validation failed"),
@@ -173,22 +151,27 @@ internal class MainSettingsDelegate(
     }
 
     private fun resetTranscriptionModelValidation() {
+        transcriptionModelValidationJob?.cancel()
         updateModelValidationState(isSummarizer = false, validation = CustomModelValidation.Idle)
     }
 
     private fun resetSummarizerModelValidation() {
+        summarizerModelValidationJob?.cancel()
         updateModelValidationState(isSummarizer = true, validation = CustomModelValidation.Idle)
     }
 
     private fun resetMicrosoftSpeechKeyValidation() {
+        microsoftValidationJob?.cancel()
         updateApiKeyValidationState(isGemini = false, validation = KeyValidationState.Idle)
     }
 
     private fun resetMicrosoftSpeechRegionValidation() {
+        microsoftRegionValidationJob?.cancel()
         updateRegionValidationState(RegionValidationState.Idle)
     }
 
     private fun resetGeminiKeyValidation() {
+        geminiValidationJob?.cancel()
         updateApiKeyValidationState(isGemini = true, validation = KeyValidationState.Idle)
     }
 
@@ -256,46 +239,24 @@ internal class MainSettingsDelegate(
     }
 
     private fun updateApiKeyValidationState(isGemini: Boolean, validation: KeyValidationState) {
-        uiState.update {
-            if (isGemini) {
-                it.copy(geminiKeyValidation = validation)
-            } else {
-                it.copy(microsoftSpeechKeyValidation = validation)
-            }
-        }
+        dispatch(MainMsg.ApiKeyValidationStateChanged(isGemini, validation))
     }
 
     private fun updateRegionValidationState(validation: RegionValidationState) {
-        uiState.update { it.copy(microsoftSpeechRegionValidation = validation) }
+        dispatch(MainMsg.RegionValidationStateChanged(validation))
     }
 
     private fun updateModelValidationState(isSummarizer: Boolean, validation: CustomModelValidation) {
-        uiState.update {
-            if (isSummarizer) {
-                it.copy(summarizerCustomModelValidation = validation)
-            } else {
-                it.copy(transcriptionCustomModelValidation = validation)
-            }
-        }
+        dispatch(MainMsg.ModelValidationStateChanged(isSummarizer, validation))
     }
 
     private suspend fun persistValidatedModel(modelName: String, isSummarizer: Boolean, displayName: String) {
         if (isSummarizer) {
             settings.saveSummarizerCustomGeminiModelName(modelName)
-            uiState.update {
-                it.copy(
-                    summarizerCustomGeminiModelName = modelName,
-                    summarizerCustomModelValidation = CustomModelValidation.Valid(displayName),
-                )
-            }
+            dispatch(MainMsg.ValidatedModelPersisted(modelName, isSummarizer, displayName))
         } else {
             settings.saveTranscriptionCustomGeminiModelName(modelName)
-            uiState.update {
-                it.copy(
-                    transcriptionCustomGeminiModelName = modelName,
-                    transcriptionCustomModelValidation = CustomModelValidation.Valid(displayName),
-                )
-            }
+            dispatch(MainMsg.ValidatedModelPersisted(modelName, isSummarizer, displayName))
         }
     }
 

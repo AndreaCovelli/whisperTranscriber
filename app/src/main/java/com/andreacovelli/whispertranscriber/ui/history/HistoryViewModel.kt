@@ -1,4 +1,4 @@
-package com.andreacovelli.whispertranscriber
+package com.andreacovelli.whispertranscriber.ui.history
 
 import android.content.Context
 import android.net.Uri
@@ -8,8 +8,14 @@ import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import androidx.paging.insertSeparators
 import androidx.paging.map
+import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.data.HistoryRepository
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
+import com.andreacovelli.whispertranscriber.history.HistoryExportFormat
+import com.andreacovelli.whispertranscriber.history.HistoryListRow
+import com.andreacovelli.whispertranscriber.history.historyDateHeader
+import com.andreacovelli.whispertranscriber.history.historyListItem
+import com.andreacovelli.whispertranscriber.history.writeHistoryExport
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
@@ -25,6 +31,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
@@ -32,7 +39,10 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -56,8 +66,11 @@ class HistoryViewModel @Inject constructor(
 
     private data class HistoryGroupingContext(val currentDate: LocalDate, val zoneId: ZoneId)
 
-    private val _searchQuery = MutableStateFlow("")
-    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+    private val _model = MutableStateFlow(HistoryModel())
+    val model: StateFlow<HistoryModel> = _model.asStateFlow()
+    val searchQuery: StateFlow<String> = model
+        .map { it.searchQuery }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, _model.value.searchQuery)
 
     private val _uiEvents = Channel<HistoryUiEvent>()
     val uiEvents = _uiEvents.receiveAsFlow()
@@ -127,11 +140,26 @@ class HistoryViewModel @Inject constructor(
     }
 
     fun setSearchQuery(query: String) {
-        _searchQuery.value = query
+        dispatch(HistoryMsg.SetSearchQuery(query))
+    }
+
+    fun dispatch(msg: HistoryMsg) {
+        when (msg) {
+            is HistoryMsg.SetSearchQuery -> _model.update { HistoryReducer.reduce(it, msg) }
+            is HistoryMsg.PrepareShareTranscript -> prepareShareTranscript(msg.item)
+            is HistoryMsg.PrepareShareSummary -> prepareShareSummary(msg.item)
+            is HistoryMsg.PrepareExport -> prepareExport(msg.format)
+            is HistoryMsg.ExportHistory -> exportHistory(msg.uri, msg.format)
+            is HistoryMsg.ClearSummary -> clearSummary(msg.item)
+            is HistoryMsg.ClearTranscript -> clearTranscript(msg.item)
+            is HistoryMsg.DeleteItem -> deleteHistoryItem(msg.item)
+            HistoryMsg.DeleteAll -> deleteAllHistory()
+        }
     }
 
     @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
-    internal val pagedHistoryItems: Flow<PagingData<HistoryListRow>> = _searchQuery
+    internal val pagedHistoryItems: Flow<PagingData<HistoryListRow>> = model
+        .map { it.searchQuery }
         .debounce(250)
         .distinctUntilChanged()
         .flatMapLatest(historyRepository::getPagedHistory)

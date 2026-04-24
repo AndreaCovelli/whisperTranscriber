@@ -1,4 +1,4 @@
-package com.andreacovelli.whispertranscriber
+package com.andreacovelli.whispertranscriber.transcription
 
 import com.andreacovelli.whispertranscriber.security.useAsString
 import com.andreacovelli.whispertranscriber.security.useGenAiClient
@@ -26,6 +26,16 @@ import okhttp3.RequestBody.Companion.asRequestBody
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
+
+internal class TransientWorkException(message: String, cause: Throwable? = null) : IOException(message, cause)
+
+data class TranscriptionData(val text: String, val language: String, val model: String)
+
+sealed interface TranscriptionResult {
+    data class Loading(val message: String) : TranscriptionResult
+    data class Success(val data: TranscriptionData) : TranscriptionResult
+    data class Error(val exception: Exception) : TranscriptionResult
+}
 
 internal interface ProviderTranscriber {
     fun transcribe(): Flow<TranscriptionResult>

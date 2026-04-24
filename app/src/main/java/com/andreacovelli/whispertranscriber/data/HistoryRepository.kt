@@ -3,7 +3,7 @@ package com.andreacovelli.whispertranscriber.data
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
-import com.andreacovelli.whispertranscriber.buildHistorySearchQuery
+import com.andreacovelli.whispertranscriber.history.buildHistorySearchQuery
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow

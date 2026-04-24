@@ -1,4 +1,4 @@
-package com.andreacovelli.whispertranscriber
+package com.andreacovelli.whispertranscriber.history
 
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import java.time.LocalDate

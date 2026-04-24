@@ -30,10 +30,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.andreacovelli.whispertranscriber.DISPLAY_JOB_STATUS_CLEARED
 import com.andreacovelli.whispertranscriber.R
-import com.andreacovelli.whispertranscriber.TranscriptionJobState
-import com.andreacovelli.whispertranscriber.TranscriptionProvider
+import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
+import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_CLEARED
+import com.andreacovelli.whispertranscriber.ui.main.TranscriptionJobState
 
 @Composable
 fun TranscriptionJobCard(job: TranscriptionJobState, canSummarize: Boolean, actions: TranscriptionJobCardActions) {

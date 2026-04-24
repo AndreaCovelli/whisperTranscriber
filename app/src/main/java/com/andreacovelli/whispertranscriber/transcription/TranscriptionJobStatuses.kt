@@ -1,4 +1,4 @@
-package com.andreacovelli.whispertranscriber
+package com.andreacovelli.whispertranscriber.transcription
 
 internal const val JOB_STATUS_QUEUED = "QUEUED"
 internal const val JOB_STATUS_RETRY_SCHEDULED = "RETRY_SCHEDULED"

@@ -47,15 +47,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.andreacovelli.whispertranscriber.ApiKeyState
-import com.andreacovelli.whispertranscriber.DISPLAY_JOB_STATUS_QUEUED
-import com.andreacovelli.whispertranscriber.DISPLAY_JOB_STATUS_RETRY_SCHEDULED
-import com.andreacovelli.whispertranscriber.MainViewModel
 import com.andreacovelli.whispertranscriber.R
-import com.andreacovelli.whispertranscriber.TranscriptionJobState
+import com.andreacovelli.whispertranscriber.settings.ApiKeyState
+import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_QUEUED
+import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_RETRY_SCHEDULED
 import com.andreacovelli.whispertranscriber.ui.components.TranscriptionJobCard
 import com.andreacovelli.whispertranscriber.ui.components.TranscriptionJobCardActions
 import com.andreacovelli.whispertranscriber.ui.components.providerDisplayLabel
+import com.andreacovelli.whispertranscriber.ui.main.MainMsg
+import com.andreacovelli.whispertranscriber.ui.main.MainViewModel
+import com.andreacovelli.whispertranscriber.ui.main.TranscriptionJobState
+import com.andreacovelli.whispertranscriber.ui.main.UiState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -63,7 +65,6 @@ import kotlinx.coroutines.launch
 @Composable
 fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit, onNavigateToSettings: () -> Unit) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val actions = viewModel.mainScreenActions
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -88,7 +89,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit, onNavi
             paddingValues = paddingValues,
             uiState = uiState,
             onNavigateToSettings = onNavigateToSettings,
-            onClearCompleted = actions.clearCompletedJobs,
+            onClearCompleted = { viewModel.dispatch(MainMsg.ClearCompletedJobs) },
             clipboard = clipboard,
             scope = scope,
             context = context,
@@ -100,7 +101,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit, onNavi
 private fun MainScreenContent(
     viewModel: MainViewModel,
     paddingValues: PaddingValues,
-    uiState: com.andreacovelli.whispertranscriber.UiState,
+    uiState: UiState,
     onNavigateToSettings: () -> Unit,
     onClearCompleted: () -> Unit,
     clipboard: Clipboard,
@@ -300,14 +301,13 @@ private fun rememberJobActions(
     scope: CoroutineScope,
     context: Context,
 ): TranscriptionJobCardActions {
-    val actions = viewModel.mainScreenActions
     val shareTranscriptTitle = stringResource(R.string.share_transcription_title)
     val shareSummaryTitle = stringResource(R.string.share_summary_title)
     return remember(
         job.id,
         job.transcript,
         job.summary,
-        actions,
+        viewModel,
         clipboard,
         scope,
         context,
@@ -315,9 +315,9 @@ private fun rememberJobActions(
         shareSummaryTitle,
     ) {
         TranscriptionJobCardActions(
-            summarize = { actions.summarizeJob(job.id) },
-            clearSummary = { actions.clearSummary(job.id) },
-            clearTranscript = { actions.clearTranscript(job.id) },
+            summarize = { viewModel.dispatch(MainMsg.SummarizeJob(job.id)) },
+            clearSummary = { viewModel.dispatch(MainMsg.ClearSummary(job.id)) },
+            clearTranscript = { viewModel.dispatch(MainMsg.ClearTranscript(job.id)) },
             copyTranscript = {
                 scope.launch {
                     clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", job.transcript)))
@@ -336,12 +336,12 @@ private fun rememberJobActions(
             },
             shareTranscript = { shareText(context, job.transcript, shareTranscriptTitle) },
             shareSummary = { shareText(context, job.summary, shareSummaryTitle) },
-            retryTranscription = { actions.retryJob(job.id) },
-            retrySummary = { actions.summarizeJob(job.id) },
-            cancel = { actions.cancelJob(job.id) },
-            cancelTranscription = { actions.cancelJob(job.id) },
-            cancelSummary = { actions.cancelSummary(job.id) },
-            delete = { actions.deleteJob(job.id) },
+            retryTranscription = { viewModel.dispatch(MainMsg.RetryJob(job.id)) },
+            retrySummary = { viewModel.dispatch(MainMsg.SummarizeJob(job.id)) },
+            cancel = { viewModel.dispatch(MainMsg.CancelJob(job.id)) },
+            cancelTranscription = { viewModel.dispatch(MainMsg.CancelJob(job.id)) },
+            cancelSummary = { viewModel.dispatch(MainMsg.CancelSummary(job.id)) },
+            delete = { viewModel.dispatch(MainMsg.DeleteJob(job.id)) },
         )
     }
 }

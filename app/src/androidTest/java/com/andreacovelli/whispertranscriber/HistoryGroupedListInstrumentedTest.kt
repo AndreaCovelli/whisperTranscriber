@@ -14,6 +14,10 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
+import com.andreacovelli.whispertranscriber.history.HistoryDateBucket
+import com.andreacovelli.whispertranscriber.history.HistoryListRow
+import com.andreacovelli.whispertranscriber.history.historyDateHeader
+import com.andreacovelli.whispertranscriber.history.historyListItem
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCardActions
 import com.andreacovelli.whispertranscriber.ui.screens.HistoryRowList
 import java.time.LocalDate

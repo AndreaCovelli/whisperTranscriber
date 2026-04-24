@@ -16,6 +16,8 @@ import androidx.core.content.ContextCompat
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.andreacovelli.whispertranscriber.ui.main.MainMsg
+import com.andreacovelli.whispertranscriber.ui.main.MainViewModel
 import com.andreacovelli.whispertranscriber.ui.screens.HistoryScreen
 import com.andreacovelli.whispertranscriber.ui.screens.MainScreen
 import com.andreacovelli.whispertranscriber.ui.screens.SettingsScreen
@@ -73,8 +75,7 @@ class MainActivity : ComponentActivity() {
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (pendingEnableBackgroundShareSummaryNotifications) {
-                mainViewModel.settingsScreenActions
-                    .setBackgroundShareSummaryNotificationsEnabled(granted)
+                mainViewModel.dispatch(MainMsg.SetBackgroundShareSummaryNotificationsEnabled(granted))
                 pendingEnableBackgroundShareSummaryNotifications = false
             }
         }
@@ -185,7 +186,7 @@ class MainActivity : ComponentActivity() {
         }
         val (sharedUris, replacementIntent) = SharedAudioIntentHandler.consumeSharedUris(intent)
         if (sharedUris.isNotEmpty()) {
-            mainViewModel.handleAudioShareMultiple(sharedUris)
+            mainViewModel.dispatch(MainMsg.SharedAudioReceived(sharedUris))
         }
         if (replacementIntent !== intent) {
             setIntent(replacementIntent)
@@ -206,7 +207,7 @@ class MainActivity : ComponentActivity() {
     private fun handleBackgroundShareSummaryNotificationsToggle(enabled: Boolean) {
         if (!enabled) {
             pendingEnableBackgroundShareSummaryNotifications = false
-            mainViewModel.settingsScreenActions.setBackgroundShareSummaryNotificationsEnabled(false)
+            mainViewModel.dispatch(MainMsg.SetBackgroundShareSummaryNotificationsEnabled(false))
             return
         }
         if (
@@ -215,7 +216,7 @@ class MainActivity : ComponentActivity() {
             PackageManager.PERMISSION_GRANTED
         ) {
             pendingEnableBackgroundShareSummaryNotifications = false
-            mainViewModel.settingsScreenActions.setBackgroundShareSummaryNotificationsEnabled(true)
+            mainViewModel.dispatch(MainMsg.SetBackgroundShareSummaryNotificationsEnabled(true))
             return
         }
         pendingEnableBackgroundShareSummaryNotifications = true
