@@ -8,6 +8,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.andreacovelli.whispertranscriber.data.AppDatabase
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_CANCELLED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_COMPLETED
+import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_ERROR
+import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_SUMMARIZING
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -17,10 +21,6 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_COMPLETED
-import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_SUMMARIZING
-import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_CANCELLED
-import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_ERROR
 
 @RunWith(AndroidJUnit4::class)
 class HistoryFtsSyncInstrumentedTest {

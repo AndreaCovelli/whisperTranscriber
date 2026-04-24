@@ -134,7 +134,7 @@ internal class MainSettingsDelegate(
             }
             return
         }
-        
+
         updateRegionValidationState(RegionValidationState.Validating)
         microsoftRegionValidationJob = scope.launch {
             val result = validationService.validateMicrosoftSpeechRegion(trimmed)

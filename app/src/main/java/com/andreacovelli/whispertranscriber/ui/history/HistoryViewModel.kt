@@ -42,6 +42,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -67,11 +68,9 @@ class HistoryViewModel @Inject constructor(
 
     private val _model = MutableStateFlow(HistoryModel())
     val model: StateFlow<HistoryModel> = _model.asStateFlow()
-    val searchQuery: StateFlow<String> = MutableStateFlow("").also { legacySearchQuery ->
-        viewModelScope.launch {
-            model.collect { legacySearchQuery.value = it.searchQuery }
-        }
-    }.asStateFlow()
+    val searchQuery: StateFlow<String> = model
+        .map { it.searchQuery }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, _model.value.searchQuery)
 
     private val _uiEvents = Channel<HistoryUiEvent>()
     val uiEvents = _uiEvents.receiveAsFlow()
@@ -146,7 +145,7 @@ class HistoryViewModel @Inject constructor(
 
     fun dispatch(msg: HistoryMsg) {
         when (msg) {
-            is HistoryMsg.SetSearchQuery -> _model.value = HistoryReducer.reduce(_model.value, msg)
+            is HistoryMsg.SetSearchQuery -> _model.update { HistoryReducer.reduce(it, msg) }
             is HistoryMsg.PrepareShareTranscript -> prepareShareTranscript(msg.item)
             is HistoryMsg.PrepareShareSummary -> prepareShareSummary(msg.item)
             is HistoryMsg.PrepareExport -> prepareExport(msg.format)

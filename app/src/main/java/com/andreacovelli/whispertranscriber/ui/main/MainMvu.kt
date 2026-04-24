@@ -52,7 +52,8 @@ sealed interface MainMsg {
     data class ApiKeyValidationStateChanged(val isGemini: Boolean, val validation: KeyValidationState) : MainMsg
     data class RegionValidationStateChanged(val validation: RegionValidationState) : MainMsg
     data class ModelValidationStateChanged(val isSummarizer: Boolean, val validation: CustomModelValidation) : MainMsg
-    data class ValidatedModelPersisted(val modelName: String, val isSummarizer: Boolean, val displayName: String) : MainMsg
+    data class ValidatedModelPersisted(val modelName: String, val isSummarizer: Boolean, val displayName: String) :
+        MainMsg
     data class PersistedMicrosoftSpeechRegion(val region: String) : MainMsg
 }
 
@@ -76,18 +77,56 @@ internal object MainReducer {
             jobs = msg.jobs,
             batchProgressState = msg.batchProgressState,
         )
+        is MainMsg.SetProvider,
+        is MainMsg.SetSummarizerProvider,
+        is MainMsg.SetAutomaticSummarization,
+        is MainMsg.SetBackgroundShareSummaryNotificationsEnabled,
+        is MainMsg.SetSpeakerDiarization,
+        is MainMsg.SetMicrosoftSpeechRegion,
+        -> reduceSettings(state, msg)
+        MainMsg.ResetMicrosoftSpeechRegionValidation,
+        MainMsg.ResetTranscriptionModelValidation,
+        MainMsg.ResetSummarizerModelValidation,
+        MainMsg.ResetMicrosoftSpeechKeyValidation,
+        MainMsg.ResetGeminiKeyValidation,
+        MainMsg.ForgetMicrosoftSpeechKey,
+        MainMsg.ForgetGeminiKey,
+        is MainMsg.ApiKeyValidationStateChanged,
+        is MainMsg.RegionValidationStateChanged,
+        is MainMsg.ModelValidationStateChanged,
+        is MainMsg.ValidatedModelPersisted,
+        is MainMsg.PersistedMicrosoftSpeechRegion,
+        -> reduceValidation(state, msg)
+        else -> state
+    }
+
+    private fun reduceSettings(state: UiState, msg: MainMsg): UiState = when (msg) {
         is MainMsg.SetProvider -> state.copy(
             provider = msg.provider,
             speakerDiarizationEnabled = msg.provider.isGemini() && state.speakerDiarizationEnabled,
         )
         is MainMsg.SetSummarizerProvider -> state.copy(summarizerProvider = msg.provider)
         is MainMsg.SetAutomaticSummarization -> state.copy(automaticSummarizationEnabled = msg.enabled)
-        is MainMsg.SetBackgroundShareSummaryNotificationsEnabled -> state.copy(backgroundShareSummaryNotificationsEnabled = msg.enabled)
-        is MainMsg.SetSpeakerDiarization -> state.copy(speakerDiarizationEnabled = state.provider.isGemini() && msg.enabled)
+        is MainMsg.SetBackgroundShareSummaryNotificationsEnabled -> state.copy(
+            backgroundShareSummaryNotificationsEnabled = msg.enabled,
+        )
+        is MainMsg.SetSpeakerDiarization -> state.copy(
+            speakerDiarizationEnabled = state.provider.isGemini() && msg.enabled,
+        )
         is MainMsg.SetMicrosoftSpeechRegion -> state.copy(microsoftSpeechKeyValidation = KeyValidationState.Idle)
-        MainMsg.ResetMicrosoftSpeechRegionValidation -> state.copy(microsoftSpeechRegionValidation = RegionValidationState.Idle)
-        MainMsg.ResetTranscriptionModelValidation -> state.copy(transcriptionCustomModelValidation = CustomModelValidation.Idle)
-        MainMsg.ResetSummarizerModelValidation -> state.copy(summarizerCustomModelValidation = CustomModelValidation.Idle)
+        else -> state
+    }
+
+    private fun reduceValidation(state: UiState, msg: MainMsg): UiState = when (msg) {
+        MainMsg.ResetMicrosoftSpeechRegionValidation -> state.copy(
+            microsoftSpeechRegionValidation = RegionValidationState.Idle,
+        )
+        MainMsg.ResetTranscriptionModelValidation -> state.copy(
+            transcriptionCustomModelValidation = CustomModelValidation.Idle,
+        )
+        MainMsg.ResetSummarizerModelValidation -> state.copy(
+            summarizerCustomModelValidation = CustomModelValidation.Idle,
+        )
         MainMsg.ResetMicrosoftSpeechKeyValidation -> state.copy(microsoftSpeechKeyValidation = KeyValidationState.Idle)
         MainMsg.ResetGeminiKeyValidation -> state.copy(geminiKeyValidation = KeyValidationState.Idle)
         MainMsg.ForgetMicrosoftSpeechKey -> state.copy(microsoftSpeechKeyValidation = KeyValidationState.Idle)
@@ -106,17 +145,17 @@ internal object MainReducer {
         is MainMsg.ValidatedModelPersisted -> if (msg.isSummarizer) {
             state.copy(
                 summarizerCustomGeminiModelName = msg.modelName,
-                summarizerCustomModelValidation = CustomModelValidation.Valid(msg.displayName)
+                summarizerCustomModelValidation = CustomModelValidation.Valid(msg.displayName),
             )
         } else {
             state.copy(
                 transcriptionCustomGeminiModelName = msg.modelName,
-                transcriptionCustomModelValidation = CustomModelValidation.Valid(msg.displayName)
+                transcriptionCustomModelValidation = CustomModelValidation.Valid(msg.displayName),
             )
         }
         is MainMsg.PersistedMicrosoftSpeechRegion -> state.copy(
             microsoftSpeechRegion = msg.region,
-            microsoftSpeechRegionValidation = RegionValidationState.Valid(msg.region)
+            microsoftSpeechRegionValidation = RegionValidationState.Valid(msg.region),
         )
         else -> state
     }

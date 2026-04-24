@@ -10,13 +10,13 @@ import androidx.core.net.toUri
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
+import com.andreacovelli.whispertranscriber.transcription.QueuedAudioInputResolution
+import com.andreacovelli.whispertranscriber.transcription.QueuedAudioInputResolver
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import com.andreacovelli.whispertranscriber.transcription.QueuedAudioInputResolution
-import com.andreacovelli.whispertranscriber.transcription.QueuedAudioInputResolver
 
 @RunWith(AndroidJUnit4::class)
 class ShareIntentAndQueuedAudioInstrumentedTest {
