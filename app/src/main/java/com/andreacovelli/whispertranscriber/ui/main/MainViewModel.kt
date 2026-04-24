@@ -205,7 +205,8 @@ class MainViewModel @Inject constructor(
     private val summaryJobs = ConcurrentHashMap<Int, Job>()
     private val transcriptionSettingsHydrated = MutableStateFlow(false)
     private val settingsDelegate = MainSettingsDelegate(
-        uiState = _uiState,
+        getState = { _uiState.value },
+        dispatch = ::dispatch,
         settings = settings,
         validationService = validationService,
         scope = viewModelScope,
@@ -294,9 +295,9 @@ class MainViewModel @Inject constructor(
     }
 
     fun dispatch(msg: MainMsg) {
-        if (handleQueueMsg(msg)) return
-        if (handleSettingsMsg(msg)) return
         reduce(msg)
+        if (handleQueueMsg(msg)) return
+        handleSettingsMsg(msg)
     }
 
     private fun handleQueueMsg(msg: MainMsg): Boolean {
