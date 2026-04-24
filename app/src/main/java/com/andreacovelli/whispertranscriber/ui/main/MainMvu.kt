@@ -113,7 +113,10 @@ internal object MainReducer {
         is MainMsg.SetSpeakerDiarization -> state.copy(
             speakerDiarizationEnabled = state.provider.isGemini() && msg.enabled,
         )
-        is MainMsg.SetMicrosoftSpeechRegion -> state.copy(microsoftSpeechKeyValidation = KeyValidationState.Idle)
+        is MainMsg.SetMicrosoftSpeechRegion -> state.copy(
+            microsoftSpeechRegion = msg.region,
+            microsoftSpeechKeyValidation = KeyValidationState.Idle,
+        )
         else -> state
     }
 
