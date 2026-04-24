@@ -151,14 +151,17 @@ internal class MainSettingsDelegate(
     }
 
     private fun resetTranscriptionModelValidation() {
+        transcriptionModelValidationJob?.cancel()
         updateModelValidationState(isSummarizer = false, validation = CustomModelValidation.Idle)
     }
 
     private fun resetSummarizerModelValidation() {
+        summarizerModelValidationJob?.cancel()
         updateModelValidationState(isSummarizer = true, validation = CustomModelValidation.Idle)
     }
 
     private fun resetMicrosoftSpeechKeyValidation() {
+        microsoftValidationJob?.cancel()
         updateApiKeyValidationState(isGemini = false, validation = KeyValidationState.Idle)
     }
 
@@ -168,6 +171,7 @@ internal class MainSettingsDelegate(
     }
 
     private fun resetGeminiKeyValidation() {
+        geminiValidationJob?.cancel()
         updateApiKeyValidationState(isGemini = true, validation = KeyValidationState.Idle)
     }
 
