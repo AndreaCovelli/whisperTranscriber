@@ -16,6 +16,7 @@ import androidx.core.content.ContextCompat
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.andreacovelli.whispertranscriber.background.BackgroundShareNotifier
 import com.andreacovelli.whispertranscriber.ui.main.MainMsg
 import com.andreacovelli.whispertranscriber.ui.main.MainViewModel
 import com.andreacovelli.whispertranscriber.ui.screens.HistoryScreen
@@ -23,6 +24,7 @@ import com.andreacovelli.whispertranscriber.ui.screens.MainScreen
 import com.andreacovelli.whispertranscriber.ui.screens.SettingsScreen
 import com.andreacovelli.whispertranscriber.ui.theme.WhisperTranscriberTheme
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 object AppRoutes {
     const val MAIN = "main"
@@ -69,6 +71,8 @@ internal object SharedAudioIntentHandler {
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    @Inject
+    lateinit var backgroundShareNotifier: BackgroundShareNotifier
 
     private val mainViewModel: MainViewModel by viewModels()
     private var pendingEnableBackgroundShareSummaryNotifications = false
@@ -84,6 +88,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         maybeRequestNotificationPermission()
         if (savedInstanceState == null) {
+            consumeBackgroundShareResultNotificationIntent(intent)
             consumeSharedAudioIntent(intent)
         }
 
@@ -177,7 +182,19 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        consumeBackgroundShareResultNotificationIntent(intent)
         consumeSharedAudioIntent(intent)
+    }
+
+    private fun consumeBackgroundShareResultNotificationIntent(intent: Intent?) {
+        if (intent == null || (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) {
+            return
+        }
+        val jobId = intent.getIntExtra(EXTRA_BACKGROUND_SHARE_RESULT_JOB_ID, -1)
+        if (jobId == -1) return
+
+        backgroundShareNotifier.cancelResult(jobId)
+        intent.removeExtra(EXTRA_BACKGROUND_SHARE_RESULT_JOB_ID)
     }
 
     private fun consumeSharedAudioIntent(intent: Intent?) {
@@ -221,5 +238,9 @@ class MainActivity : ComponentActivity() {
         }
         pendingEnableBackgroundShareSummaryNotifications = true
         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    companion object {
+        const val EXTRA_BACKGROUND_SHARE_RESULT_JOB_ID = "backgroundShareResultJobId"
     }
 }

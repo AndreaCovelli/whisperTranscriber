@@ -300,11 +300,11 @@ private fun createResultPagePendingIntent(
 }
 
 private fun createResultOpenAppPendingIntent(context: Context, jobId: Int): PendingIntent {
-    val intent = Intent(context, BackgroundShareResultNotificationReceiver::class.java).apply {
-        action = BackgroundShareResultNotificationReceiver.ACTION_OPEN_RESULT_PAGE
-        putExtra(BackgroundShareResultNotificationReceiver.EXTRA_JOB_ID, jobId)
+    val intent = Intent(context, MainActivity::class.java).apply {
+        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        putExtra(MainActivity.EXTRA_BACKGROUND_SHARE_RESULT_JOB_ID, jobId)
     }
-    return PendingIntent.getBroadcast(
+    return PendingIntent.getActivity(
         context,
         jobId,
         intent,
