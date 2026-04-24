@@ -325,6 +325,47 @@ private fun createResultDismissPendingIntent(context: Context, jobId: Int): Pend
     )
 }
 
+private const val RESULT_CHANNEL_NAME = "Shared audio results"
+private const val PROCESSING_GROUP_KEY = "background_share_processing_group"
+private const val RESULT_NOTIFICATION_OFFSET = 20_000
+private const val GENERIC_FAILURE_NOTIFICATION_OFFSET = 40_000
+private const val RETRY_NOTIFICATION_OFFSET = 60_000
+private const val PROCESSING_NOTIFICATION_OFFSET = 80_000
+private const val PREPARING_SHARE_NOTIFICATION_ID = 100_000
+
+private fun genericFailureNotificationId(): Int = GENERIC_FAILURE_NOTIFICATION_OFFSET + Random.nextInt(10_000)
+
+private fun retryNotificationId(jobId: Int): Int = RETRY_NOTIFICATION_OFFSET + jobId
+
+private fun processingNotificationId(jobId: Int): Int = PROCESSING_NOTIFICATION_OFFSET + jobId
+
+private fun resultNotificationId(jobId: Int): Int = RESULT_NOTIFICATION_OFFSET + jobId
+
+private fun createOpenAppPendingIntent(context: Context): PendingIntent {
+    val intent = Intent(context, MainActivity::class.java).apply {
+        flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+    }
+    return PendingIntent.getActivity(
+        context,
+        0,
+        intent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+}
+
+private fun createCancelJobPendingIntent(context: Context, jobId: Int): PendingIntent {
+    val intent = Intent(context, CancelTranscriptionNotificationReceiver::class.java).apply {
+        action = CancelTranscriptionNotificationReceiver.ACTION_CANCEL_JOB
+        putExtra(CancelTranscriptionNotificationReceiver.EXTRA_JOB_ID, jobId)
+    }
+    return PendingIntent.getBroadcast(
+        context,
+        jobId,
+        intent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+}
+
 private fun buildResultNotification(
     context: Context,
     displayName: String,
@@ -381,18 +422,10 @@ private fun buildResultNotification(
 }
 
 @Singleton
-@Suppress("TooManyFunctions")
 class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext private val context: Context) {
     companion object {
         internal const val RESULT_CHANNEL_ID = "background_share_results"
-        private const val RESULT_CHANNEL_NAME = "Shared audio results"
         internal const val RESULT_GROUP_KEY = "background_share_result_group"
-        private const val PROCESSING_GROUP_KEY = "background_share_processing_group"
-        private const val RESULT_NOTIFICATION_OFFSET = 20_000
-        private const val GENERIC_FAILURE_NOTIFICATION_OFFSET = 40_000
-        private const val RETRY_NOTIFICATION_OFFSET = 60_000
-        private const val PROCESSING_NOTIFICATION_OFFSET = 80_000
-        private const val PREPARING_SHARE_NOTIFICATION_ID = 100_000
     }
 
     private val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -433,7 +466,7 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
                 .setContentTitle(context.getString(R.string.background_share_summary_failed_title, displayName))
                 .setContentText(message)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(message))
-                .setContentIntent(createOpenAppPendingIntent())
+                .setContentIntent(createOpenAppPendingIntent(context))
                 .setAutoCancel(true)
                 .setGroup(RESULT_GROUP_KEY),
         )
@@ -492,7 +525,7 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
     }
 
     internal fun clearCache(jobId: Int) {
-        pageCache.keys.filter { it.first == jobId }.forEach { pageCache.remove(it) }
+        pageCache.keys.removeIf { it.first == jobId }
     }
 
     internal fun showCachedResultPage(jobId: Int, resultKind: BackgroundShareResultKind, pageIndex: Int): Boolean {
@@ -567,38 +600,13 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
         )
     }
 
-    private fun createOpenAppPendingIntent(): PendingIntent {
-        val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-        }
-        return PendingIntent.getActivity(
-            context,
-            0,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-    }
-
-    private fun createCancelJobPendingIntent(jobId: Int): PendingIntent {
-        val intent = Intent(context, CancelTranscriptionNotificationReceiver::class.java).apply {
-            action = CancelTranscriptionNotificationReceiver.ACTION_CANCEL_JOB
-            putExtra(CancelTranscriptionNotificationReceiver.EXTRA_JOB_ID, jobId)
-        }
-        return PendingIntent.getBroadcast(
-            context,
-            jobId,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-    }
-
     private fun processingBuilder(jobId: Int?, title: String, message: String): NotificationCompat.Builder =
         NotificationCompat.Builder(context, TranscriptionWorker.CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
-            .setContentIntent(createOpenAppPendingIntent())
+            .setContentIntent(createOpenAppPendingIntent(context))
             .setOnlyAlertOnce(true)
             .setOngoing(true)
             .setAutoCancel(false)
@@ -608,16 +616,8 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
                     addAction(
                         R.drawable.ic_notification,
                         context.getString(R.string.stop_transcription),
-                        createCancelJobPendingIntent(jobId),
+                        createCancelJobPendingIntent(context, jobId),
                     )
                 }
             }
-
-    private fun genericFailureNotificationId(): Int = GENERIC_FAILURE_NOTIFICATION_OFFSET + Random.nextInt(10_000)
-
-    private fun retryNotificationId(jobId: Int): Int = RETRY_NOTIFICATION_OFFSET + jobId
-
-    private fun processingNotificationId(jobId: Int): Int = PROCESSING_NOTIFICATION_OFFSET + jobId
-
-    private fun resultNotificationId(jobId: Int): Int = RESULT_NOTIFICATION_OFFSET + jobId
 }
