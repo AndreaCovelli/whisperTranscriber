@@ -525,7 +525,9 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
     }
 
     internal fun clearCache(jobId: Int) {
-        pageCache.keys.removeIf { it.first == jobId }
+        BackgroundShareResultKind.entries.forEach { kind ->
+            pageCache.remove(jobId to kind)
+        }
     }
 
     internal fun showCachedResultPage(jobId: Int, resultKind: BackgroundShareResultKind, pageIndex: Int): Boolean {
