@@ -110,7 +110,6 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           # remove this line when switching to Github-hosted runners
-          cache-disabled: true
           cache-read-only: ${{ github.event_name == 'pull_request' }}
           add-job-summary: "on-failure"
 
@@ -146,7 +145,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           # remove this line when switching to Github-hosted runners
-          cache-disabled: true
+          
           cache-read-only: ${{ github.event_name == 'pull_request' }}
           add-job-summary: "on-failure"
 
