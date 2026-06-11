@@ -28,7 +28,7 @@ android {
     val propVersionName = findProperty("versionName") as? String
 
     namespace = "com.andreacovelli.whispertranscriber"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.andreacovelli.whispertranscriber"
@@ -228,5 +228,11 @@ dependencies {
         // Keep Room migration testing and AndroidX saved state/navigation on one serialization runtime.
         implementation(libs.kotlinx.serialization.core)
         implementation(libs.kotlinx.serialization.json)
+    }
+}
+
+configurations.all {
+    resolutionStrategy {
+        force("org.jetbrains.kotlin:kotlin-metadata-jvm:${libs.versions.kotlin.get()}")
     }
 }
