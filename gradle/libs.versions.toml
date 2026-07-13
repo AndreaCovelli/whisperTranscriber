@@ -1,7 +1,7 @@
 [versions]
 agp = "9.2.1"
 googleGenai = "1.61.0"
-hilt = "2.60"
+hilt = "2.60.1"
 androidxHilt = "1.4.0"
 kotlin = "2.4.0"
 coreKtx = "1.19.0"
