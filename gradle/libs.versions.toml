@@ -1,5 +1,5 @@
 [versions]
-agp = "9.2.1"
+agp = "9.3.0"
 googleGenai = "1.61.0"
 hilt = "2.60.1"
 androidxHilt = "1.4.0"
