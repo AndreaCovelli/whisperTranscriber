@@ -1,42 +1,267 @@
-# Repository Guidelines
+# AGENTS.md
 
-## Project Structure & Module Organization
-This repository is a single-module Android app in `app/`. Kotlin sources live under `app/src/main/java/com/andreacovelli/whispertranscriber/`, with UI split into `ui/screens`, `ui/components`, and `ui/theme`. Persistence and queue state are in `data/`, audio conversion in `media/`, and key storage in `security/`. Android resources are in `app/src/main/res/`. Unit tests live in `app/src/test/...`; instrumentation tests live in `app/src/androidTest/...`. CI workflows are in `.github/workflows/`, and static-analysis config lives in `config/detekt/`.
+## Scope and Sources of Truth
 
-## Build, Test, and Development Commands
-The project uses the Gradle build system (Kotlin DSL).
+These instructions apply to the entire repository.
 
-**Note:** Ensure that your Java environment variable (for example `JAVA_HOME`) is set in the current terminal session before running Gradle commands. On this Windows setup, Android Studio's bundled JBR is typically under `%LOCALAPPDATA%\Programs\Android Studio\jbr` rather than `Program Files`.
+- This is a single-module Android application. Keep production work inside `app/`
+  unless the change is explicitly about repository tooling, documentation, or CI.
+- Treat the checked-in Gradle configuration and source code as authoritative. The
+  README can lag behind dependency versions or implementation details.
+- Preserve unrelated local changes. Do not edit generated build output or commit
+  machine-local configuration.
+- Prefer the smallest change that fully solves the problem. Avoid opportunistic
+  refactors in feature and bug-fix work.
+
+## Product and Architecture
+
+WhisperTranscriber accepts one or more shared audio files, stages them in
+app-controlled storage, transcribes them with Microsoft Speech or Gemini, and stores
+the results locally. It also supports summaries, searchable history, retries,
+background execution, and result notifications.
+
+The app uses:
+
+- Kotlin and Jetpack Compose. `MainActivity` owns the app UI and navigation;
+  `ShareReceiverActivity` is a transient entry point for Android share intents.
+- ViewModels, `StateFlow`, and small MVU-style reducers/messages for UI state.
+- Hilt for dependency injection.
+- Room for transcription history, FTS search, and persistent queue state.
+- WorkManager and an Android `JobService` for background execution paths.
+- DataStore plus Android Keystore encryption for settings and API keys.
+- `MediaExtractor`/`MediaCodec` for audio conversion.
+- Gradle Kotlin DSL, a version catalog, Spotless/ktlint, Detekt, and Android Lint.
+
+## Repository Map
+
+- `app/src/main/java/com/andreacovelli/whispertranscriber/`
+  - Root entry points and Android components: activities, application class,
+    workers, job services, and notification receivers.
+  - `background/`: background-share policies, notifications, and follow-up work.
+  - `data/`: Room entities, DAOs, database migrations, and repositories.
+  - `di/`: Hilt bindings and shared dispatchers/clients.
+  - `history/`: history grouping, search-query construction, and export formats.
+  - `media/`: hardware-backed audio conversion.
+  - `queue/`: staged audio and persisted queue execution models.
+  - `security/`: Keystore encryption and sensitive-key helpers.
+  - `services/`: queue, validation, and summarization services used by ViewModels.
+  - `settings/`: provider settings and encrypted API-key persistence.
+  - `summary/`: provider-facing summarization repository.
+  - `transcription/`: providers, MIME rules, execution runner, status constants,
+    and transcription persistence.
+  - `ui/components/`: reusable Compose components.
+  - `ui/main/` and `ui/history/`: ViewModels, messages, reducers, and UI models.
+  - `ui/screens/`: screen composition and navigation-level callbacks.
+  - `ui/theme/`: Material 3 theme definitions.
+- `app/src/main/res/`: manifests, strings, themes, icons, and backup rules.
+- `app/src/test/`: JVM unit tests for pure Kotlin behavior.
+- `app/src/androidTest/`: device tests for Room, Android storage, MediaCodec,
+  Keystore, share intents, and Compose UI.
+- `app/schemas/`: committed Room schema snapshots. These are required migration
+  artifacts, not disposable generated output.
+- `config/detekt/detekt.yml`: Detekt rules.
+- `gradle/libs.versions.toml`: dependency and plugin versions.
+- `.github/workflows/`: CI, dependency submission, and tagged release automation.
+- `release-guide.txt`: release-keystore setup and release process.
+
+## Toolchain and Local Setup
+
+- Use the checked-in Gradle wrapper, never a system Gradle installation.
+- The project requires JDK 21 through `kotlin.jvmToolchain(21)`.
+- The app currently has `minSdk = 26`, `targetSdk = 36`, and `compileSdk = 37`.
+- Android instrumentation work needs an installed Android SDK and the appropriate
+  emulator system image.
+- On Windows, Android Studio's bundled JBR is commonly located at:
+
+  ```powershell
+  $env:JAVA_HOME = Join-Path $env:LOCALAPPDATA "Programs\Android Studio\jbr"
+  ```
+
+- On macOS/Linux, ensure `JAVA_HOME` points to a JDK 21 installation if Gradle
+  cannot resolve Java automatically.
+
+Run only one Gradle invocation at a time in this workspace. Concurrent Gradle runs
+can corrupt Kotlin or KSP incremental caches. Do not use Gradle's `--parallel` flag
+here, and do not launch verification tasks in parallel shells.
+
+## Common Commands
+
+Use `./gradlew` on macOS/Linux and `gradlew.bat` on Windows.
+
+```bash
+./gradlew assembleDebug
+./gradlew testDebugUnitTest
+./gradlew spotlessCheck detekt lintDebug
+./gradlew pixel6Api34DebugAndroidTest
+./gradlew connectedDebugAndroidTest
 ```
-$env:JAVA_HOME = Join-Path $env:LOCALAPPDATA "Programs\Android Studio\jbr"
+
+Additional focused commands:
+
+```bash
+./gradlew spotlessApply
+./gradlew detekt
+./gradlew lintDebug
+./gradlew clean
 ```
-If `java` is missing from `PATH`, setting `JAVA_HOME` like above is usually sufficient for `.\gradlew.bat`.
-- `./gradlew assembleDebug` builds the debug APK.
-- `./gradlew testDebugUnitTest` runs JVM unit tests.
-- `./gradlew pixel6Api34DebugAndroidTest` runs instrumented tests on the repo's managed Pixel 6 / API 34 emulator and is the preferred reproducible option.
-- `./gradlew connectedDebugAndroidTest` runs instrumented tests on a manually connected device/emulator and is useful for device-specific checks.
-- `./gradlew lintDebug` runs Android lint checks.
-- `./gradlew spotlessApply` formats Kotlin and Gradle files.
-- `./gradlew detekt` runs static analysis on `main`, `test`, and `androidTest` sources.
-- `./gradlew spotlessCheck detekt lintDebug` runs the main quality gate locally.
-- `./gradlew clean` clears local build outputs if KSP or lint caches get corrupted.
-- Use one Gradle invocation at a time per workspace. Parallel local Gradle runs against the same repo can trigger Kotlin/KSP cache corruption.
-- `--no-daemon` is useful when diagnosing cache or incremental-build issues, but it is not required for normal day-to-day development.
-- Run Gradle verification sequentially in this repo. Do not launch multiple Gradle commands in parallel against the same workspace; that can trigger Kotlin/KSP incremental cache corruption on its own.
 
+- `pixel6Api34DebugAndroidTest` uses the repository's managed Pixel 6/API 34
+  device and is the preferred reproducible instrumentation run.
+- `connectedDebugAndroidTest` is for a manually attached emulator or device.
+- Use `spotlessApply` only when formatting changes are intended, then review its
+  diff.
+- Use `clean` for diagnosed build-cache problems, not as a routine first step.
+- `--no-daemon` is a diagnostic option, not a normal requirement.
 
-## Coding Style & Naming Conventions
-Use 4-space indentation and standard Kotlin style. Keep composables in `PascalCase`, functions and properties in `camelCase`, and constants in `UPPER_SNAKE_CASE`. Prefer small UI components in `ui/components/` and keep screen orchestration in `ui/screens/`. Formatting is enforced by Spotless with ktlint; static analysis uses Detekt with `config/detekt/detekt.yml`. Avoid editing generated `app/build/` outputs.
+If a sequential build reports Kotlin/KSP cache corruption, inspect
+`build/reports/kotlin-build/` and `app/build/kspCaches/*/logs/` before changing
+toolchain or incremental-build settings.
 
-## Testing Guidelines
-Write unit tests with JUnit4 in `app/src/test/` for pure logic such as query building, view-model helpers, and repository behavior. Use instrumentation tests in `app/src/androidTest/` for Room, WorkManager, or Android framework behavior. Name test files after the class or feature under test, for example `HistorySearchQueryBuilderTest.kt`. Run `./gradlew testDebugUnitTest` before opening a PR; add targeted instrumentation coverage when changing migrations or background work.
-When changing Room schemas or migrations, keep exported schemas under `app/schemas/` in sync and verify the upgrade path with `pixel6Api34DebugAndroidTest`. Use `connectedDebugAndroidTest` when you specifically need to validate on a manually connected device/emulator.
-If build corruption appears during a single sequential run, inspect `build/reports/kotlin-build/` and `app/build/kspCaches/*/logs/` before changing toolchain settings.
-Temporary Kotlin/KSP diagnostics are enabled. Kotlin build reports are written under `build/reports/kotlin-build/`, and KSP incremental logs appear under `app/build/kspCaches/*/logs/`. If cache corruption happens again during a single sequential run, use those artifacts to distinguish a real Kotlin/KSP incremental issue from parallel-build contention.
+## Implementation Conventions
 
-## Commit & Pull Request Guidelines
-Recent history follows short conventional-style subjects such as `fix: simplify FTS migration` and `ci: consolidate workflows and address review feedback`. Keep commits focused and imperative. PRs should explain user-visible changes, note migrations or queue/worker behavior changes, and link issues with `Closes #<number>` only when fully resolved. Include screenshots for UI changes and list the verification commands you ran.
-If a PR changes search, migrations, or quality tooling, mention the relevant checks explicitly, for example `detekt`, `lintDebug`, `testDebugUnitTest`, and `pixel6Api34DebugAndroidTest`.
+### Kotlin and Compose
 
-## Security & Configuration Tips
-Do not commit API keys, staged audio, or local build artifacts. Keep secrets in the app’s encrypted storage flow, and review backup-related changes carefully because the app excludes sensitive local data from backup/restore.
+- Follow standard Kotlin style with 4-space indentation.
+- Use `PascalCase` for types and composables, `camelCase` for functions and
+  properties, and `UPPER_SNAKE_CASE` for constants.
+- Keep screen-level orchestration in `ui/screens/` and reusable presentation in
+  `ui/components/`.
+- Keep composables driven by immutable state and callbacks. Put persistence,
+  network, queue, and conversion work outside composables.
+- Route user actions through the existing ViewModel message/action patterns.
+  Preserve reducer purity when editing `MainMvu.kt` or `HistoryMvu.kt`.
+- Collect observable state with lifecycle-aware APIs and avoid starting duplicate
+  long-running work from recomposition.
+- Put user-visible text in `res/values/strings.xml`; do not hard-code it in Kotlin
+  unless it is protocol data or an internal diagnostic.
+- Use the injected coroutine dispatchers for blocking or I/O work. Do not block
+  the main thread.
+
+### Dependency Injection and Boundaries
+
+- Extend Hilt modules in `di/AppModule.kt` when shared construction or bindings
+  are needed. Avoid service locators and ad hoc global singletons.
+- Keep provider-specific API behavior in `transcription/` or `summary/`, not in UI
+  classes.
+- Keep queue orchestration and persistence transactional where ownership or claim
+  state is involved. A job must not be executed or summarized twice.
+- Reuse centralized job and summary status constants. Stored status values are
+  database data; changing them can require a migration.
+
+### Audio, Queue, and Background Work
+
+- Persisted jobs must operate on staged app-owned audio. Do not assume an incoming
+  share URI will remain readable after the receiving activity exits.
+- Preserve provider-specific MIME support and conversion behavior when changing
+  upload code.
+- Always clean up temporary conversion and staged files on success, failure, and
+  cancellation where ownership permits.
+- Keep cancellation, retry, notification, and process-restart behavior aligned
+  across WorkManager, `BackgroundShareJobService`, queue DAOs, and the execution
+  runner.
+- Distinguish retryable failures from terminal failures deliberately. Do not
+  create unbounded retry loops.
+
+### Room and Search
+
+- Never use destructive migration fallback for user data.
+- For every schema change:
+  1. Increment the Room database version.
+  2. Add an explicit migration from the previous version.
+  3. Keep all earlier migrations registered.
+  4. Regenerate and commit the matching JSON snapshot in `app/schemas/`.
+  5. Add or update instrumentation coverage for the upgrade path and affected
+     queries.
+- Keep the `transcription_history` content table and its FTS table synchronized.
+- Build FTS expressions through the existing history search-query helper instead
+  of interpolating raw user text into SQL.
+- Do not hand-edit Room schema JSON to make a check pass; regenerate it from the
+  annotated schema.
+
+## Testing Strategy
+
+Choose the lowest test level that exercises the real behavior:
+
+- Use JVM tests for reducers, formatting, grouping, provider selection, MIME
+  decisions, query construction, and other pure logic.
+- Use instrumentation tests for Room schemas/migrations/FTS, Keystore, DataStore,
+  WorkManager or job services, content URIs, MediaCodec, and Compose interaction.
+- Prefer deterministic fakes and injected dependencies over timing delays or real
+  network calls.
+- Name tests after the feature or class under test and describe observable
+  behavior in test method names.
+- Add a regression test when fixing a defect whenever the failure can be
+  reproduced reliably.
+
+Minimum verification by change type:
+
+- Documentation only: review the rendered Markdown and final diff.
+- Pure Kotlin logic: `testDebugUnitTest`.
+- UI or resources: `spotlessCheck detekt lintDebug`, relevant unit tests, and
+  targeted Compose instrumentation where behavior changed.
+- Queue, worker, storage, or background behavior: unit tests plus targeted
+  instrumentation.
+- Room entity, DAO, FTS, schema, or migration changes:
+  `testDebugUnitTest` followed by `pixel6Api34DebugAndroidTest`; confirm the
+  exported schema diff.
+- Build logic or dependency changes:
+  `spotlessCheck detekt lintDebug`, `testDebugUnitTest`, and `assembleDebug`.
+
+Run these sequentially. If a full device suite is unavailable, run all safe local
+checks and report exactly what was not run and why.
+
+## Formatting and Static Analysis
+
+- Spotless with ktlint is authoritative for Kotlin and Gradle Kotlin DSL format.
+- Detekt scans `main`, `test`, and `androidTest` Kotlin sources using
+  `config/detekt/detekt.yml`.
+- Android Lint runs against the debug variant in the normal quality gate.
+- Do not suppress rules broadly. Use a narrow suppression only when the code is
+  correct, the rule is inapplicable, and the reason is clear.
+- Do not edit `build/`, `app/build/`, `.gradle/`, generated KSP output, or lint
+  intermediates.
+
+## Security and Privacy
+
+- Never commit API keys, release keystores, passwords, tokens, local audio,
+  database dumps, `local.properties`, or `.env` files.
+- API keys must remain encrypted through `ApiKeyManager` and `KeystoreCrypto`.
+  Never persist or log plaintext credentials.
+- Do not enable HTTP body logging for requests that can contain keys, audio, full
+  transcripts, or summaries.
+- DataStore contains sensitive settings and is intentionally excluded by
+  `backup_rules.xml` and `data_extraction_rules.xml`. Review any backup change as
+  a security-sensitive change.
+- Treat shared audio, transcripts, summaries, filenames, and notification content
+  as private user data. Minimize retention and diagnostic logging.
+- Release signing material belongs in local secure storage and GitHub Actions
+  secrets only. Follow `release-guide.txt`; never add a keystore to the repository.
+
+## Git, CI, and Releases
+
+- Use focused Conventional Commit subjects such as:
+  `fix(queue): prevent duplicate claims`, `test(data): cover migration 13 to 14`,
+  or `docs: refresh contributor guidance`.
+- Stage only files belonging to the requested change and review the staged diff
+  before committing.
+- Do not bypass hooks, force-push shared branches, or rewrite history unless the
+  user explicitly requests it.
+- Pull requests should explain user-visible behavior, queue/background effects,
+  migrations, and the exact verification performed. Include screenshots for
+  visible UI changes.
+- CI runs the quality gate (`spotlessCheck detekt lintDebug`) separately from the
+  debug build and JVM tests (`assembleDebug testDebugUnitTest`).
+- Releases are triggered by tags matching `v*`; the release workflow derives
+  `versionName` from the tag and `versionCode` from Git history. Do not create or
+  push a release tag unless explicitly requested.
+
+## Completion Checklist
+
+Before handing off a change:
+
+1. Re-read the request and inspect `git status` and the complete diff.
+2. Confirm no unrelated, generated, local, or sensitive files are included.
+3. Run the smallest sufficient sequential verification set above.
+4. Check that migrations, schema snapshots, resources, and tests stay consistent
+   with code changes.
+5. Report the files changed, commands run, and any checks that could not be run.
