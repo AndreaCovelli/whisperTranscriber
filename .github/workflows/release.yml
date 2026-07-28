@@ -32,7 +32,6 @@ jobs:
 
       - name: Require tag commit on main
         run: |
-          git fetch --no-tags origin main
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
 
       - name: Set up JDK 21
