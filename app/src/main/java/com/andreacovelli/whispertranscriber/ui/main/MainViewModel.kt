@@ -38,7 +38,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -81,6 +81,10 @@ data class UiState(
     val speakerDiarizationEnabled: Boolean = false,
     val jobs: List<TranscriptionJobState> = emptyList(),
     val batchProgressState: BatchProgressState? = null,
+    val jobsLoaded: Boolean = false,
+    val latestRevealRequestToken: Long = 0L,
+    val mainNavigationRequest: MainNavigationRequest? = null,
+    val jobRevealRequest: JobRevealRequest? = null,
 )
 
 data class TranscriptionJobState(
@@ -285,14 +289,19 @@ class MainViewModel @Inject constructor(
     }
 
     fun dispatch(msg: MainMsg) {
-        reduce(msg)
-        if (handleQueueMsg(msg)) return
+        val reducedState = reduce(msg)
+        if (handleQueueMsg(msg, reducedState)) return
         handleSettingsMsg(msg)
     }
 
-    private fun handleQueueMsg(msg: MainMsg): Boolean {
+    private fun handleQueueMsg(msg: MainMsg, reducedState: UiState): Boolean {
         when (msg) {
-            is MainMsg.SharedAudioReceived -> enqueueSharedAudio(msg.uris)
+            is MainMsg.SharedAudioReceived -> {
+                val requestToken = (reducedState.jobRevealRequest as? JobRevealRequest.AwaitingCreation)?.token
+                if (requestToken != null) {
+                    enqueueSharedAudio(msg.uris, requestToken)
+                }
+            }
             MainMsg.ClearCompletedJobs -> viewModelScope.launch { queueService.clearCompletedJobs() }
             is MainMsg.SummarizeJob -> runSummarization(msg.jobId, allowResummarize = msg.allowResummarize)
             is MainMsg.ClearSummary -> viewModelScope.launch { summarizationRepository.clearJobSummary(msg.jobId) }
@@ -336,12 +345,12 @@ class MainViewModel @Inject constructor(
 
     suspend fun loadGeminiKeyForDisplay(): String? = settingsDelegate.actions.loadGeminiKey()
 
-    private fun enqueueSharedAudio(uris: List<Uri>) {
+    private fun enqueueSharedAudio(uris: List<Uri>, requestToken: Long) {
         if (uris.isEmpty()) return
 
         viewModelScope.launch {
             reduce(MainMsg.StatusChanged(appContext.getString(R.string.main_queuing_files, uris.size)))
-            try {
+            val firstCreatedJobId = try {
                 val queueSettings = resolveTranscriptionQueueSettingsForShare()
                 val result = queueService.enqueueSharedAudio(
                     uris = uris,
@@ -351,37 +360,44 @@ class MainViewModel @Inject constructor(
                     postTranscriptionWorkSpec = resolveAutomaticSummarizationWorkSpecForQueue(),
                 )
                 reduce(MainMsg.StatusChanged(result.statusMessage))
+                result.firstCreatedJobId
             } catch (e: IOException) {
                 reduce(
                     MainMsg.StatusChanged(
                         e.message ?: appContext.getString(R.string.background_share_queue_failed_body),
                     ),
                 )
+                null
             } catch (e: SecurityException) {
                 reduce(
                     MainMsg.StatusChanged(
                         e.message ?: appContext.getString(R.string.background_share_queue_failed_body),
                     ),
                 )
+                null
             } catch (e: SQLException) {
                 reduce(
                     MainMsg.StatusChanged(
                         e.message ?: appContext.getString(R.string.background_share_queue_failed_body),
                     ),
                 )
+                null
             } catch (e: IllegalArgumentException) {
                 reduce(
                     MainMsg.StatusChanged(
                         e.message ?: appContext.getString(R.string.background_share_queue_failed_body),
                     ),
                 )
+                null
             } catch (e: IllegalStateException) {
                 reduce(
                     MainMsg.StatusChanged(
                         e.message ?: appContext.getString(R.string.background_share_queue_failed_body),
                     ),
                 )
+                null
             }
+            reduce(MainMsg.SharedAudioQueueFinished(requestToken, firstCreatedJobId))
         }
     }
 
@@ -430,9 +446,7 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    private fun reduce(msg: MainMsg) {
-        _uiState.update { state -> MainReducer.reduce(state, msg) }
-    }
+    private fun reduce(msg: MainMsg): UiState = _uiState.updateAndGet { state -> MainReducer.reduce(state, msg) }
 
     override fun onCleared() {
         summaryJobs.values.forEach(Job::cancel)

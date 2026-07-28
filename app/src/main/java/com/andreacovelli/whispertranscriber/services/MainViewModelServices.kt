@@ -69,7 +69,7 @@ import okhttp3.Request
 import org.json.JSONException
 import org.json.JSONObject
 
-data class QueuedShareResult(val jobsCreated: Int, val statusMessage: String)
+data class QueuedShareResult(val jobsCreated: Int, val statusMessage: String, val firstCreatedJobId: Int? = null)
 
 @Singleton
 class TranscriptionQueueService @Inject constructor(
@@ -115,7 +115,10 @@ class TranscriptionQueueService @Inject constructor(
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec? = null,
     ): QueuedShareResult {
         if (preparedAudio.isEmpty()) {
-            return QueuedShareResult(0, context.getString(R.string.main_waiting_for_audios))
+            return QueuedShareResult(
+                jobsCreated = 0,
+                statusMessage = context.getString(R.string.main_waiting_for_audios),
+            )
         }
 
         val batchId = UUID.randomUUID().toString()
@@ -163,6 +166,11 @@ class TranscriptionQueueService @Inject constructor(
             }
             pendingPreparedAudio.clear()
             scheduleNextQueuedJobIfIdle()
+            return QueuedShareResult(
+                jobsCreated = preparedAudio.size,
+                statusMessage = context.getString(R.string.main_queued_files, preparedAudio.size),
+                firstCreatedJobId = jobIds.firstOrNull()?.toInt(),
+            )
         } catch (e: IOException) {
             queuedAudioStore.deletePreparedAudio(pendingPreparedAudio)
             throw e
@@ -179,11 +187,6 @@ class TranscriptionQueueService @Inject constructor(
             queuedAudioStore.deletePreparedAudio(pendingPreparedAudio)
             throw e
         }
-
-        return QueuedShareResult(
-            preparedAudio.size,
-            context.getString(R.string.main_queued_files, preparedAudio.size),
-        )
     }
 
     suspend fun cancelJob(jobId: Int) {

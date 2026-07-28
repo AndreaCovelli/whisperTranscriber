@@ -12,7 +12,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -95,6 +98,13 @@ class MainActivity : ComponentActivity() {
         setContent {
             WhisperTranscriberTheme {
                 val navController = rememberNavController()
+                val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
+                val navigationRequest = uiState.mainNavigationRequest
+                LaunchedEffect(navigationRequest?.token) {
+                    navigationRequest ?: return@LaunchedEffect
+                    navController.popBackStack(AppRoutes.MAIN, inclusive = false)
+                    mainViewModel.dispatch(MainMsg.MainNavigationHandled(navigationRequest.token))
+                }
                 NavHost(navController = navController, startDestination = AppRoutes.MAIN) {
                     composable(
                         route = AppRoutes.MAIN,
@@ -194,6 +204,7 @@ class MainActivity : ComponentActivity() {
         if (jobId == -1) return
 
         backgroundShareNotifier.cancelResult(jobId)
+        mainViewModel.dispatch(MainMsg.BackgroundShareResultOpened(jobId))
         intent.removeExtra(EXTRA_BACKGROUND_SHARE_RESULT_JOB_ID)
     }
 
