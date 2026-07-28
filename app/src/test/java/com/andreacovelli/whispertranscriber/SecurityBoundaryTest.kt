@@ -152,4 +152,10 @@ class SecurityBoundaryTest {
             requireShareCount(11)
         }
     }
+
+    @Test
+    fun shareMetadata_acceptsSupportedAiffExtensions() {
+        requireAcceptedSharedAudio("audio/aiff", "recording.aiff", "content://share/5")
+        requireAcceptedSharedAudio("audio/x-aiff", "recording.aif", "content://share/6")
+    }
 }

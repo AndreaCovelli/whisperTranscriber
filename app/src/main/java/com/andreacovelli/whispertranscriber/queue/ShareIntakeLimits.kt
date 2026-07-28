@@ -12,6 +12,8 @@ internal const val MIN_FREE_BYTES_AFTER_COPY = 64L * 1024L * 1024L
 
 private val acceptedAudioExtensions = setOf(
     "aac",
+    "aif",
+    "aiff",
     "amr",
     "flac",
     "m4a",

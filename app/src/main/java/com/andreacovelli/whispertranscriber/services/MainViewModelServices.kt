@@ -526,22 +526,6 @@ internal fun resolveMicrosoftSpeechKeyValidationResults(codes: List<Int>): KeyVa
     return KeyValidationResult("Validation failed: HTTP $reportedCode")
 }
 
-internal fun resolveMicrosoftSpeechRegionValidationResults(
-    codes: List<Int>,
-    normalizedRegion: String,
-): RegionValidationResult {
-    if (codes.isEmpty()) return RegionValidationResult(errorMessage = "Validation failed")
-    if (codes.any { it == 200 || it == 400 || it == 401 || it == 403 || it == 405 }) {
-        return RegionValidationResult(normalizedRegion = normalizedRegion)
-    }
-    if (codes.any { it == 404 }) {
-        return RegionValidationResult(errorMessage = "Region \"$normalizedRegion\" not found")
-    }
-
-    val reportedCode = codes.firstOrNull { it == 429 || it in 500..599 } ?: codes.first()
-    return RegionValidationResult(errorMessage = "Could not verify region: HTTP $reportedCode")
-}
-
 internal fun resolveMicrosoftSpeechRegionIOExceptionMessage(normalizedRegion: String, error: IOException): String {
     val message = error.message.orEmpty()
     return if (error is UnknownHostException || message.contains("Unable to resolve host", ignoreCase = true)) {
