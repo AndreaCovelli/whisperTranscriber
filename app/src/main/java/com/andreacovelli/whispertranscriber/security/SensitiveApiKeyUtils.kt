@@ -3,6 +3,8 @@ package com.andreacovelli.whispertranscriber.security
 import com.google.genai.Client
 import com.google.genai.types.HttpOptions
 import javax.inject.Inject
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.withContext
 
 interface GenAiClientFactory {
     fun create(apiKey: String, timeoutMillis: Int? = null): Client
@@ -33,6 +35,19 @@ internal inline fun <T> useClosing(resource: AutoCloseable, block: () -> T): T =
     resource.close()
 }
 
+internal suspend inline fun <R : AutoCloseable, T> useClosing(
+    context: CoroutineContext,
+    crossinline resourceFactory: () -> R,
+    crossinline block: suspend (R) -> T,
+): T = withContext(context) {
+    val resource = resourceFactory()
+    try {
+        block(resource)
+    } finally {
+        resource.close()
+    }
+}
+
 /**
  * Builds and closes a short-lived Gemini [Client] from a [CharArray] API key. The transient [String]
  * created for the SDK must not escape this callback or be stored in longer-lived fields.
@@ -46,4 +61,21 @@ internal inline fun <T> CharArray.useGenAiClient(
     useClosing(client) {
         block(client)
     }
+}
+
+/**
+ * Builds, uses, and closes a short-lived Gemini [Client] on [context]. Use this overload when the
+ * SDK lifecycle can perform blocking I/O.
+ */
+internal suspend inline fun <T> CharArray.useGenAiClient(
+    clientFactory: GenAiClientFactory,
+    context: CoroutineContext,
+    timeoutMillis: Int? = null,
+    crossinline block: suspend (Client) -> T,
+): T = useAsString { apiKeyString ->
+    useClosing(
+        context = context,
+        resourceFactory = { clientFactory.create(apiKeyString, timeoutMillis) },
+        block = block,
+    )
 }

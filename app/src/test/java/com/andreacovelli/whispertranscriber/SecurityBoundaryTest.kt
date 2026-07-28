@@ -12,6 +12,9 @@ import com.andreacovelli.whispertranscriber.transcription.validateMicrosoftSpeec
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.util.concurrent.Executors
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -36,6 +39,39 @@ class SecurityBoundaryTest {
             useClosing(failureResource) { error("boom") }
         }
         assertEquals(true, failureResource.closed)
+    }
+
+    @Test
+    fun closingResource_runsEntireLifecycleOnProvidedContext() {
+        val lifecycleThreads = mutableListOf<Pair<String, String>>()
+        val executor = Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "gemini-client-io")
+        }
+
+        executor.asCoroutineDispatcher().use { dispatcher ->
+            val result = runBlocking {
+                useClosing(
+                    context = dispatcher,
+                    resourceFactory = {
+                        lifecycleThreads += "create" to Thread.currentThread().name
+                        AutoCloseable {
+                            lifecycleThreads += "close" to Thread.currentThread().name
+                        }
+                    },
+                ) {
+                    lifecycleThreads += "use" to Thread.currentThread().name
+                    "result"
+                }
+            }
+
+            assertEquals("result", result)
+        }
+
+        assertEquals(listOf("create", "use", "close"), lifecycleThreads.map { it.first })
+        assertEquals(
+            true,
+            lifecycleThreads.all { (_, threadName) -> threadName.startsWith("gemini-client-io") },
+        )
     }
 
     @Test
