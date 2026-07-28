@@ -1,0 +1,12 @@
+title = "WhisperTranscriber Gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Ignore generated, cached, and machine-local directories"
+paths = [
+  '''(?:^|/)(?:\.gradle|\.kotlin|build|captures|\.externalNativeBuild|\.cxx)(?:/.*)?$''',
+  '''(?:^|/)\.idea/(?:caches|libraries)(?:/.*)?$''',
+  '''(?:^|/)(?:\.agents|\.codex)(?:/.*)?$''',
+]

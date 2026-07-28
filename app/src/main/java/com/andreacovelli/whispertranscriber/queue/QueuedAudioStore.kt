@@ -22,6 +22,8 @@ data class PreparedSharedAudio(
     val mimeType: String?,
 )
 
+data class QueuedAudioCleanupResult(val tempFilesDeleted: Int, val orphanFilesDeleted: Int)
+
 @Singleton
 class QueuedAudioStore @Inject constructor(
     @param:ApplicationContext private val context: Context,
@@ -36,17 +38,20 @@ class QueuedAudioStore @Inject constructor(
 
     suspend fun prepareSharedAudio(uris: List<Uri>): List<PreparedSharedAudio> {
         if (uris.isEmpty()) return emptyList()
+        requireShareCount(uris.size)
 
         val preparedAudio = mutableListOf<PreparedSharedAudio>()
+        var batchBytes = 0L
         try {
             uris.forEachIndexed { index, uri ->
                 val displayName = resolveDisplayName(uri).ifBlank { uri.lastPathSegment ?: "Audio ${index + 1}" }
-                val (stagedFile, mimeType) = stageSharedAudio(uri, index)
+                val staged = stageSharedAudio(uri, index, displayName, batchBytes)
+                batchBytes += staged.bytesCopied
                 preparedAudio += PreparedSharedAudio(
                     originalUri = uri,
                     displayName = displayName,
-                    stagedFile = stagedFile,
-                    mimeType = mimeType,
+                    stagedFile = staged.file,
+                    mimeType = staged.mimeType,
                 )
             }
             return preparedAudio
@@ -59,30 +64,46 @@ class QueuedAudioStore @Inject constructor(
         } catch (e: SQLException) {
             deletePreparedAudio(preparedAudio)
             throw e
+        } catch (e: IllegalArgumentException) {
+            deletePreparedAudio(preparedAudio)
+            throw e
+        } catch (e: IllegalStateException) {
+            deletePreparedAudio(preparedAudio)
+            throw e
         }
     }
 
-    suspend fun cleanupOldTempFiles(
+    suspend fun cleanupManagedFiles(
+        referencedStagedPaths: Set<String>,
+        nowMillis: Long = System.currentTimeMillis(),
         tempFileMaxAgeMs: Long = TimeUnit.DAYS.toMillis(3),
-        stagedFileMaxAgeMs: Long = TimeUnit.DAYS.toMillis(7),
-    ) = withContext(ioDispatcher) {
-        val cache = context.cacheDir ?: return@withContext
-        val tempCutoff = System.currentTimeMillis() - tempFileMaxAgeMs
-        cache.listFiles()
+        orphanFileMaxAgeMs: Long = TimeUnit.HOURS.toMillis(24),
+    ): QueuedAudioCleanupResult = withContext(ioDispatcher) {
+        val normalizedReferences = referencedStagedPaths.mapTo(mutableSetOf()) { path -> File(path).absolutePath }
+        val tempCutoff = nowMillis - tempFileMaxAgeMs
+        val tempFilesDeleted = context.cacheDir
+            ?.listFiles()
             .orEmpty()
             .asSequence()
             .filter(File::isFile)
-            .filter { it.lastModified() < tempCutoff }
+            .filter { file -> file.lastModified() < tempCutoff }
             .filter(::isManagedTempFile)
-            .forEach(::deleteQuietly)
+            .count(::deleteQuietly)
 
-        val stagedCutoff = System.currentTimeMillis() - stagedFileMaxAgeMs
-        stagedAudioDir().listFiles()
-            .orEmpty()
+        val orphanCutoff = nowMillis - orphanFileMaxAgeMs
+        val stagedDirectories = listOf(
+            File(context.filesDir, STAGED_AUDIO_DIR),
+            stagedAudioDir(),
+        )
+        val orphanFilesDeleted = stagedDirectories
             .asSequence()
+            .flatMap { directory -> directory.listFiles().orEmpty().asSequence() }
             .filter(File::isFile)
-            .filter { it.lastModified() < stagedCutoff }
-            .forEach(::deleteQuietly)
+            .filter { file -> file.absolutePath !in normalizedReferences }
+            .filter { file -> file.lastModified() < orphanCutoff }
+            .count(::deleteQuietly)
+
+        QueuedAudioCleanupResult(tempFilesDeleted, orphanFilesDeleted)
     }
 
     fun deleteStagedFile(path: String?) {
@@ -94,29 +115,48 @@ class QueuedAudioStore @Inject constructor(
         preparedAudio.forEach { deleteQuietly(it.stagedFile) }
     }
 
-    private fun stagedAudioDir(): File = File(context.filesDir, STAGED_AUDIO_DIR).apply { mkdirs() }
+    private data class StagedCopy(val file: File, val mimeType: String?, val bytesCopied: Long)
 
-    private suspend fun stageSharedAudio(uri: Uri, index: Int): Pair<File, String?> = withContext(ioDispatcher) {
+    private fun stagedAudioDir(): File = File(context.noBackupFilesDir, STAGED_AUDIO_DIR).apply { mkdirs() }
+
+    private suspend fun stageSharedAudio(
+        uri: Uri,
+        index: Int,
+        displayName: String,
+        batchBytesBeforeCopy: Long,
+    ): StagedCopy = withContext(ioDispatcher) {
         val contentResolver = context.contentResolver
         val mimeType = contentResolver.getType(uri)?.lowercase()
+        requireAcceptedSharedAudio(mimeType, displayName, uri.toString())
         val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)
+            ?: displayName.substringAfterLast('.', "").takeIf(String::isNotBlank)
             ?: MimeTypeMap.getFileExtensionFromUrl(uri.toString()).takeIf(String::isNotBlank)
             ?: "bin"
         val stagedFile = File.createTempFile("${STAGED_FILE_PREFIX}${index}_", ".$extension", stagedAudioDir())
+        var succeeded = false
         try {
-            contentResolver.openInputStream(uri)?.use { input ->
-                stagedFile.outputStream().use(input::copyTo)
+            val bytesCopied = contentResolver.openInputStream(uri)?.use { input ->
+                stagedFile.outputStream().use { output ->
+                    copySharedAudioWithLimits(
+                        input = input,
+                        output = output,
+                        batchBytesBeforeCopy = batchBytesBeforeCopy,
+                        availableBytes = { stagedFile.parentFile?.usableSpace ?: 0L },
+                    )
+                }
             } ?: throw IOException("Failed to read shared audio: $uri")
-        } catch (e: IOException) {
-            deleteQuietly(stagedFile)
-            throw e
+            succeeded = true
+            StagedCopy(stagedFile, mimeType, bytesCopied)
+        } finally {
+            if (!succeeded) {
+                deleteQuietly(stagedFile)
+            }
         }
-        stagedFile to mimeType
     }
 
     private suspend fun resolveDisplayName(uri: Uri): String = withContext(ioDispatcher) {
         val projection = arrayOf(OpenableColumns.DISPLAY_NAME)
-        runCatching {
+        try {
             context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
                 val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                 if (index >= 0 && cursor.moveToFirst()) {
@@ -125,11 +165,21 @@ class QueuedAudioStore @Inject constructor(
                     ""
                 }
             }.orEmpty()
-        }.getOrDefault("")
+        } catch (_: SecurityException) {
+            ""
+        } catch (_: SQLException) {
+            ""
+        } catch (_: IllegalArgumentException) {
+            ""
+        } catch (_: IllegalStateException) {
+            ""
+        }
     }
 
-    private fun deleteQuietly(file: File) {
-        runCatching { file.delete() }
+    private fun deleteQuietly(file: File): Boolean = try {
+        file.delete()
+    } catch (_: SecurityException) {
+        false
     }
 
     private fun isManagedTempFile(file: File): Boolean {

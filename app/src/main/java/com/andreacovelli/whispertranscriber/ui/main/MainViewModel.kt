@@ -1,6 +1,7 @@
 package com.andreacovelli.whispertranscriber.ui.main
 
 import android.content.Context
+import android.database.SQLException
 import android.net.Uri
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
@@ -28,12 +29,12 @@ import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 import com.andreacovelli.whispertranscriber.ui.screens.buildBatchProgressState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -194,10 +195,6 @@ class MainViewModel @Inject constructor(
     private val summarizationService: SummarizationService,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
-    companion object {
-        private val staleSummariesRecovered = AtomicBoolean(false)
-    }
-
     private val _uiState = MutableStateFlow(
         UiState(status = appContext.getString(R.string.main_waiting_for_audios)),
     )
@@ -214,12 +211,6 @@ class MainViewModel @Inject constructor(
     )
 
     init {
-        if (staleSummariesRecovered.compareAndSet(false, true)) {
-            viewModelScope.launch {
-                summarizationRepository.resetStaleSummaries()
-            }
-        }
-
         viewModelScope.launch {
             launch {
                 settings.transcriptionQueueSettingsFlow.collect { queueSettings ->
@@ -288,8 +279,7 @@ class MainViewModel @Inject constructor(
             }
         }
 
-        viewModelScope.launch(ioDispatcher) {
-            queueService.cleanupOldTempFiles(tempFileMaxAgeMs = TimeUnit.DAYS.toMillis(3))
+        viewModelScope.launch {
             queueService.resumePendingQueue()
         }
     }
@@ -306,7 +296,7 @@ class MainViewModel @Inject constructor(
             MainMsg.ClearCompletedJobs -> viewModelScope.launch { queueService.clearCompletedJobs() }
             is MainMsg.SummarizeJob -> runSummarization(msg.jobId, allowResummarize = msg.allowResummarize)
             is MainMsg.ClearSummary -> viewModelScope.launch { summarizationRepository.clearJobSummary(msg.jobId) }
-            is MainMsg.ClearTranscript -> viewModelScope.launch { repository.clearJobTranscription(msg.jobId) }
+            is MainMsg.ClearTranscript -> viewModelScope.launch { queueService.clearJobTranscription(msg.jobId) }
             is MainMsg.RetryJob -> retryJob(msg.jobId)
             is MainMsg.CancelJob -> viewModelScope.launch { queueService.cancelJob(msg.jobId) }
             is MainMsg.CancelSummary -> cancelSummary(msg.jobId)
@@ -351,15 +341,47 @@ class MainViewModel @Inject constructor(
 
         viewModelScope.launch {
             reduce(MainMsg.StatusChanged(appContext.getString(R.string.main_queuing_files, uris.size)))
-            val queueSettings = resolveTranscriptionQueueSettingsForShare()
-            val result = queueService.enqueueSharedAudio(
-                uris = uris,
-                provider = queueSettings.provider,
-                customModelName = queueSettings.customModelName,
-                speakerDiarizationEnabled = queueSettings.speakerDiarizationEnabled,
-                postTranscriptionWorkSpec = resolveAutomaticSummarizationWorkSpecForQueue(),
-            )
-            reduce(MainMsg.StatusChanged(result.statusMessage))
+            try {
+                val queueSettings = resolveTranscriptionQueueSettingsForShare()
+                val result = queueService.enqueueSharedAudio(
+                    uris = uris,
+                    provider = queueSettings.provider,
+                    customModelName = queueSettings.customModelName,
+                    speakerDiarizationEnabled = queueSettings.speakerDiarizationEnabled,
+                    postTranscriptionWorkSpec = resolveAutomaticSummarizationWorkSpecForQueue(),
+                )
+                reduce(MainMsg.StatusChanged(result.statusMessage))
+            } catch (e: IOException) {
+                reduce(
+                    MainMsg.StatusChanged(
+                        e.message ?: appContext.getString(R.string.background_share_queue_failed_body),
+                    ),
+                )
+            } catch (e: SecurityException) {
+                reduce(
+                    MainMsg.StatusChanged(
+                        e.message ?: appContext.getString(R.string.background_share_queue_failed_body),
+                    ),
+                )
+            } catch (e: SQLException) {
+                reduce(
+                    MainMsg.StatusChanged(
+                        e.message ?: appContext.getString(R.string.background_share_queue_failed_body),
+                    ),
+                )
+            } catch (e: IllegalArgumentException) {
+                reduce(
+                    MainMsg.StatusChanged(
+                        e.message ?: appContext.getString(R.string.background_share_queue_failed_body),
+                    ),
+                )
+            } catch (e: IllegalStateException) {
+                reduce(
+                    MainMsg.StatusChanged(
+                        e.message ?: appContext.getString(R.string.background_share_queue_failed_body),
+                    ),
+                )
+            }
         }
     }
 
@@ -376,8 +398,9 @@ class MainViewModel @Inject constructor(
     }
 
     private fun runSummarization(jobId: Int, allowResummarize: Boolean) {
-        summaryJobs[jobId]?.cancel()
+        val previousSummaryJob = summaryJobs.remove(jobId)
         summaryJobs[jobId] = viewModelScope.launch {
+            previousSummaryJob?.cancelAndJoin()
             val currentState = _uiState.value
             val result = summarizationService.summarize(
                 jobId = jobId,
@@ -394,9 +417,15 @@ class MainViewModel @Inject constructor(
     }
 
     private fun cancelSummary(jobId: Int) {
-        summaryJobs.remove(jobId)?.cancel()
+        val localSummaryJob = summaryJobs.remove(jobId)
         viewModelScope.launch {
-            val statusMessage = summarizationService.cancelSummary(jobId)
+            val backgroundCancelled = queueService.cancelBackgroundSummaryIfRunning(jobId)
+            val statusMessage = if (backgroundCancelled) {
+                appContext.getString(R.string.summarization_status_cancelled)
+            } else {
+                summarizationService.cancelSummary(jobId)
+            }
+            localSummaryJob?.cancel()
             reduce(MainMsg.StatusChanged(statusMessage))
         }
     }

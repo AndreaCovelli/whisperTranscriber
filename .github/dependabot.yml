@@ -10,14 +10,26 @@ updates:
       include: "scope"
     open-pull-requests-limit: 10
     groups:
-      # Group AndroidX and Compose updates together to reduce PR noise
       androidx:
         patterns:
           - "androidx.*"
-      kotlin:
+        update-types:
+          - "minor"
+          - "patch"
+      kotlin-ksp:
         patterns:
           - "org.jetbrains.kotlin*"
           - "com.google.devtools.ksp"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      - dependency-name: "*"
+        versions:
+          - "*-alpha*"
+          - "*-beta*"
+          - "*-rc*"
+          - "*-RC*"
 
   # Maintain dependencies for GitHub Actions
   - package-ecosystem: "github-actions"
@@ -28,3 +40,10 @@ updates:
       prefix: "chore(deps)"
       include: "scope"
     open-pull-requests-limit: 10
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"

@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
+    <exclude domain="database" path="." />
     <exclude domain="file" path="datastore/" />
+    <exclude domain="file" path="queued_audio/" />
+    <exclude domain="root" path="no_backup/queued_audio/" />
 </full-backup-content>

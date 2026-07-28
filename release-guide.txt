@@ -51,6 +51,10 @@
 
   Step 4 — Tag and release
 
+   The tag commit must already be contained in main. The release workflow first runs
+   the complete CI Gate, requires all four signing secrets, and rejects unsigned or
+   Android-debug-signed APKs.
+
    git tag v1.0.0
    git push origin v1.0.0
 

@@ -59,6 +59,7 @@ class HardwareAudioConverterInstrumentedTest {
             assertEquals(OUTPUT_CHANNELS, wavInfo.channelCount)
             assertEquals(16, wavInfo.bitsPerSample)
             assertTrue(wavInfo.pcmData.isNotEmpty())
+            assertEquals(wavInfo.durationUs, result.durationUs)
         } finally {
             inputFile.delete()
             outputFile.delete()
@@ -87,6 +88,7 @@ class HardwareAudioConverterInstrumentedTest {
             assertEquals(OUTPUT_CHANNELS, wavInfo.channelCount)
             assertEquals(16, wavInfo.bitsPerSample)
             assertArrayEquals(pcmData, wavInfo.pcmData)
+            assertEquals(wavInfo.durationUs, result.durationUs)
         } finally {
             inputFile.delete()
             outputFile.delete()
@@ -233,5 +235,8 @@ class HardwareAudioConverterInstrumentedTest {
         )
     }
 
-    private class WavInfo(val channelCount: Int, val sampleRate: Int, val bitsPerSample: Int, val pcmData: ByteArray)
+    private class WavInfo(val channelCount: Int, val sampleRate: Int, val bitsPerSample: Int, val pcmData: ByteArray) {
+        val durationUs: Long
+            get() = pcmData.size.toLong() / (channelCount * 2) * 1_000_000L / sampleRate
+    }
 }

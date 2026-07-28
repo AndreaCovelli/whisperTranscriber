@@ -44,6 +44,8 @@
     <string name="background_share_summary_failed_title">Could not process: %1$s</string>
     <string name="background_share_preparing_notification_body">Preparing shared audio…</string>
     <string name="background_share_waiting_to_start_notification_body">Queued. Waiting to start…</string>
+    <string name="transcription_foreground_denied_switching_backend">Android denied WorkManager foreground execution; switching to a user-initiated job.</string>
+    <string name="transcription_foreground_denied_reopen">Android blocked foreground transcription. Reopen the app to retry; no audio was uploaded.</string>
     <string name="background_share_result_previous">Previous</string>
     <string name="background_share_result_next">Next</string>
     <string name="background_share_result_part_label">Part %1$d of %2$d</string>

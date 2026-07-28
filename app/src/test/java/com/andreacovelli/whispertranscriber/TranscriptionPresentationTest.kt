@@ -6,8 +6,6 @@ import com.andreacovelli.whispertranscriber.queue.JobExecutionBackend
 import com.andreacovelli.whispertranscriber.queue.postTranscriptionWorkSpec
 import com.andreacovelli.whispertranscriber.services.resolveMicrosoftSpeechKeyValidationResult
 import com.andreacovelli.whispertranscriber.services.resolveMicrosoftSpeechKeyValidationResults
-import com.andreacovelli.whispertranscriber.services.resolveMicrosoftSpeechRegionIOExceptionMessage
-import com.andreacovelli.whispertranscriber.services.resolveMicrosoftSpeechRegionValidationResults
 import com.andreacovelli.whispertranscriber.settings.ApiKeyState
 import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
@@ -44,8 +42,6 @@ import com.andreacovelli.whispertranscriber.ui.main.toSummarizationSettings
 import com.andreacovelli.whispertranscriber.ui.main.toTranscriptionQueueSettings
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 import com.andreacovelli.whispertranscriber.ui.screens.buildBatchProgressState
-import java.io.IOException
-import java.net.UnknownHostException
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -413,17 +409,17 @@ class TranscriptionPresentationTest {
 
     @Test
     fun isMicrosoftSpeechUploadSizeSupported_allowsPayloadJustBelowDocumentedLimit() {
-        assertEquals(true, isMicrosoftSpeechUploadSizeSupported(69_999_999L))
+        assertEquals(true, isMicrosoftSpeechUploadSizeSupported(249_999_999L))
     }
 
     @Test
     fun isMicrosoftSpeechUploadSizeSupported_rejectsPayloadAtDocumentedLimit() {
-        assertEquals(false, isMicrosoftSpeechUploadSizeSupported(70_000_000L))
+        assertEquals(false, isMicrosoftSpeechUploadSizeSupported(250_000_000L))
     }
 
     @Test
     fun isMicrosoftSpeechUploadSizeSupported_rejectsPayloadsAboveDocumentedLimit() {
-        assertEquals(false, isMicrosoftSpeechUploadSizeSupported(70_000_001L))
+        assertEquals(false, isMicrosoftSpeechUploadSizeSupported(250_000_001L))
     }
 
     @Test
@@ -462,61 +458,6 @@ class TranscriptionPresentationTest {
         assertEquals(
             "Invalid key for Microsoft MAI Transcribe. Use the Speech resource key from your Foundry resource, not a project API key.",
             resolveMicrosoftSpeechKeyValidationResults(listOf(404, 401, 405)).errorMessage,
-        )
-    }
-
-    @Test
-    fun resolveMicrosoftSpeechRegionValidationResults_acceptsUnauthorizedProbeAsValidRegion() {
-        assertEquals(
-            "westus",
-            resolveMicrosoftSpeechRegionValidationResults(
-                codes = listOf(404, 401, 404),
-                normalizedRegion = "westus",
-            ).normalizedRegion,
-        )
-    }
-
-    @Test
-    fun resolveMicrosoftSpeechRegionValidationResults_rejectsMissingRegionAcrossFallbacks() {
-        assertEquals(
-            "Region \"not-a-region\" not found",
-            resolveMicrosoftSpeechRegionValidationResults(
-                codes = listOf(404, 404, 404),
-                normalizedRegion = "not-a-region",
-            ).errorMessage,
-        )
-    }
-
-    @Test
-    fun resolveMicrosoftSpeechRegionValidationResults_rejectsInconclusiveServerFailure() {
-        assertEquals(
-            "Could not verify region: HTTP 503",
-            resolveMicrosoftSpeechRegionValidationResults(
-                codes = listOf(503, 500, 429),
-                normalizedRegion = "westus",
-            ).errorMessage,
-        )
-    }
-
-    @Test
-    fun resolveMicrosoftSpeechRegionIOExceptionMessage_rewritesUnknownHostError() {
-        assertEquals(
-            "Could not reach Azure Speech for region \"not-a-region\". Check that the region name is correct, for example eastus or westus.",
-            resolveMicrosoftSpeechRegionIOExceptionMessage(
-                normalizedRegion = "not-a-region",
-                error = UnknownHostException("Unable to resolve host \"not-a-region.api.cognitive.microsoft.com\""),
-            ),
-        )
-    }
-
-    @Test
-    fun resolveMicrosoftSpeechRegionIOExceptionMessage_preservesOtherIoMessages() {
-        assertEquals(
-            "timeout",
-            resolveMicrosoftSpeechRegionIOExceptionMessage(
-                normalizedRegion = "westus",
-                error = IOException("timeout"),
-            ),
         )
     }
 

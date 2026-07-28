@@ -69,6 +69,7 @@ The app uses:
 - Use the checked-in Gradle wrapper, never a system Gradle installation.
 - The project requires JDK 21 through `kotlin.jvmToolchain(21)`.
 - The app currently has `minSdk = 26`, `targetSdk = 36`, and `compileSdk = 37`.
+- The current Room database schema version is 15.
 - Android instrumentation work needs an installed Android SDK and the appropriate
   emulator system image.
 - On Windows, Android Studio's bundled JBR is commonly located at:
@@ -106,7 +107,8 @@ Additional focused commands:
 ```
 
 - `pixel6Api34DebugAndroidTest` uses the repository's managed Pixel 6/API 34
-  device and is the preferred reproducible instrumentation run.
+  x86_64 device and is the preferred reproducible instrumentation run. CI adds
+  `-Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect`.
 - `connectedDebugAndroidTest` is for a manually attached emulator or device.
 - Use `spotlessApply` only when formatting changes are intended, then review its
   diff.
@@ -152,6 +154,10 @@ toolchain or incremental-build settings.
 
 - Persisted jobs must operate on staged app-owned audio. Do not assume an incoming
   share URI will remain readable after the receiving activity exits.
+- Stage shared audio under `noBackupFilesDir/queued_audio`. Enforce 10 files per
+  intent, 250 MB per file, 500 MB per batch, 50 unfinished jobs, and 64 MiB free
+  after each streamed copy.
+- Microsoft MAI inputs must be strictly below 250,000,000 bytes and two hours.
 - Preserve provider-specific MIME support and conversion behavior when changing
   upload code.
 - Always clean up temporary conversion and staged files on success, failure, and
@@ -250,7 +256,18 @@ checks and report exactly what was not run and why.
   migrations, and the exact verification performed. Include screenshots for
   visible UI changes.
 - CI runs the quality gate (`spotlessCheck detekt lintDebug`) separately from the
-  debug build and JVM tests (`assembleDebug testDebugUnitTest`).
+  debug build and JVM tests (`assembleDebug testDebugUnitTest`), managed-device
+  instrumentation, and security scans. `CI Gate` is the required aggregate check.
+- Use the checked-in `.gitleaks.toml` for Gitleaks filesystem scans so generated
+  Gradle, build, and local-tool directories are skipped; keep Git-history scans
+  enabled for committed content.
+- Run Grype against `app/build/reports/cyclonedx-release/bom.json`, never a
+  workspace `dir:` source. The SBOM is already limited to
+  `releaseRuntimeClasspath`.
+- Gradle dependency verification is strict. Dependency PRs must regenerate
+  `gradle/verification-metadata.xml` with SHA-256 checksums and review its diff.
+- Terminal cards expire after 30 days and history is retained until explicit
+  deletion. Preserve this distinction in cleanup and migration work.
 - Releases are triggered by tags matching `v*`; the release workflow derives
   `versionName` from the tag and `versionCode` from Git history. Do not create or
   push a release tag unless explicitly requested.

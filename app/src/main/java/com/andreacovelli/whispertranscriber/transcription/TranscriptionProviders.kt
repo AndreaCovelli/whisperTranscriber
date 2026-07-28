@@ -1,5 +1,6 @@
 package com.andreacovelli.whispertranscriber.transcription
 
+import com.andreacovelli.whispertranscriber.security.GenAiClientFactory
 import com.andreacovelli.whispertranscriber.security.useAsString
 import com.andreacovelli.whispertranscriber.security.useGenAiClient
 import com.google.genai.errors.ApiException
@@ -46,15 +47,12 @@ private const val NO_TEXT_FOUND = "No text found."
 // Current MAI Transcribe examples in Microsoft Learn use this API version.
 internal const val MICROSOFT_SPEECH_API_VERSION = "2025-10-15"
 
-// MAI docs mention < 300 MB audio, but the synchronous LLM Speech REST gateway used here
-// documents an extra < 70 MB limit for mai-transcribe-1 uploads on this endpoint.
-internal const val MICROSOFT_SPEECH_MAX_UPLOAD_BYTES = 70_000_000L
-
 internal class MicrosoftSpeechTranscriber(
     private val apiKey: CharArray,
     private val audioFile: File,
     private val mimeType: String,
-    private val region: String,
+    private val region: MicrosoftSpeechRegion,
+    private val audioInspection: AudioInspection,
     private val okHttpClient: OkHttpClient,
     private val ioDispatcher: CoroutineDispatcher,
 ) : ProviderTranscriber {
@@ -65,16 +63,13 @@ internal class MicrosoftSpeechTranscriber(
 
     override fun transcribe(): Flow<TranscriptionResult> = flow {
         try {
-            val normalizedRegion = region.trim().lowercase()
-            require(normalizedRegion.isNotBlank()) { "Microsoft Speech region is not set." }
-            require(isMicrosoftSpeechUploadSizeSupported(audioFile.length())) {
-                "Microsoft MAI Transcribe uploads through the synchronous LLM Speech API must be smaller than 70 MB. Compress longer audio before upload."
-            }
+            validateMicrosoftSpeechAudio(audioInspection)
 
             emit(TranscriptionResult.Loading("Uploading audio ($mimeType) to Microsoft Speech..."))
-            val endpoint =
-                "https://$normalizedRegion.api.cognitive.microsoft.com/speechtotext/transcriptions:transcribe" +
-                    "?api-version=$MICROSOFT_SPEECH_API_VERSION"
+            val endpoint = region.buildEndpoint(
+                encodedPath = "speechtotext/transcriptions:transcribe",
+                apiVersion = MICROSOFT_SPEECH_API_VERSION,
+            )
             val definitionJson = JSONObject()
                 .put(
                     "enhancedMode",
@@ -151,9 +146,6 @@ internal class MicrosoftSpeechTranscriber(
 
 private class MicrosoftSpeechHttpException(val code: Int, override val message: String) : IOException(message)
 
-internal fun isMicrosoftSpeechUploadSizeSupported(sizeBytes: Long): Boolean =
-    sizeBytes in 1 until MICROSOFT_SPEECH_MAX_UPLOAD_BYTES
-
 internal class GeminiTranscriber(
     private val audioFile: File,
     private val mimeType: String,
@@ -161,6 +153,7 @@ internal class GeminiTranscriber(
     private val modelName: String,
     private val speakerDiarizationEnabled: Boolean,
     private val speakerLabelPrefix: String,
+    private val clientFactory: GenAiClientFactory,
     private val ioDispatcher: CoroutineDispatcher,
 ) : ProviderTranscriber {
     companion object {
@@ -174,7 +167,10 @@ internal class GeminiTranscriber(
 
         try {
             emit(TranscriptionResult.Loading("Uploading audio ($mimeType) via File API..."))
-            apiKey.useGenAiClient(timeoutMillis = GEMINI_TRANSCRIPTION_TIMEOUT_MILLIS) { client ->
+            apiKey.useGenAiClient(
+                clientFactory = clientFactory,
+                timeoutMillis = GEMINI_TRANSCRIPTION_TIMEOUT_MILLIS,
+            ) { client ->
                 uploadedFile = withContext(ioDispatcher) {
                     val uploadConfig = UploadFileConfig.builder().mimeType(mimeType).build()
                     client.files.upload(audioFile.absolutePath, uploadConfig)
@@ -233,26 +229,27 @@ internal class GeminiTranscriber(
         } catch (e: IllegalArgumentException) {
             emit(TranscriptionResult.Error(IllegalStateException(resolveGeminiErrorMessage(e), e)))
         } finally {
-            uploadedFile?.let { remoteFile ->
-                runCatching {
-                    apiKey.useGenAiClient { client ->
-                        withContext(NonCancellable + ioDispatcher) {
-                            remoteFile.name().orElse(null)?.let { remoteFileName ->
-                                client.files.delete(remoteFileName, null)
-                            }
-                        }
-                    }
-                }.onFailure { throwable ->
-                    if (throwable !is CancellationException) {
-                        android.util.Log.w(
-                            "TranscriptionWorker",
-                            "Failed to delete remote Gemini file: ${remoteFile.name().orElse("[name not available]")}",
-                            throwable,
-                        )
+            uploadedFile?.let { remoteFile -> deleteUploadedFileBestEffort(remoteFile) }
+            apiKey.fill('\u0000')
+        }
+    }
+
+    // The SDK's cleanup path can throw several nonfatal exception types. Cleanup must not hide the
+    // transcription result, while fatal JVM Errors must still escape.
+    @Suppress("TooGenericExceptionCaught")
+    private suspend fun deleteUploadedFileBestEffort(remoteFile: GenAiFile) {
+        try {
+            apiKey.useGenAiClient(clientFactory) { client ->
+                withContext(NonCancellable + ioDispatcher) {
+                    remoteFile.name().orElse(null)?.let { remoteFileName ->
+                        client.files.delete(remoteFileName, null)
                     }
                 }
             }
-            apiKey.fill('\u0000')
+        } catch (_: CancellationException) {
+            // Preserve the cancellation already being processed by the transcription flow.
+        } catch (error: Exception) {
+            android.util.Log.w("TranscriptionWorker", "Failed to delete remote Gemini file", error)
         }
     }
 

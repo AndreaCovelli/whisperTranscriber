@@ -29,7 +29,6 @@ class TranscriptionWorker @AssistedInject constructor(
 ) : CoroutineWorker(appContext, workerParams) {
 
     private val notificationManager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    private var foregroundUnavailable = false
 
     companion object {
         const val NOTIFICATION_ID = 1001
@@ -61,24 +60,18 @@ class TranscriptionWorker @AssistedInject constructor(
     }
 
     private suspend fun updateNotification(jobId: Int, displayName: String, progressText: String) {
-        if (foregroundUnavailable) {
-            backgroundShareNotifier.showBackgroundProcessing(jobId, displayName, progressText)
-            return
-        }
-
         try {
             setForeground(createForegroundInfo(progressText))
             backgroundShareNotifier.cancelBackgroundProcessing(jobId)
         } catch (e: IllegalStateException) {
             if (!isForegroundStartDenied(e)) throw e
 
-            foregroundUnavailable = true
             android.util.Log.w(
                 "TranscriptionWorker",
-                "Foreground service start denied. Continuing without foreground service notification.",
+                "Foreground service start denied after execution began.",
                 e,
             )
-            backgroundShareNotifier.showBackgroundProcessing(jobId, displayName, progressText)
+            throw e
         }
     }
 
@@ -86,10 +79,21 @@ class TranscriptionWorker @AssistedInject constructor(
         val jobId = inputData.getInt(TranscriptionQueueService.QUEUED_JOB_ID_INPUT, -1)
         if (jobId == -1) return Result.failure()
         val speakerLabelPrefix = inputData.getString(TranscriptionQueueService.SPEAKER_LABEL_PREFIX_INPUT).orEmpty()
+        try {
+            setForeground(createForegroundInfo("Starting transcription..."))
+        } catch (e: IllegalStateException) {
+            if (!isForegroundStartDenied(e)) throw e
+            return if (queueService.onForegroundPromotionDenied(jobId)) {
+                Result.success()
+            } else {
+                Result.retry()
+            }
+        }
 
         return when (
             runner.runJob(
                 jobId = jobId,
+                executionOwnerId = id.toString(),
                 speakerLabelPrefix = speakerLabelPrefix,
                 onProgressNotification = ::updateNotification,
             )
@@ -102,6 +106,7 @@ class TranscriptionWorker @AssistedInject constructor(
                 queueService.onExecutionFinished(jobId)
                 Result.success()
             }
+            JobRunOutcome.Superseded -> Result.success()
             JobRunOutcome.Retry -> Result.retry()
             JobRunOutcome.Failure -> {
                 queueService.onExecutionFinished(jobId)

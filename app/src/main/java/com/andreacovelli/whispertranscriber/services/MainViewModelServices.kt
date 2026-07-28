@@ -13,6 +13,7 @@ import androidx.work.Constraints
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.andreacovelli.whispertranscriber.BackgroundShareJobService
@@ -20,6 +21,7 @@ import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.TranscriptionWorker
 import com.andreacovelli.whispertranscriber.background.BackgroundShareNotifier
 import com.andreacovelli.whispertranscriber.background.PostTranscriptionWorkSpec
+import com.andreacovelli.whispertranscriber.data.HistoryJobCleanup
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
 import com.andreacovelli.whispertranscriber.queue.JobExecutionBackend
@@ -31,16 +33,19 @@ import com.andreacovelli.whispertranscriber.queue.executionBackendOrDefault
 import com.andreacovelli.whispertranscriber.queue.resolveShareExecutionBackend
 import com.andreacovelli.whispertranscriber.queue.supportedOnThisDevice
 import com.andreacovelli.whispertranscriber.queue.toPersistedConfig
+import com.andreacovelli.whispertranscriber.security.GenAiClientFactory
 import com.andreacovelli.whispertranscriber.security.useGenAiClient
 import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
 import com.andreacovelli.whispertranscriber.settings.ApiKeyState
 import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.summary.TranscriptionSummarizationRepository
-import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_CANCELLED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
+import com.andreacovelli.whispertranscriber.transcription.MicrosoftSpeechRegion
 import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_SUMMARIZING
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
+import com.google.genai.errors.ApiException
+import com.google.genai.errors.GenAiIOException
 import com.google.genai.types.Content
 import com.google.genai.types.GenerateContentConfig
 import com.google.genai.types.Part
@@ -89,6 +94,7 @@ class TranscriptionQueueService @Inject constructor(
         preferImmediateBackgroundStart: Boolean = false,
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec? = null,
     ): QueuedShareResult {
+        repository.requireQueueCapacity(uris.size)
         val preparedAudio = queuedAudioStore.prepareSharedAudio(uris)
         return enqueuePreparedSharedAudio(
             preparedAudio = preparedAudio,
@@ -125,35 +131,37 @@ class TranscriptionQueueService @Inject constructor(
             )
 
         try {
-            preparedAudio.forEach { prepared ->
-                val jobId = repository.addJob(
-                    TranscriptionJob(
-                        uri = prepared.originalUri.toString(),
-                        displayName = prepared.displayName,
-                        sourceMimeType = prepared.mimeType,
-                        stagedFilePath = prepared.stagedFile.absolutePath,
-                        providerName = provider.name,
-                        requestedModel = requestedModel,
-                        executionBackend = executionBackend.name,
-                        summarizeAfterTranscription = persistedPostTranscriptionConfig.summarizeAfterTranscription,
-                        notifyResult = persistedPostTranscriptionConfig.notifyResult,
-                        queuedSummarizerProviderName = persistedPostTranscriptionConfig.queuedSummarizerProviderName,
-                        queuedSummarizerCustomModelName =
-                        persistedPostTranscriptionConfig.queuedSummarizerCustomModelName,
-                        batchId = batchId,
-                        speakerDiarizationEnabled = speakerDiarizationEnabled,
-                        status = JOB_STATUS_QUEUED,
-                        progress = 0f,
-                        isRunning = false,
-                    ),
-                ).toInt()
+            val jobs = preparedAudio.map { prepared ->
+                TranscriptionJob(
+                    uri = prepared.originalUri.toString(),
+                    displayName = prepared.displayName,
+                    sourceMimeType = prepared.mimeType,
+                    stagedFilePath = prepared.stagedFile.absolutePath,
+                    providerName = provider.name,
+                    requestedModel = requestedModel,
+                    executionBackend = executionBackend.name,
+                    summarizeAfterTranscription = persistedPostTranscriptionConfig.summarizeAfterTranscription,
+                    notifyResult = persistedPostTranscriptionConfig.notifyResult,
+                    queuedSummarizerProviderName = persistedPostTranscriptionConfig.queuedSummarizerProviderName,
+                    queuedSummarizerCustomModelName =
+                    persistedPostTranscriptionConfig.queuedSummarizerCustomModelName,
+                    batchId = batchId,
+                    speakerDiarizationEnabled = speakerDiarizationEnabled,
+                    status = JOB_STATUS_QUEUED,
+                    progress = 0f,
+                    isRunning = false,
+                )
+            }
+            val jobIds = repository.addJobsWithinCapacity(jobs)
+            preparedAudio.zip(jobIds).forEach { (prepared, rawJobId) ->
+                val jobId = rawJobId.toInt()
                 backgroundShareNotifier.showBackgroundProcessing(
                     jobId = jobId,
                     displayName = prepared.displayName,
                     message = context.getString(R.string.background_share_waiting_to_start_notification_body),
                 )
-                pendingPreparedAudio.remove(prepared)
             }
+            pendingPreparedAudio.clear()
             scheduleNextQueuedJobIfIdle()
         } catch (e: IOException) {
             queuedAudioStore.deletePreparedAudio(pendingPreparedAudio)
@@ -180,7 +188,7 @@ class TranscriptionQueueService @Inject constructor(
 
     suspend fun cancelJob(jobId: Int) {
         val job = repository.getJob(jobId)
-        repository.updateError(jobId, "Cancelled", false, JOB_STATUS_CANCELLED)
+        repository.cancelJob(jobId)
         cancelScheduledExecution(job)
         backgroundShareNotifier.cancelResult(jobId)
         backgroundShareNotifier.cancelRetryScheduled(jobId)
@@ -199,11 +207,35 @@ class TranscriptionQueueService @Inject constructor(
 
     suspend fun deleteJob(jobId: Int) {
         val job = repository.getJob(jobId)
+        repository.invalidateOwners(jobId)
         cancelScheduledExecution(job)
         backgroundShareNotifier.cancelResult(jobId)
         backgroundShareNotifier.cancelRetryScheduled(jobId)
         backgroundShareNotifier.cancelBackgroundProcessing(jobId)
         queuedAudioStore.deleteStagedFile(repository.deleteJob(jobId))
+        scheduleNextQueuedJobIfIdle()
+    }
+
+    suspend fun cancelRemovedHistoryJobs(jobs: List<HistoryJobCleanup>) {
+        jobs.forEach { job ->
+            cancelScheduledExecution(job.jobId)
+            backgroundShareNotifier.cancelResult(job.jobId)
+            backgroundShareNotifier.cancelRetryScheduled(job.jobId)
+            backgroundShareNotifier.cancelBackgroundProcessing(job.jobId)
+            queuedAudioStore.deleteStagedFile(job.stagedFilePath)
+        }
+        scheduleNextQueuedJobIfIdle()
+    }
+
+    suspend fun clearJobTranscription(jobId: Int) {
+        val job = repository.getJob(jobId)
+        repository.invalidateOwners(jobId)
+        cancelScheduledExecution(job)
+        if (repository.clearJobTranscription(jobId)) {
+            backgroundShareNotifier.cancelResult(jobId)
+            backgroundShareNotifier.cancelRetryScheduled(jobId)
+            backgroundShareNotifier.cancelBackgroundProcessing(jobId)
+        }
         scheduleNextQueuedJobIfIdle()
     }
 
@@ -214,6 +246,7 @@ class TranscriptionQueueService @Inject constructor(
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec? = null,
     ) {
         val existingJob = repository.getJob(jobId)
+        repository.invalidateOwners(jobId)
         cancelScheduledExecution(existingJob)
         backgroundShareNotifier.cancelResult(jobId)
         backgroundShareNotifier.cancelRetryScheduled(jobId)
@@ -255,8 +288,68 @@ class TranscriptionQueueService @Inject constructor(
         }
 
     suspend fun resumePendingQueue() {
-        repository.resetStaleJobs()
         scheduleNextQueuedJobIfIdle()
+    }
+
+    suspend fun recoverAndMaintainQueue() {
+        repository.cancelOrphanedUiSummaries()
+        val expiredCards = repository.deleteExpiredTerminalCards()
+        expiredCards.forEach { expired ->
+            backgroundShareNotifier.cancelResult(expired.jobId)
+            queuedAudioStore.deleteStagedFile(expired.stagedFilePath)
+        }
+
+        val recoverableJobs = repository.getRecoverableJobs()
+        recoverableJobs.forEach { job ->
+            if (!hasActiveSchedulerEntry(job)) {
+                repository.requeueOrphanedExecution(job.id, job.executionOwnerId)
+            }
+        }
+
+        val referencedPaths = repository.getReferencedStagedFilePaths()
+        val cleanup = queuedAudioStore.cleanupManagedFiles(referencedPaths)
+        android.util.Log.i(
+            "QueueMaintenance",
+            "Queue maintenance removed ${expiredCards.size} expired terminal cards, " +
+                "${cleanup.tempFilesDeleted} temporary and " +
+                "${cleanup.orphanFilesDeleted} orphaned staged files.",
+        )
+        scheduleNextQueuedJobIfIdle()
+    }
+
+    suspend fun cancelBackgroundSummaryIfRunning(jobId: Int): Boolean {
+        val job = repository.getJob(jobId) ?: return false
+        if (!job.isRunning || !job.isSummarizing) return false
+        repository.cancelJob(jobId)
+        cancelScheduledExecution(job)
+        backgroundShareNotifier.cancelBackgroundProcessing(jobId)
+        backgroundShareNotifier.cancelRetryScheduled(jobId)
+        scheduleNextQueuedJobIfIdle()
+        return true
+    }
+
+    suspend fun onForegroundPromotionDenied(jobId: Int): Boolean {
+        val job = repository.getJob(jobId) ?: return false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            repository.updateExecutionBackend(jobId, JobExecutionBackend.USER_INITIATED_JOB.name)
+            val userInitiatedJob = job.copy(executionBackend = JobExecutionBackend.USER_INITIATED_JOB.name)
+            if (enqueueUserInitiatedJob(userInitiatedJob)) {
+                backgroundShareNotifier.showBackgroundProcessing(
+                    jobId,
+                    job.displayName,
+                    context.getString(R.string.transcription_foreground_denied_switching_backend),
+                )
+                return true
+            }
+        }
+
+        repository.updateExecutionBackend(jobId, JobExecutionBackend.WORK_MANAGER.name)
+        backgroundShareNotifier.showFailure(
+            jobId = jobId,
+            displayName = job.displayName,
+            message = context.getString(R.string.transcription_foreground_denied_reopen),
+        )
+        return false
     }
 
     private suspend fun resolveAutomaticSummarizationWorkSpec(): PostTranscriptionWorkSpec? {
@@ -276,11 +369,6 @@ class TranscriptionQueueService @Inject constructor(
             summarizationSettings = settings.getSummarizationSettings(),
         )
     }
-
-    suspend fun cleanupOldTempFiles(
-        tempFileMaxAgeMs: Long = TimeUnit.DAYS.toMillis(3),
-        stagedFileMaxAgeMs: Long = TimeUnit.DAYS.toMillis(7),
-    ) = queuedAudioStore.cleanupOldTempFiles(tempFileMaxAgeMs, stagedFileMaxAgeMs)
 
     suspend fun scheduleNextQueuedJobIfIdle(): Boolean {
         if (repository.countBlockingJobs() > 0) return false
@@ -314,6 +402,27 @@ class TranscriptionQueueService @Inject constructor(
             }
         }
     }
+
+    private suspend fun hasActiveSchedulerEntry(job: TranscriptionJob): Boolean =
+        when (job.executionBackendOrDefault()) {
+            JobExecutionBackend.WORK_MANAGER -> workManager.getWorkInfosForUniqueWorkFlow(jobWorkName(job.id))
+                .first()
+                .any { workInfo ->
+                    workInfo.state == WorkInfo.State.ENQUEUED ||
+                        workInfo.state == WorkInfo.State.RUNNING ||
+                        workInfo.state == WorkInfo.State.BLOCKED
+                }
+            JobExecutionBackend.USER_INITIATED_JOB -> {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    false
+                } else {
+                    context.getSystemService(JobScheduler::class.java)
+                        ?.allPendingJobs
+                        ?.any { pending -> pending.id == backgroundShareSchedulerJobId(job.id) }
+                        ?: false
+                }
+            }
+        }
 
     private fun enqueueWorker(job: TranscriptionJob): Boolean {
         val workRequestBuilder = OneTimeWorkRequestBuilder<TranscriptionWorker>()
@@ -368,10 +477,14 @@ class TranscriptionQueueService @Inject constructor(
     private fun cancelScheduledExecution(job: TranscriptionJob?) {
         if (job == null) return
 
-        workManager.cancelUniqueWork(jobWorkName(job.id))
-        workManager.cancelAllWorkByTag(jobTag(job.id))
+        cancelScheduledExecution(job.id)
+    }
+
+    private fun cancelScheduledExecution(jobId: Int) {
+        workManager.cancelUniqueWork(jobWorkName(jobId))
+        workManager.cancelAllWorkByTag(jobTag(jobId))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            context.getSystemService(JobScheduler::class.java)?.cancel(backgroundShareSchedulerJobId(job.id))
+            context.getSystemService(JobScheduler::class.java)?.cancel(backgroundShareSchedulerJobId(jobId))
         }
     }
 
@@ -411,22 +524,6 @@ internal fun resolveMicrosoftSpeechKeyValidationResults(codes: List<Int>): KeyVa
     val reportedCode = codes.firstOrNull { it == 404 || it == 405 || it == 400 || it == 429 || it in 500..599 }
         ?: codes.first()
     return KeyValidationResult("Validation failed: HTTP $reportedCode")
-}
-
-internal fun resolveMicrosoftSpeechRegionValidationResults(
-    codes: List<Int>,
-    normalizedRegion: String,
-): RegionValidationResult {
-    if (codes.isEmpty()) return RegionValidationResult(errorMessage = "Validation failed")
-    if (codes.any { it == 200 || it == 400 || it == 401 || it == 403 || it == 405 }) {
-        return RegionValidationResult(normalizedRegion = normalizedRegion)
-    }
-    if (codes.any { it == 404 }) {
-        return RegionValidationResult(errorMessage = "Region \"$normalizedRegion\" not found")
-    }
-
-    val reportedCode = codes.firstOrNull { it == 429 || it in 500..599 } ?: codes.first()
-    return RegionValidationResult(errorMessage = "Could not verify region: HTTP $reportedCode")
 }
 
 internal fun resolveMicrosoftSpeechRegionIOExceptionMessage(normalizedRegion: String, error: IOException): String {
@@ -528,61 +625,43 @@ class ValidationService @Inject constructor(
     }
 
     suspend fun validateMicrosoftSpeechKey(rawKey: String, region: String): KeyValidationResult {
-        val normalizedRegion = region.trim().lowercase()
-        if (normalizedRegion.isBlank()) {
-            return KeyValidationResult("Enter an Azure Speech region first")
-        }
+        val validatedRegion = MicrosoftSpeechRegion.parseOrNull(region)
+            ?: return KeyValidationResult("Enter a valid lowercase Azure Speech region first")
 
         return try {
-            val codes = probeMicrosoftSpeechRegion(normalizedRegion, rawKey)
+            val codes = probeMicrosoftSpeechKey(validatedRegion, rawKey)
             resolveMicrosoftSpeechKeyValidationResults(codes)
         } catch (e: IOException) {
-            KeyValidationResult(resolveMicrosoftSpeechRegionIOExceptionMessage(normalizedRegion, e))
+            KeyValidationResult(resolveMicrosoftSpeechRegionIOExceptionMessage(validatedRegion.value, e))
         }
     }
 
-    suspend fun validateMicrosoftSpeechRegion(region: String): RegionValidationResult {
-        val normalizedRegion = region.trim().lowercase()
-        if (normalizedRegion.isBlank()) {
-            return RegionValidationResult(errorMessage = "Enter an Azure Speech region")
-        }
-
-        val keyChars = settings.getMicrosoftSpeechApiKey()
-        val savedKey = try {
-            keyChars
-                ?.takeIf { it.isNotEmpty() }
-                ?.concatToString()
-        } finally {
-            keyChars?.fill('\u0000')
-        }
-
-        return try {
-            val codes = probeMicrosoftSpeechRegion(normalizedRegion, savedKey)
-            resolveMicrosoftSpeechRegionValidationResults(codes, normalizedRegion)
-        } catch (e: IOException) {
-            RegionValidationResult(errorMessage = resolveMicrosoftSpeechRegionIOExceptionMessage(normalizedRegion, e))
-        }
+    suspend fun validateMicrosoftSpeechRegion(region: String): RegionValidationResult = try {
+        RegionValidationResult(normalizedRegion = MicrosoftSpeechRegion.parse(region).value)
+    } catch (error: IllegalArgumentException) {
+        RegionValidationResult(errorMessage = error.message ?: "Enter a valid Azure Speech region")
     }
 
-    private fun buildMicrosoftSpeechValidationUrls(normalizedRegion: String): List<String> = listOf(
-        "https://$normalizedRegion.api.cognitive.microsoft.com/speechtotext/transcriptions/locales" +
-            "?api-version=$MICROSOFT_SPEECH_LOCALES_API_VERSION",
-        "https://$normalizedRegion.api.cognitive.microsoft.com/speechtotext/transcriptions/locales" +
-            "?api-version=$MICROSOFT_SPEECH_LOCALES_FALLBACK_API_VERSION",
-        "https://$normalizedRegion.api.cognitive.microsoft.com/speechtotext/v3.2-preview.2/transcriptions/locales",
+    private fun buildMicrosoftSpeechValidationUrls(region: MicrosoftSpeechRegion) = listOf(
+        region.buildEndpoint(
+            encodedPath = "speechtotext/transcriptions/locales",
+            apiVersion = MICROSOFT_SPEECH_LOCALES_API_VERSION,
+        ),
+        region.buildEndpoint(
+            encodedPath = "speechtotext/transcriptions/locales",
+            apiVersion = MICROSOFT_SPEECH_LOCALES_FALLBACK_API_VERSION,
+        ),
     )
 
-    private suspend fun probeMicrosoftSpeechRegion(normalizedRegion: String, rawKey: String? = null): List<Int> =
+    private suspend fun probeMicrosoftSpeechKey(region: MicrosoftSpeechRegion, rawKey: String): List<Int> =
         withContext(ioDispatcher) {
             coroutineScope {
-                buildMicrosoftSpeechValidationUrls(normalizedRegion).map { url ->
+                buildMicrosoftSpeechValidationUrls(region).map { url ->
                     async {
                         val requestBuilder = Request.Builder()
                             .url(url)
                             .get()
-                        if (!rawKey.isNullOrBlank()) {
-                            requestBuilder.header(MICROSOFT_SPEECH_KEY_HEADER, rawKey)
-                        }
+                            .header(MICROSOFT_SPEECH_KEY_HEADER, rawKey)
                         okHttpClient.newCall(requestBuilder.build()).execute().use { response -> response.code }
                     }
                 }.awaitAll()
@@ -601,6 +680,7 @@ class SummarizationService @Inject constructor(
     private val settings: ApiKeyManager,
     private val repository: TranscriptionRepository,
     private val summarizationRepository: TranscriptionSummarizationRepository,
+    private val genAiClientFactory: GenAiClientFactory,
     @param:ApplicationContext private val applicationContext: Context,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
@@ -608,6 +688,7 @@ class SummarizationService @Inject constructor(
         jobId: Int,
         settings: SummarizationSettings,
         allowResummarize: Boolean,
+        executionOwnerId: String? = null,
         fallbackStatusMessage: String = "",
         onStatusUpdate: suspend (String) -> Unit = {},
     ): SummarizationResult {
@@ -617,17 +698,21 @@ class SummarizationService @Inject constructor(
             return SummarizationResult(statusMessage = "Error: ${e.message}", errorMessage = e.message)
         }
 
+        val attemptId = UUID.randomUUID().toString()
         val claimed = if (allowResummarize) {
             summarizationRepository.claimManualSummary(
                 jobId,
+                attemptId,
                 summarizerSelection.provider.name,
                 summarizerSelection.modelName,
             )
         } else {
             summarizationRepository.claimAutoSummary(
                 jobId,
+                attemptId,
                 summarizerSelection.provider.name,
                 summarizerSelection.modelName,
+                executionOwnerId,
             )
         }
         if (!claimed) return SummarizationResult(statusMessage = fallbackStatusMessage)
@@ -636,15 +721,14 @@ class SummarizationService @Inject constructor(
         return try {
             val job = repository.getJob(jobId)
             if (job == null) {
-                summarizationRepository.setSummarizing(jobId, false)
+                summarizationRepository.invalidateSummaryAttempt(jobId, attemptId)
                 summarizingCleared = true
                 return SummarizationResult(statusMessage = fallbackStatusMessage)
             }
 
-            val text = job.transcript
+            val text = repository.getTranscriptForJob(jobId)
             if (text.isBlank()) {
-                summarizationRepository.setSummarizing(jobId, false)
-                summarizationRepository.updateSummaryStatus(jobId, "")
+                summarizationRepository.invalidateSummaryAttempt(jobId, attemptId)
                 summarizingCleared = true
                 SummarizationResult(
                     statusMessage = applicationContext.getString(
@@ -654,7 +738,9 @@ class SummarizationService @Inject constructor(
                 )
             } else {
                 val summarizingMessage = applicationContext.getString(R.string.transcription_notification_summarizing)
-                summarizationRepository.updateSummaryStatus(jobId, SUMMARY_STATUS_SUMMARIZING)
+                if (!summarizationRepository.updateSummaryStatus(jobId, attemptId, SUMMARY_STATUS_SUMMARIZING)) {
+                    return SummarizationResult(statusMessage = fallbackStatusMessage)
+                }
                 onStatusUpdate(summarizingMessage)
                 val apiKey = requireGeminiApiKey()
                 val summary = try {
@@ -662,38 +748,48 @@ class SummarizationService @Inject constructor(
                 } finally {
                     apiKey.fill('\u0000')
                 }
-                summarizationRepository.succeedSummarization(
+                val saved = summarizationRepository.succeedSummarization(
                     jobId,
+                    attemptId,
                     summary.text,
                     summarizerSelection.provider.name,
                     summary.model,
                 )
                 summarizingCleared = true
-                repository.upsertHistoryForSummarization(
-                    job = job,
-                    summary = summary.text,
-                    summaryProviderName = summarizerSelection.provider.name,
-                    summaryModel = summary.model,
-                )
+                if (!saved) return SummarizationResult(statusMessage = fallbackStatusMessage)
                 SummarizationResult(
                     statusMessage = applicationContext.getString(R.string.summarization_status_generated),
                 )
             }
         } catch (e: CancellationException) {
+            withContext(NonCancellable + ioDispatcher) {
+                summarizationRepository.invalidateSummaryAttempt(jobId, attemptId)
+            }
+            summarizingCleared = true
             throw e
+        } catch (e: ApiException) {
+            val message = "Gemini summarization error (HTTP ${e.code()}): ${e.message() ?: "request failed"}"
+            summarizationRepository.failSummarization(jobId, attemptId, message)
+            summarizingCleared = true
+            SummarizationResult("Summarization error: $message", message)
+        } catch (e: GenAiIOException) {
+            val message = e.message ?: "Gemini summarization request failed"
+            summarizationRepository.failSummarization(jobId, attemptId, message)
+            summarizingCleared = true
+            SummarizationResult("Summarization error: $message", message)
         } catch (e: IOException) {
-            summarizationRepository.failSummarization(jobId, e.message)
+            summarizationRepository.failSummarization(jobId, attemptId, e.message)
             summarizingCleared = true
             SummarizationResult("Summarization error: ${e.message}", e.message)
         } catch (e: IllegalStateException) {
-            summarizationRepository.failSummarization(jobId, e.message)
+            summarizationRepository.failSummarization(jobId, attemptId, e.message)
             summarizingCleared = true
             val message = e.message ?: "Summarization failed"
             SummarizationResult("Error: $message", message)
         } finally {
             if (!summarizingCleared) {
                 withContext(NonCancellable + ioDispatcher) {
-                    summarizationRepository.setSummarizing(jobId, false)
+                    summarizationRepository.invalidateSummaryAttempt(jobId, attemptId)
                 }
             }
         }
@@ -739,7 +835,7 @@ class SummarizationService @Inject constructor(
     }
 
     private suspend fun requestSummary(text: String, apiKey: CharArray, modelName: String): SummaryData =
-        apiKey.useGenAiClient { client ->
+        apiKey.useGenAiClient(genAiClientFactory) { client ->
             val prompt = """
                 You are an expert summarizer.
                 Provide a concise, easy-to-read summary of the following text, in the same language.

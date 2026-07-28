@@ -6,7 +6,7 @@ import androidx.work.Configuration
 import com.andreacovelli.whispertranscriber.di.ApplicationScope
 import com.andreacovelli.whispertranscriber.queue.WORK_MANAGER_JOB_ID_RANGE_MAX
 import com.andreacovelli.whispertranscriber.queue.WORK_MANAGER_JOB_ID_RANGE_MIN
-import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
+import com.andreacovelli.whispertranscriber.services.TranscriptionQueueService
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
@@ -20,7 +20,7 @@ class WhisperTranscriberApp :
     lateinit var workerFactory: HiltWorkerFactory
 
     @Inject
-    lateinit var repository: TranscriptionRepository
+    lateinit var queueService: TranscriptionQueueService
 
     @Inject
     @ApplicationScope
@@ -29,7 +29,7 @@ class WhisperTranscriberApp :
     override fun onCreate() {
         super.onCreate()
         applicationScope.launch {
-            repository.resetStaleJobs()
+            queueService.recoverAndMaintainQueue()
         }
     }
 

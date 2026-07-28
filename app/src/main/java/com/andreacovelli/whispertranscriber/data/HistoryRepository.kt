@@ -3,6 +3,7 @@ package com.andreacovelli.whispertranscriber.data
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
+import androidx.room.withTransaction
 import com.andreacovelli.whispertranscriber.history.buildHistorySearchQuery
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -23,10 +24,12 @@ interface HistoryRepository {
 
     suspend fun updateText(id: Int, text: String)
 
-    suspend fun deleteById(id: Int)
+    suspend fun deleteById(id: Int): List<HistoryJobCleanup>
 
-    suspend fun deleteAll()
+    suspend fun deleteAll(): List<HistoryJobCleanup>
 }
+
+data class HistoryJobCleanup(val jobId: Int, val stagedFilePath: String?)
 
 private fun Long.toHistoryId(): Int {
     require(this in 0..Int.MAX_VALUE.toLong()) { "History id out of Int range: $this" }
@@ -34,7 +37,11 @@ private fun Long.toHistoryId(): Int {
 }
 
 @Singleton
-class RoomHistoryRepository @Inject constructor(private val historyDao: TranscriptionHistoryDao) : HistoryRepository {
+class RoomHistoryRepository @Inject constructor(
+    private val db: AppDatabase,
+    private val historyDao: TranscriptionHistoryDao,
+    private val jobDao: TranscriptionJobDao,
+) : HistoryRepository {
     override fun getPagedHistory(rawQuery: String): Flow<PagingData<TranscriptionHistory>> {
         val ftsQuery = buildHistorySearchQuery(rawQuery)
         return Pager(
@@ -76,11 +83,19 @@ class RoomHistoryRepository @Inject constructor(private val historyDao: Transcri
         historyDao.updateText(id, text)
     }
 
-    override suspend fun deleteById(id: Int) {
+    override suspend fun deleteById(id: Int): List<HistoryJobCleanup> = db.withTransaction {
+        val linkedJobs = jobDao.getJobCleanupByHistoryId(id)
+        jobDao.invalidateOwnersByHistoryId(id)
+        jobDao.deleteByHistoryId(id)
         historyDao.deleteById(id)
+        linkedJobs
     }
 
-    override suspend fun deleteAll() {
+    override suspend fun deleteAll(): List<HistoryJobCleanup> = db.withTransaction {
+        val linkedJobs = jobDao.getAllHistoryLinkedJobCleanup()
+        jobDao.invalidateAllHistoryLinkedOwners()
+        jobDao.deleteAllWithHistory()
         historyDao.deleteAllHistory()
+        linkedJobs
     }
 }
