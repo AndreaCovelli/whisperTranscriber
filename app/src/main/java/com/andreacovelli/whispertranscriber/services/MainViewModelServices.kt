@@ -838,7 +838,7 @@ class SummarizationService @Inject constructor(
     }
 
     private suspend fun requestSummary(text: String, apiKey: CharArray, modelName: String): SummaryData =
-        apiKey.useGenAiClient(genAiClientFactory) { client ->
+        apiKey.useGenAiClient(genAiClientFactory, ioDispatcher) { client ->
             val prompt = """
                 You are an expert summarizer.
                 Provide a concise, easy-to-read summary of the following text, in the same language.
@@ -850,12 +850,10 @@ class SummarizationService @Inject constructor(
                 Part.fromText(prompt),
                 Part.fromText(text),
             )
-            val response = withContext(ioDispatcher) {
-                val config = GenerateContentConfig.builder()
-                    .responseMimeType("text/plain")
-                    .build()
-                client.models.generateContent(modelName, content, config)
-            }
+            val config = GenerateContentConfig.builder()
+                .responseMimeType("text/plain")
+                .build()
+            val response = client.models.generateContent(modelName, content, config)
             SummaryData(
                 text = response.text()?.trim().orEmpty().ifBlank { "No summary generated." },
                 model = response.modelVersion().orElse(null)?.takeIf { it.isNotBlank() } ?: modelName,
