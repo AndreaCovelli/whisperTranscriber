@@ -2,6 +2,7 @@ package com.andreacovelli.whispertranscriber
 
 import com.andreacovelli.whispertranscriber.background.BackgroundShareResultKind
 import com.andreacovelli.whispertranscriber.background.RESULT_TEXT_PAGE_MAX_LENGTH
+import com.andreacovelli.whispertranscriber.background.TimedLruCache
 import com.andreacovelli.whispertranscriber.background.buildResultPageIntentData
 import com.andreacovelli.whispertranscriber.background.resolveNotificationTextPage
 import com.andreacovelli.whispertranscriber.background.splitNotificationTextPages
@@ -12,6 +13,39 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BackgroundShareSupportTest {
+    @Test
+    fun timedLruCache_evictsLeastRecentlyUsedEntryAtCapacity() {
+        val cache = TimedLruCache<Int, String>(maxEntries = 2, ttlMillis = 1_000)
+
+        cache[1] = "one"
+        cache[2] = "two"
+        assertEquals("one", cache[1])
+        cache[3] = "three"
+
+        assertEquals("one", cache[1])
+        assertEquals(null, cache[2])
+        assertEquals("three", cache[3])
+        assertEquals(2, cache.size())
+    }
+
+    @Test
+    fun timedLruCache_discardsEntriesAtTtlBoundary() {
+        var now = 100L
+        val cache = TimedLruCache<Int, String>(
+            maxEntries = 20,
+            ttlMillis = 50,
+            nowMillis = { now },
+        )
+
+        cache[1] = "one"
+        now = 149L
+        assertEquals("one", cache[1])
+        now = 150L
+
+        assertEquals(null, cache[1])
+        assertEquals(0, cache.size())
+    }
+
     @Test
     fun splitNotificationTextPages_keepsShortTextOnOnePage() {
         assertEquals(

@@ -10,6 +10,8 @@ import com.andreacovelli.whispertranscriber.data.RoomHistoryRepository
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistoryDao
 import com.andreacovelli.whispertranscriber.data.TranscriptionJobDao
 import com.andreacovelli.whispertranscriber.data.TranscriptionJobSummarizationDao
+import com.andreacovelli.whispertranscriber.security.DefaultGenAiClientFactory
+import com.andreacovelli.whispertranscriber.security.GenAiClientFactory
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -91,4 +93,8 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindHistoryRepository(repository: RoomHistoryRepository): HistoryRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindGenAiClientFactory(factory: DefaultGenAiClientFactory): GenAiClientFactory
 }

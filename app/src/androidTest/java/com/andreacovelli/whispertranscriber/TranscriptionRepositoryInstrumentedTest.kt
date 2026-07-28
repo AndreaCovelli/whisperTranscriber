@@ -14,18 +14,22 @@ import com.andreacovelli.whispertranscriber.transcription.CompletedJobCleanup
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_CANCELLED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_CLEARED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_COMPLETED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_ERROR
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_RETRY_SCHEDULED
+import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_CANCELLED
 import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_GENERATED
 import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_SUMMARIZING
+import com.andreacovelli.whispertranscriber.transcription.TranscriptionData
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -42,7 +46,11 @@ class TranscriptionRepositoryInstrumentedTest {
     fun setUp() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
-        historyRepository = RoomHistoryRepository(db.transcriptionHistoryDao())
+        historyRepository = RoomHistoryRepository(
+            db = db,
+            historyDao = db.transcriptionHistoryDao(),
+            jobDao = db.transcriptionJobDao(),
+        )
         summarizationRepository = TranscriptionSummarizationRepository(
             db = db,
             jobSummarizationDao = db.transcriptionJobSummarizationDao(),
@@ -51,6 +59,7 @@ class TranscriptionRepositoryInstrumentedTest {
         repository = TranscriptionRepository(
             db = db,
             jobDao = db.transcriptionJobDao(),
+            historyDao = db.transcriptionHistoryDao(),
             historyRepository = historyRepository,
         )
     }
@@ -61,7 +70,7 @@ class TranscriptionRepositoryInstrumentedTest {
     }
 
     @Test
-    fun upsertHistoryForSummarization_reinsertsDeletedHistoryAndUpdatesJobReference() = runBlocking {
+    fun deletedHistoryAndTerminalCard_areNotRecreatedByLateSummaryCompletion() = runBlocking {
         val originalHistoryId = historyRepository.insert(
             TranscriptionHistory(
                 text = "Transcript text",
@@ -78,69 +87,53 @@ class TranscriptionRepositoryInstrumentedTest {
                 language = "en",
                 model = "whisper-1",
                 historyId = originalHistoryId,
+                status = JOB_STATUS_COMPLETED,
+                isSummarizing = true,
+                summaryAttemptId = "attempt-1",
             ),
         ).toInt()
         historyRepository.deleteById(originalHistoryId)
 
-        val job = repository.getJob(jobId)
-        assertNotNull(job)
-
-        val restoredHistoryId = repository.upsertHistoryForSummarization(
-            job = requireNotNull(job),
+        val lateSuccess = summarizationRepository.succeedSummarization(
+            id = jobId,
+            attemptId = "attempt-1",
             summary = "New summary",
             summaryProviderName = "GEMINI_FLASH",
             summaryModel = "gemini-2.5-flash",
         )
 
-        val restoredHistory = db.transcriptionHistoryDao().getById(restoredHistoryId)
-        val updatedJob = repository.getJob(jobId)
-
-        assertNotEquals(originalHistoryId, restoredHistoryId)
-        assertNotNull(restoredHistory)
-        assertEquals("Transcript text", restoredHistory?.text)
-        assertEquals("New summary", restoredHistory?.summary)
-        assertEquals("GEMINI_FLASH", restoredHistory?.summaryProviderName)
-        assertEquals("gemini-2.5-flash", restoredHistory?.summaryModel)
-        assertEquals(restoredHistoryId, updatedJob?.historyId)
+        assertFalse(lateSuccess)
+        assertNull(db.transcriptionHistoryDao().getById(originalHistoryId))
+        assertNull(repository.getJob(jobId))
     }
 
     @Test
-    fun upsertHistoryForSummarization_usesLatestHistoryIdFromDatabase() = runBlocking {
+    fun joinedJobProjection_readsTranscriptAndSummaryFromHistory() = runBlocking {
+        val historyId = historyRepository.insert(
+            TranscriptionHistory(
+                text = "Authoritative transcript",
+                language = "en",
+                model = "gemini-2.5-flash",
+                summary = "Authoritative summary",
+                displayName = "meeting.wav",
+            ),
+        )
         val jobId = db.transcriptionJobDao().insert(
             TranscriptionJob(
-                uri = "content://test/latest-history.wav",
-                displayName = "latest-history.wav",
-                transcript = "Transcript text",
-                language = "en",
-                model = "whisper-1",
+                uri = "content://test/meeting.wav",
+                displayName = "meeting.wav",
+                status = JOB_STATUS_COMPLETED,
+                transcript = "",
+                summary = "",
+                historyId = historyId,
+                finishedAt = 100,
             ),
         ).toInt()
-        val staleJobSnapshot = requireNotNull(repository.getJob(jobId))
-        val currentHistoryId = historyRepository.insert(
-            TranscriptionHistory(
-                text = "Transcript text",
-                language = "en",
-                model = "whisper-1",
-                displayName = "latest-history.wav",
-            ),
-        )
-        db.transcriptionJobDao().updateHistoryId(jobId, currentHistoryId)
 
-        val updatedHistoryId = repository.upsertHistoryForSummarization(
-            job = staleJobSnapshot,
-            summary = "New summary",
-            summaryProviderName = "GEMINI_FLASH",
-            summaryModel = "gemini-2.5-flash",
-        )
+        val projected = repository.jobsState.first().single { it.id == jobId }
 
-        val updatedHistory = db.transcriptionHistoryDao().getById(currentHistoryId)
-        val updatedJob = repository.getJob(jobId)
-
-        assertEquals(currentHistoryId, updatedHistoryId)
-        assertEquals("New summary", updatedHistory?.summary)
-        assertEquals("GEMINI_FLASH", updatedHistory?.summaryProviderName)
-        assertEquals("gemini-2.5-flash", updatedHistory?.summaryModel)
-        assertEquals(currentHistoryId, updatedJob?.historyId)
+        assertEquals("Authoritative transcript", projected.transcript)
+        assertEquals("Authoritative summary", projected.summary)
     }
 
     @Test
@@ -162,12 +155,14 @@ class TranscriptionRepositoryInstrumentedTest {
                 model = "whisper-1",
                 historyId = historyId,
                 isSummarizing = true,
+                summaryAttemptId = "attempt-1",
                 summaryStatus = SUMMARY_STATUS_SUMMARIZING,
             ),
         ).toInt()
 
         summarizationRepository.succeedSummarization(
             id = jobId,
+            attemptId = "attempt-1",
             summary = "New summary",
             summaryProviderName = "GEMINI_FLASH",
             summaryModel = "gemini-2.5-flash",
@@ -176,7 +171,7 @@ class TranscriptionRepositoryInstrumentedTest {
         val updatedJob = repository.getJob(jobId)
         val updatedHistory = db.transcriptionHistoryDao().getById(historyId)
 
-        assertEquals("New summary", updatedJob?.summary)
+        assertEquals("", updatedJob?.summary)
         assertEquals("GEMINI_FLASH", updatedJob?.summaryProviderName)
         assertEquals("gemini-2.5-flash", updatedJob?.summaryModel)
         assertEquals(SUMMARY_STATUS_GENERATED, updatedJob?.summaryStatus)
@@ -187,17 +182,54 @@ class TranscriptionRepositoryInstrumentedTest {
     }
 
     @Test
+    fun executionOwner_rejectsConcurrentClaimsAndStaleCompletionWrites() = runBlocking {
+        val jobId = repository.addJob(
+            TranscriptionJob(
+                uri = "content://test/owned.wav",
+                displayName = "owned.wav",
+            ),
+        ).toInt()
+
+        assertNotNull(repository.claimJobForExecution(jobId, "owner-1", "Starting"))
+        assertNull(repository.claimJobForExecution(jobId, "owner-2", "Starting"))
+        assertFalse(repository.updateStatus(jobId, "owner-2", "Stale status"))
+        assertFalse(
+            repository.persistCompletedTranscription(
+                jobId,
+                "owner-2",
+                "owned.wav",
+                TranscriptionData("Stale transcript", "en", "model"),
+            ),
+        )
+        assertFalse(db.transcriptionHistoryDao().hasHistory())
+
+        assertTrue(
+            repository.persistCompletedTranscription(
+                jobId,
+                "owner-1",
+                "owned.wav",
+                TranscriptionData("Durable transcript", "en", "model"),
+            ),
+        )
+        assertEquals("", repository.getJob(jobId)?.transcript)
+        assertEquals("Durable transcript", repository.getTranscriptForJob(jobId))
+        assertNotNull(repository.claimJobForExecution(jobId, "owner-1", "Resuming"))
+    }
+
+    @Test
     fun markRetryScheduled_keepsRetryStateBlockingSequentialQueue() = runBlocking {
         val jobId = repository.addJob(
             TranscriptionJob(
                 uri = "content://test/retry.wav",
                 displayName = "retry.wav",
-                status = "Starting...",
-                isRunning = true,
+                status = JOB_STATUS_QUEUED,
+                isRunning = false,
             ),
         ).toInt()
 
-        repository.markRetryScheduled(jobId)
+        val ownerId = "owner-1"
+        assertNotNull(repository.claimJobForExecution(jobId, ownerId, "Starting..."))
+        repository.markRetryScheduled(jobId, ownerId)
 
         val updatedJob = repository.getJob(jobId)
 
@@ -208,13 +240,14 @@ class TranscriptionRepositoryInstrumentedTest {
     }
 
     @Test
-    fun resetStaleJobs_requeuesBlockingJobsAndMakesThemClaimableAgain() = runBlocking {
+    fun orphanRecovery_requeuesOnlyTheMatchingExecutionOwner() = runBlocking {
         val staleJobId = repository.addJob(
             TranscriptionJob(
                 uri = "content://test/stale.wav",
                 displayName = "stale.wav",
                 status = "Processing...",
                 isRunning = true,
+                executionOwnerId = "owner-1",
             ),
         ).toInt()
         val retryScheduledJobId = repository.addJob(
@@ -223,6 +256,7 @@ class TranscriptionRepositoryInstrumentedTest {
                 displayName = "retry-scheduled.wav",
                 status = JOB_STATUS_RETRY_SCHEDULED,
                 isRunning = false,
+                executionOwnerId = "owner-2",
             ),
         ).toInt()
         val queuedJobId = repository.addJob(
@@ -234,12 +268,16 @@ class TranscriptionRepositoryInstrumentedTest {
             ),
         ).toInt()
 
-        val resetCount = repository.resetStaleJobs()
+        val wrongOwnerReset = repository.requeueOrphanedExecution(staleJobId, "owner-2")
+        val staleReset = repository.requeueOrphanedExecution(staleJobId, "owner-1")
+        val retryReset = repository.requeueOrphanedExecution(retryScheduledJobId, "owner-2")
         val staleJob = repository.getJob(staleJobId)
         val retryScheduledJob = repository.getJob(retryScheduledJobId)
         val untouchedQueuedJob = repository.getJob(queuedJobId)
 
-        assertEquals(2, resetCount)
+        assertFalse(wrongOwnerReset)
+        assertTrue(staleReset)
+        assertTrue(retryReset)
         assertEquals(JOB_STATUS_QUEUED, staleJob?.status)
         assertFalse(staleJob?.isRunning ?: true)
         assertEquals(JOB_STATUS_QUEUED, retryScheduledJob?.status)
@@ -247,8 +285,36 @@ class TranscriptionRepositoryInstrumentedTest {
         assertEquals(JOB_STATUS_QUEUED, untouchedQueuedJob?.status)
         assertFalse(untouchedQueuedJob?.isRunning ?: true)
         assertEquals(0, repository.countBlockingJobs())
-        assertNotNull(repository.claimJobForExecution(staleJobId, "Starting..."))
-        assertNotNull(repository.claimJobForExecution(retryScheduledJobId, "Starting..."))
+        assertNotNull(repository.claimJobForExecution(staleJobId, "new-owner-1", "Starting..."))
+        assertNotNull(repository.claimJobForExecution(retryScheduledJobId, "new-owner-2", "Starting..."))
+    }
+
+    @Test
+    fun orphanRecovery_invalidatesInterruptedBackgroundSummaryAttempt() = runBlocking {
+        val jobId = repository.addJob(
+            TranscriptionJob(
+                uri = "content://test/orphaned-summary.wav",
+                displayName = "orphaned-summary.wav",
+                status = JOB_STATUS_COMPLETED,
+                isRunning = true,
+                isSummarizing = true,
+                autoSummaryAttempted = true,
+                executionOwnerId = "owner-1",
+                summaryAttemptId = "attempt-1",
+                summaryStatus = SUMMARY_STATUS_SUMMARIZING,
+            ),
+        ).toInt()
+
+        assertTrue(repository.requeueOrphanedExecution(jobId, "owner-1"))
+
+        val recovered = repository.getJob(jobId)
+        assertEquals(JOB_STATUS_QUEUED, recovered?.status)
+        assertFalse(recovered?.isRunning ?: true)
+        assertFalse(recovered?.isSummarizing ?: true)
+        assertEquals("", recovered?.executionOwnerId)
+        assertEquals("", recovered?.summaryAttemptId)
+        assertEquals(SUMMARY_STATUS_CANCELLED, recovered?.summaryStatus)
+        assertFalse(recovered?.autoSummaryAttempted ?: true)
     }
 
     @Test
@@ -279,6 +345,39 @@ class TranscriptionRepositoryInstrumentedTest {
         assertTrue(retried)
         assertEquals(JOB_STATUS_QUEUED, updatedJob?.status)
         assertEquals(0, updatedJob?.retryCount)
+    }
+
+    @Test
+    fun retryJob_unlinksOldHistorySoProviderExecutionRunsAgain() = runBlocking {
+        val historyId = historyRepository.insert(
+            TranscriptionHistory(
+                text = "Old transcript",
+                language = "en",
+                displayName = "retry-history.wav",
+            ),
+        )
+        val jobId = repository.addJob(
+            TranscriptionJob(
+                uri = "content://test/retry-history.wav",
+                displayName = "retry-history.wav",
+                status = JOB_STATUS_COMPLETED,
+                historyId = historyId,
+            ),
+        ).toInt()
+
+        repository.retryJob(
+            jobId = jobId,
+            providerName = TranscriptionProvider.GEMINI_FLASH.name,
+            requestedModel = TranscriptionProvider.GEMINI_FLASH.modelName,
+            executionBackend = JobExecutionBackend.WORK_MANAGER.name,
+            summarizeAfterTranscription = false,
+            notifyResult = false,
+            queuedSummarizerProviderName = "",
+            queuedSummarizerCustomModelName = "",
+        )
+
+        assertNull(repository.getJob(jobId)?.historyId)
+        assertNotNull(db.transcriptionHistoryDao().getById(historyId))
     }
 
     @Test
@@ -346,6 +445,45 @@ class TranscriptionRepositoryInstrumentedTest {
                 isRunning = false,
             ),
         ).toInt()
+        val errorJobId = repository.addJob(
+            TranscriptionJob(
+                uri = "content://test/error.wav",
+                displayName = "error.wav",
+                status = JOB_STATUS_ERROR,
+            ),
+        ).toInt()
+        val clearedJobId = repository.addJob(
+            TranscriptionJob(
+                uri = "content://test/cleared.wav",
+                displayName = "cleared.wav",
+                status = JOB_STATUS_CLEARED,
+            ),
+        ).toInt()
+        val runningTerminalId = repository.addJob(
+            TranscriptionJob(
+                uri = "content://test/running-terminal.wav",
+                displayName = "running-terminal.wav",
+                status = JOB_STATUS_COMPLETED,
+                isRunning = true,
+                executionOwnerId = "owner",
+            ),
+        ).toInt()
+        val summarizingTerminalId = repository.addJob(
+            TranscriptionJob(
+                uri = "content://test/summarizing-terminal.wav",
+                displayName = "summarizing-terminal.wav",
+                status = JOB_STATUS_COMPLETED,
+                isSummarizing = true,
+                summaryAttemptId = "attempt",
+            ),
+        ).toInt()
+        val retryJobId = repository.addJob(
+            TranscriptionJob(
+                uri = "content://test/retry.wav",
+                displayName = "retry.wav",
+                status = JOB_STATUS_RETRY_SCHEDULED,
+            ),
+        ).toInt()
 
         val clearedJobs = repository.clearCompletedJobs()
 
@@ -353,11 +491,90 @@ class TranscriptionRepositoryInstrumentedTest {
             listOf(
                 CompletedJobCleanup(jobId = completedJobId, stagedFilePath = "/tmp/completed.wav"),
                 CompletedJobCleanup(jobId = cancelledJobId, stagedFilePath = "/tmp/cancelled.wav"),
+                CompletedJobCleanup(jobId = errorJobId, stagedFilePath = null),
+                CompletedJobCleanup(jobId = clearedJobId, stagedFilePath = null),
             ),
             clearedJobs.sortedBy(CompletedJobCleanup::jobId),
         )
         assertEquals(queuedJobId, repository.getJob(queuedJobId)?.id)
+        assertEquals(retryJobId, repository.getJob(retryJobId)?.id)
+        assertEquals(runningTerminalId, repository.getJob(runningTerminalId)?.id)
+        assertEquals(summarizingTerminalId, repository.getJob(summarizingTerminalId)?.id)
         assertNull(repository.getJob(completedJobId))
         assertNull(repository.getJob(cancelledJobId))
+    }
+
+    @Test
+    fun terminalRetention_removesOldCardButPreservesHistory() = runBlocking {
+        val now = 40L * 24L * 60L * 60L * 1_000L
+        val historyId = historyRepository.insert(
+            TranscriptionHistory(
+                text = "Keep this transcript",
+                language = "en",
+                displayName = "old.wav",
+            ),
+        )
+        val jobId = repository.addJob(
+            TranscriptionJob(
+                uri = "content://test/old.wav",
+                displayName = "old.wav",
+                status = JOB_STATUS_COMPLETED,
+                historyId = historyId,
+                finishedAt = 1,
+            ),
+        ).toInt()
+
+        assertEquals(listOf(jobId), repository.deleteExpiredTerminalCards(now).map { it.jobId })
+        assertNull(repository.getJob(jobId))
+        assertNotNull(db.transcriptionHistoryDao().getById(historyId))
+    }
+
+    @Test
+    fun mainJobProjection_limitsTerminalCardsButIncludesEveryNonterminalJob() = runBlocking {
+        db.transcriptionJobDao().insertAll(
+            (1..105).map { index ->
+                TranscriptionJob(
+                    uri = "content://test/terminal-$index.wav",
+                    displayName = "terminal-$index.wav",
+                    status = JOB_STATUS_COMPLETED,
+                    finishedAt = index.toLong(),
+                )
+            } + TranscriptionJob(
+                uri = "content://test/queued.wav",
+                displayName = "queued.wav",
+                status = JOB_STATUS_QUEUED,
+            ),
+        )
+
+        val projected = repository.jobsState.first()
+
+        assertEquals(101, projected.size)
+        assertTrue(projected.any { it.status == JOB_STATUS_QUEUED })
+        assertEquals(100, projected.count { it.status == JOB_STATUS_COMPLETED })
+    }
+
+    @Test
+    fun addingJobsBeyondQueueCapacity_isRejectedAtomically() = runBlocking {
+        val jobs = (1..50).map { index ->
+            TranscriptionJob(
+                uri = "content://test/$index.wav",
+                displayName = "$index.wav",
+            )
+        }
+        repository.addJobsWithinCapacity(jobs)
+
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking {
+                repository.addJobsWithinCapacity(
+                    listOf(
+                        TranscriptionJob(
+                            uri = "content://test/overflow.wav",
+                            displayName = "overflow.wav",
+                        ),
+                    ),
+                )
+            }
+        }
+        assertEquals(50, db.transcriptionJobDao().countNonterminalJobs())
     }
 }

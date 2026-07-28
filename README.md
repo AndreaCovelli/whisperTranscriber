@@ -22,7 +22,7 @@ An Android app that transcribes audio files using AI — powered by [Microsoft A
 |                          |                                                        |
 |--------------------------|--------------------------------------------------------|
 | **Minimum Android**      | 8.0 Oreo (API 26)                                      |
-| **Target / Compile SDK** | 36 (Android 15)                                        |
+| **Target / Compile SDK** | 36 / 37                                                |
 | **JDK**                  | 21 (resolved automatically via Gradle toolchain)       |
 | **API key**              | Microsoft Speech **or** Gemini (at least one required) |
 
@@ -52,8 +52,14 @@ The APK will be written to `app/build/outputs/apk/debug/`.
 ### 3. Run tests
 
 ```bat
-gradlew.bat testDebugUnitTest          # unit tests
-gradlew.bat connectedAndroidTest       # instrumented tests (requires a device/emulator)
+gradlew.bat testDebugUnitTest --console=plain
+gradlew.bat connectedDebugAndroidTest --console=plain
+```
+
+On Linux with KVM, the reproducible managed-device suite is:
+
+```bash
+sg kvm -c './gradlew pixel6Api34DebugAndroidTest --console=plain'
 ```
 
 ---
@@ -86,7 +92,7 @@ Select **Custom Model** in Settings and type any valid Gemini model identifier (
 3. The API processes the audio and returns the full transcript in the response.
 4. The finished transcript is saved to local history.
 
-Because this app uses the synchronous LLM Speech upload endpoint, MAI uploads must stay under `70 MB` per request even though the underlying model documentation also mentions a larger model-level audio limit.
+Microsoft MAI inputs must be strictly smaller than **250,000,000 bytes** and shorter than **two hours**. The app inspects both native and converted inputs before upload.
 
 ### Gemini flow
 
@@ -96,7 +102,9 @@ Because this app uses the synchronous LLM Speech upload endpoint, MAI uploads mu
 
 ### Audio conversion
 
-When audio is shared into the app, it is first copied into app-managed storage so queued jobs and retries do not depend on the original share URI staying alive. If the selected provider does not natively support the file's MIME type, `HardwareAudioConverter` uses Android's `MediaExtractor` and `MediaCodec` to decode the audio and resample it to **16 kHz mono WAV** before sending. Temporary conversion files older than 3 days are cleaned up automatically on app start.
+When audio is shared into the app, it is first copied into no-backup app storage so queued jobs and retries do not depend on the original share URI staying alive. A share is limited to **10 files**, **250 MB per file**, **500 MB per batch**, and a maximum of **50 unfinished jobs**. Copies stop if less than **64 MiB** would remain free.
+
+If the selected provider does not natively support the file's MIME type, `HardwareAudioConverter` uses Android's `MediaExtractor` and `MediaCodec` to decode the audio and resample it to **16 kHz mono WAV** before sending. Startup maintenance preserves files referenced by active or retryable work and removes unreferenced staged files after 24 hours. Successful inputs are deleted as soon as their transcript is durable.
 
 ---
 
@@ -114,7 +122,7 @@ When audio is shared into the app, it is first copied into app-managed storage s
 
 ### Main
 
-The main screen shows the queue of active transcription jobs. Each card displays the file name, provider/model, current status, and — once complete — the full transcript with **Copy**, **Share**, and **Summarize** buttons.
+The main screen shows every active job and up to the 100 most recent terminal cards. Terminal cards are retained for 30 days; transcription history remains until the user explicitly deletes it.
 
 ### History
 
@@ -134,7 +142,7 @@ MainViewModel.kt             — Sequential queue orchestration, staging, settin
 HistoryViewModel.kt          — Room history as StateFlow
 ApiKeyManager.kt             — Encrypted credential storage (DataStore + Keystore)
 TranscriptionProviders.kt    — Microsoft Speech + Gemini transcription providers
-data/HistoryDatabase.kt      — Room entity, DAO, and migrations (schema v7)
+data/HistoryDatabase.kt      — Room entity, DAO, FTS, and migrations (schema v15)
 security/KeystoreCrypto.kt   — AES-256-GCM encryption helpers
 media/HardwareAudioConverter.kt — MediaCodec audio → 16 kHz mono WAV
 ui/theme/                    — Material Design 3 theme, colors, typography
@@ -156,27 +164,46 @@ ui/theme/                    — Material Design 3 theme, colors, typography
 
 | Library                    | Version    | Purpose                      |
 |----------------------------|------------|------------------------------|
-| Jetpack Compose BOM        | 2026.03.01 | Declarative UI               |
+| Jetpack Compose BOM        | 2026.06.01 | Declarative UI               |
 | Material3                  | (via BOM)  | Material Design 3 components |
-| Navigation Compose         | 2.9.7      | In-app navigation            |
-| Lifecycle / ViewModel      | 2.10.0     | MVVM lifecycle management    |
+| Navigation Compose         | 2.9.8      | In-app navigation            |
+| Lifecycle / ViewModel      | 2.11.0     | MVVM lifecycle management    |
 | Room                       | 2.8.4      | Local SQLite database        |
 | DataStore Preferences      | 1.2.1      | Persistent key-value storage |
-| OkHttp                     | 5.3.2      | Microsoft Speech HTTP client |
-| OkHttp Logging Interceptor | 5.3.2      | HTTP debug logging           |
-| Google Generative AI SDK   | 1.45.0     | Gemini API client            |
-| KSP                        | 2.3.6      | Room annotation processing   |
-| Kotlin                     | 2.3.20     | Language                     |
+| OkHttp                     | 5.4.0      | Microsoft Speech HTTP client |
+| OkHttp Logging Interceptor | 5.4.0      | HTTP logging (bodies off)     |
+| Google Generative AI SDK   | 1.63.0     | Gemini API client            |
+| KSP                        | 2.3.10     | Room annotation processing   |
+| Kotlin                     | 2.4.10     | Language                     |
 
 ---
 
 ## Permissions
 
-| Permission                    | Reason                                            |
-|-------------------------------|---------------------------------------------------|
-| `android.permission.INTERNET` | Required to call Microsoft Speech and Gemini APIs |
+| Permission                                      | Reason                                              |
+|-------------------------------------------------|-----------------------------------------------------|
+| `android.permission.INTERNET`                   | Call Microsoft Speech and Gemini APIs               |
+| `android.permission.POST_NOTIFICATIONS`         | Show background progress and result notifications   |
+| `android.permission.FOREGROUND_SERVICE`         | Continue user-requested transcription in background |
+| `android.permission.FOREGROUND_SERVICE_DATA_SYNC` | Declare the foreground data-sync service type     |
+| `android.permission.RUN_USER_INITIATED_JOBS`    | Use Android 14 user-initiated jobs when available   |
 
 Audio files are accessed via Android share intents — no `READ_EXTERNAL_STORAGE` permission is needed.
+
+## Dependency verification and security
+
+Gradle dependency verification is strict and backed by `gradle/verification-metadata.xml`. Any Gradle dependency update must regenerate checksums with `--write-verification-metadata sha256` and review the metadata diff before merge. CI scans full Git history with Gitleaks while `.gitleaks.toml` excludes generated build, Gradle, and local-tool directories from filesystem scans. Grype receives only the CycloneDX SBOM generated from `releaseRuntimeClasspath` and fails on fixed high or critical findings; it does not crawl the workspace.
+
+Equivalent scoped local scans are:
+
+```bash
+gitleaks git --config .gitleaks.toml --redact .
+gitleaks dir --config .gitleaks.toml --redact .
+./gradlew :app:cyclonedxDirectBom --console=plain
+grype sbom:app/build/reports/cyclonedx-release/bom.json --only-fixed --fail-on high
+```
+
+The build intentionally remains on Gradle 9.6.1 and Detekt 1.23.8 until Detekt 2.0 is stable. The accepted tooling-only Gradle 10 deprecation is tracked in [issue #159](https://github.com/AndreaCovelli/whisperTranscriber/issues/159) for review by 2026-10-26.
 
 ---
 

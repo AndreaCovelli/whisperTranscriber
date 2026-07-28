@@ -4,6 +4,7 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.andreacovelli.whispertranscriber.data.AppDatabase
+import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -34,15 +35,26 @@ class AutoSummaryClaimInstrumentedTest {
     fun claimAutoSummary_onlySucceedsOnceForEligibleJob() = runBlocking {
         val jobDao = db.transcriptionJobDao()
         val summarizationDao = db.transcriptionJobSummarizationDao()
-        val jobId = jobDao.insert(testJob()).toInt()
+        val jobId = insertJob(testJob())
 
-        val firstClaim = summarizationDao.claimAutoSummary(jobId, "GEMINI_FLASH", "gemini-2.5-flash")
-        val secondClaim = summarizationDao.claimAutoSummary(jobId, "GEMINI_FLASH", "gemini-2.5-flash")
+        val firstClaim = summarizationDao.claimAutoSummary(
+            jobId,
+            "attempt-1",
+            "GEMINI_FLASH",
+            "gemini-2.5-flash",
+        )
+        val secondClaim = summarizationDao.claimAutoSummary(
+            jobId,
+            "attempt-2",
+            "GEMINI_FLASH",
+            "gemini-2.5-flash",
+        )
         val storedJob = jobDao.getJobById(jobId)
 
         assertEquals(1, firstClaim)
         assertEquals(0, secondClaim)
         assertTrue(storedJob?.isSummarizing == true)
+        assertEquals("attempt-1", storedJob?.summaryAttemptId)
         assertEquals(null, storedJob?.summaryError)
     }
 
@@ -50,10 +62,20 @@ class AutoSummaryClaimInstrumentedTest {
     fun claimManualSummary_allowsResummarizeButStillDeduplicates() = runBlocking {
         val jobDao = db.transcriptionJobDao()
         val summarizationDao = db.transcriptionJobSummarizationDao()
-        val jobId = jobDao.insert(testJob(summary = "Existing summary")).toInt()
+        val jobId = insertJob(testJob(summary = "Existing summary"))
 
-        val firstClaim = summarizationDao.claimManualSummary(jobId, "GEMINI_FLASH", "gemini-2.5-flash")
-        val secondClaim = summarizationDao.claimManualSummary(jobId, "GEMINI_FLASH", "gemini-2.5-flash")
+        val firstClaim = summarizationDao.claimManualSummary(
+            jobId,
+            "attempt-1",
+            "GEMINI_FLASH",
+            "gemini-2.5-flash",
+        )
+        val secondClaim = summarizationDao.claimManualSummary(
+            jobId,
+            "attempt-2",
+            "GEMINI_FLASH",
+            "gemini-2.5-flash",
+        )
         val storedJob = jobDao.getJobById(jobId)
 
         assertEquals(1, firstClaim)
@@ -62,28 +84,73 @@ class AutoSummaryClaimInstrumentedTest {
     }
 
     @Test
-    fun resetStaleSummaries_clearsLingeringInProgressFlags() = runBlocking {
+    fun forcedCancellation_invalidatesAttemptAndRejectsLateCompletion() = runBlocking {
         val jobDao = db.transcriptionJobDao()
         val summarizationDao = db.transcriptionJobSummarizationDao()
-        val firstJobId = jobDao.insert(testJob(isSummarizing = true)).toInt()
-        val secondJobId = jobDao.insert(testJob(displayName = "second.wav", isSummarizing = true)).toInt()
+        val jobId = insertJob(
+            testJob(
+                isSummarizing = true,
+                summaryAttemptId = "attempt-1",
+            ),
+        )
 
-        val cleared = summarizationDao.resetStaleSummaries()
+        val cancelled = summarizationDao.cancelSummarization(jobId)
+        val lateSuccess = summarizationDao.succeedSummarization(
+            jobId,
+            "attempt-1",
+            "GEMINI_FLASH",
+            "gemini-2.5-flash",
+        )
+        val storedJob = jobDao.getJobById(jobId)
 
-        assertEquals(2, cleared)
-        assertFalse(jobDao.getJobById(firstJobId)?.isSummarizing ?: true)
-        assertFalse(jobDao.getJobById(secondJobId)?.isSummarizing ?: true)
+        assertEquals(1, cancelled)
+        assertEquals(0, lateSuccess)
+        assertFalse(storedJob?.isSummarizing ?: true)
+        assertEquals("", storedJob?.summaryAttemptId)
+        assertEquals("", storedJob?.summary)
+    }
+
+    @Test
+    fun startupRecovery_cancelsOnlyOrphanedUiSummaryAttempts() = runBlocking {
+        val jobDao = db.transcriptionJobDao()
+        val uiJobId = insertJob(
+            testJob(
+                displayName = "ui.wav",
+                isSummarizing = true,
+                summaryAttemptId = "ui-attempt",
+            ),
+        )
+        val backgroundJobId = insertJob(
+            testJob(
+                displayName = "background.wav",
+                isSummarizing = true,
+                summaryAttemptId = "background-attempt",
+            ).copy(
+                isRunning = true,
+                executionOwnerId = "work-owner",
+            ),
+        )
+
+        assertEquals(1, jobDao.cancelOrphanedUiSummaries())
+
+        val uiJob = jobDao.getJobById(uiJobId)
+        val backgroundJob = jobDao.getJobById(backgroundJobId)
+        assertFalse(uiJob?.isSummarizing ?: true)
+        assertEquals("", uiJob?.summaryAttemptId)
+        assertEquals("CANCELLED", uiJob?.summaryStatus)
+        assertTrue(backgroundJob?.isSummarizing == true)
+        assertEquals("background-attempt", backgroundJob?.summaryAttemptId)
     }
 
     @Test
     fun clearingSummaryState_setsSummaryErrorBackToNull() = runBlocking {
         val jobDao = db.transcriptionJobDao()
         val summarizationDao = db.transcriptionJobSummarizationDao()
-        val jobId = jobDao.insert(
+        val jobId = insertJob(
             testJob(summary = "Old summary").copy(
                 summaryError = "Old error",
             ),
-        ).toInt()
+        )
 
         summarizationDao.clearJobSummaryFields(jobId)
 
@@ -96,6 +163,7 @@ class AutoSummaryClaimInstrumentedTest {
         displayName: String = "sample.wav",
         summary: String = "",
         isSummarizing: Boolean = false,
+        summaryAttemptId: String = "",
     ): TranscriptionJob = TranscriptionJob(
         uri = "content://test/$displayName",
         displayName = displayName,
@@ -103,5 +171,17 @@ class AutoSummaryClaimInstrumentedTest {
         summary = summary,
         isRunning = false,
         isSummarizing = isSummarizing,
+        summaryAttemptId = summaryAttemptId,
     )
+
+    private suspend fun insertJob(job: TranscriptionJob): Int {
+        val historyId = db.transcriptionHistoryDao().insert(
+            TranscriptionHistory(
+                text = "Transcript text",
+                language = "en",
+                displayName = job.displayName,
+            ),
+        ).toInt()
+        return db.transcriptionJobDao().insert(job.copy(historyId = historyId)).toInt()
+    }
 }

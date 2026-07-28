@@ -50,6 +50,24 @@ class HistoryExportTest {
     }
 
     @Test
+    fun buildHistoryExport_neutralizesSpreadsheetFormulaCells() {
+        val export = buildHistoryExport(
+            listOf(
+                historyItem(
+                    displayName = "=HYPERLINK(\"https://example.invalid\")",
+                    text = " \t+SUM(1,2)",
+                    summary = "@malicious",
+                ),
+            ),
+            HistoryExportFormat.CSV,
+        )
+
+        assertTrue(export.contains("\"'=HYPERLINK(\"\"https://example.invalid\"\")\""))
+        assertTrue(export.contains("\" \t'+SUM(1,2)\""))
+        assertTrue(export.contains("\"'@malicious\""))
+    }
+
+    @Test
     fun writeHistoryExport_streamsCsvWithEscapedHeaderAndCrLfRows() {
         val writer = java.io.StringWriter()
 

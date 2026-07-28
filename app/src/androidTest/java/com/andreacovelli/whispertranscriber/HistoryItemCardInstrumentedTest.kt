@@ -10,7 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -76,6 +76,7 @@ class HistoryItemCardInstrumentedTest {
                 }
             }
         }
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithText(showMoreLabel).assertExists()
         composeRule.onAllNodesWithContentDescription(copyTranscriptLabel).assertCountEquals(1)
@@ -85,6 +86,7 @@ class HistoryItemCardInstrumentedTest {
         composeRule.onAllNodesWithContentDescription(clearTranscriptLabel).assertCountEquals(1)
         composeRule.onAllNodesWithContentDescription(clearSummaryLabel).assertCountEquals(1)
         composeRule.onNodeWithText(showMoreLabel).performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithText(showLessLabel).assertExists()
     }
 
@@ -125,6 +127,7 @@ class HistoryItemCardInstrumentedTest {
                 }
             }
         }
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithText(summaryTitle).assertExists()
         composeRule.onAllNodesWithContentDescription(copySummaryLabel).assertCountEquals(1)

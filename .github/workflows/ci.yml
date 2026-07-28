@@ -7,161 +7,197 @@ on:
     branches: ["main"]
     types: [opened, reopened, synchronize]
   workflow_dispatch:
+  workflow_call:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
-  changes:
-    name: Detect relevant changes
-    runs-on: ubuntu-latest
-    outputs:
-      should_run: ${{ steps.set-output.outputs.should_run }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Detect code and build changes on PR open
-        id: filter_pr_open
-        if: github.event_name == 'pull_request' && github.event.action != 'synchronize'
-        uses: tj-actions/changed-files@v47
-        with:
-          base_sha: ${{ github.event.pull_request.base.sha }}
-          sha: ${{ github.event.pull_request.head.sha }}
-          files: |
-            app/**
-            gradle/**
-            *.kts
-            .editorconfig
-            config/detekt/**
-            gradlew*
-            .github/workflows/ci.yml
-
-      - name: Detect code and build changes on PR update
-        id: filter_pr_sync
-        if: github.event_name == 'pull_request' && github.event.action == 'synchronize'
-        uses: tj-actions/changed-files@v47
-        with:
-          since_last_remote_commit: true
-          files: |
-            app/**
-            gradle/**
-            *.kts
-            .editorconfig
-            config/detekt/**
-            gradlew*
-            .github/workflows/ci.yml
-
-      - name: Detect code and build changes on push
-        id: filter_push
-        if: github.event_name == 'push'
-        uses: tj-actions/changed-files@v47
-        with:
-          since_last_remote_commit: true
-          files: |
-            app/**
-            gradle/**
-            *.kts
-            .editorconfig
-            config/detekt/**
-            gradlew*
-            .github/workflows/ci.yml
-
-      - name: Consolidate change detection result
-        id: set-output
-        env:
-          PR_OPEN_CHANGED: ${{ steps.filter_pr_open.outputs.any_changed }}
-          PR_SYNC_CHANGED: ${{ steps.filter_pr_sync.outputs.any_changed }}
-          PUSH_CHANGED: ${{ steps.filter_push.outputs.any_changed }}
-        run: |
-          SHOULD_RUN=false
-          if [[ "$PR_OPEN_CHANGED" == "true" || "$PR_SYNC_CHANGED" == "true" || "$PUSH_CHANGED" == "true" ]]; then
-            SHOULD_RUN=true
-          fi
-          echo "should_run=$SHOULD_RUN" >> "$GITHUB_OUTPUT"
-
   quality:
     name: Quality
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'push' ||
-      needs.changes.outputs.should_run == 'true'
     runs-on: ubuntu-latest
-
+    timeout-minutes: 25
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           distribution: temurin
           java-version: "21"
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
         with:
-          # remove this line when switching to Github-hosted runners
           cache-read-only: ${{ github.event_name == 'pull_request' }}
           add-job-summary: "on-failure"
 
       - name: Run quality checks
         run: ./gradlew spotlessCheck detekt lintDebug --console=plain
 
-  build:
-    name: Build, Test and Auto-merge
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'push' ||
-      needs.changes.outputs.should_run == 'true'
+  build-unit:
+    name: Build & Unit
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-      contents: write
-
+    timeout-minutes: 25
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           distribution: temurin
           java-version: "21"
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
         with:
-          # remove this line when switching to Github-hosted runners
-          
           cache-read-only: ${{ github.event_name == 'pull_request' }}
           add-job-summary: "on-failure"
 
-      - name: Build and test with Gradle
+      - name: Build debug APK and run JVM tests
         run: ./gradlew assembleDebug testDebugUnitTest --console=plain
 
-      - name: Dependabot metadata
-        if: github.actor == 'dependabot[bot]'
-        id: metadata
-        uses: dependabot/fetch-metadata@v3
+  instrumentation:
+    name: Instrumentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          github-token: "${{ secrets.GITHUB_TOKEN }}"
+          persist-credentials: false
 
-      - name: Enable auto-merge for Dependabot PRs
-        if: github.actor == 'dependabot[bot]'
-        run: gh pr merge --auto --squash "$PR_URL"
+      - name: Set up JDK 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+          add-job-summary: "on-failure"
+
+      - name: Enable KVM access
+        run: sudo chmod 666 /dev/kvm
+
+      - name: Verify emulator acceleration
+        run: |
+          "$ANDROID_HOME/emulator/emulator" -accel-check
+
+      - name: Run managed-device tests
+        run: >-
+          ./gradlew pixel6Api34DebugAndroidTest
+          -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
+          --console=plain
+
+      - name: Upload instrumentation reports on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: instrumentation-reports
+          path: |
+            app/build/reports/androidTests/managedDevice/
+            app/build/outputs/androidTest-results/managedDevice/
+          if-no-files-found: warn
+
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Scan full history for secrets
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+          GITLEAKS_ENABLE_COMMENTS: "false"
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+          add-job-summary: "on-failure"
+
+      - name: Generate release runtime CycloneDX SBOM
+        run: ./gradlew :app:cyclonedxDirectBom --console=plain
+
+      - name: Report release runtime SBOM vulnerabilities
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
+        with:
+          # The SBOM input is mutually exclusive with a workspace path scan.
+          sbom: app/build/reports/cyclonedx-release/bom.json
+          output-format: table
+          severity-cutoff: negligible
+          only-fixed: false
+          fail-build: false
+
+      - name: Gate fixed high and critical release runtime vulnerabilities
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
+        with:
+          # Keep Grype scoped to the release runtime dependency graph.
+          sbom: app/build/reports/cyclonedx-release/bom.json
+          output-format: table
+          severity-cutoff: high
+          only-fixed: true
+          fail-build: true
+
+      - name: Upload release SBOM
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-runtime-sbom
+          path: app/build/reports/cyclonedx-release/bom.json
+          if-no-files-found: error
+
+  ci-gate:
+    name: CI Gate
+    if: always()
+    needs: [quality, build-unit, instrumentation, security]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every verification job
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          BUILD_UNIT_RESULT: ${{ needs.build-unit.result }}
+          INSTRUMENTATION_RESULT: ${{ needs.instrumentation.result }}
+          SECURITY_RESULT: ${{ needs.security.result }}
+        run: |
+          test "$QUALITY_RESULT" = "success"
+          test "$BUILD_UNIT_RESULT" = "success"
+          test "$INSTRUMENTATION_RESULT" = "success"
+          test "$SECURITY_RESULT" = "success"
+
+  legacy-gate:
+    name: Build, Test and Auto-merge
+    if: always()
+    needs: [ci-gate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Preserve the existing required check during ruleset migration
+        env:
+          CI_GATE_RESULT: ${{ needs.ci-gate.result }}
+        run: test "$CI_GATE_RESULT" = "success"

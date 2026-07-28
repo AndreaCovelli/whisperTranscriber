@@ -7,16 +7,10 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.detekt)
     alias(libs.plugins.spotless)
+    alias(libs.plugins.cyclonedx)
 }
 
 val ktlintVersion = "1.7.1"
-val hostArch = System.getProperty("os.arch").lowercase()
-val managedDeviceTestAbi =
-    if (hostArch.contains("aarch64") || hostArch.contains("arm64")) {
-        "arm64-v8a"
-    } else {
-        "x86_64"
-    }
 
 android {
     val roomSchemaDir = "$projectDir/schemas"
@@ -26,6 +20,22 @@ android {
     val propKeyPassword = findProperty("keyPassword") as? String
     val propVersionCode = (findProperty("versionCode") as? String)?.toIntOrNull()
     val propVersionName = findProperty("versionName") as? String
+    val signingProperties =
+        listOf(
+            "keystorePath" to keystorePath,
+            "keystorePassword" to propKeystorePassword,
+            "keyAlias" to propKeyAlias,
+            "keyPassword" to propKeyPassword,
+        )
+    val configuredSigningProperties = signingProperties.filter { (_, value) -> !value.isNullOrBlank() }
+    if (configuredSigningProperties.isNotEmpty() && configuredSigningProperties.size != signingProperties.size) {
+        val missing =
+            signingProperties
+                .filter { (_, value) -> value.isNullOrBlank() }
+                .joinToString { (name, _) -> name }
+        throw GradleException("Partial release signing configuration. Missing: $missing")
+    }
+    val releaseSigningConfigured = configuredSigningProperties.size == signingProperties.size
 
     namespace = "com.andreacovelli.whispertranscriber"
     compileSdk = 37
@@ -45,12 +55,12 @@ android {
     }
 
     signingConfigs {
-        create("release") {
-            if (keystorePath != null) {
-                storeFile = file(keystorePath)
-                storePassword = propKeystorePassword
-                keyAlias = propKeyAlias
-                keyPassword = propKeyPassword
+        if (releaseSigningConfigured) {
+            create("release") {
+                storeFile = file(requireNotNull(keystorePath))
+                storePassword = requireNotNull(propKeystorePassword)
+                keyAlias = requireNotNull(propKeyAlias)
+                keyPassword = requireNotNull(propKeyPassword)
             }
         }
     }
@@ -63,12 +73,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            signingConfig =
-                if (keystorePath != null) {
-                    signingConfigs.getByName("release")
-                } else {
-                    signingConfigs.getByName("debug")
-                }
+            signingConfig = if (releaseSigningConfigured) signingConfigs.getByName("release") else null
         }
     }
 
@@ -85,7 +90,7 @@ android {
                     device = "Pixel 6"
                     apiLevel = 34
                     systemImageSource = "aosp-atd"
-                    testedAbi = managedDeviceTestAbi
+                    testedAbi = "x86_64"
                 }
             }
         }
@@ -112,6 +117,13 @@ android {
                 )
         }
     }
+}
+
+tasks.named<org.cyclonedx.gradle.CyclonedxDirectTask>("cyclonedxDirectBom") {
+    includeConfigs = listOf("releaseRuntimeClasspath")
+    projectType = org.cyclonedx.model.Component.Type.APPLICATION
+    jsonOutput.set(layout.buildDirectory.file("reports/cyclonedx-release/bom.json"))
+    xmlOutput.unsetConvention()
 }
 
 kotlin {

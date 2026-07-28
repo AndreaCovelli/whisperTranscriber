@@ -16,6 +16,7 @@ import com.andreacovelli.whispertranscriber.history.HistoryListRow
 import com.andreacovelli.whispertranscriber.history.historyDateHeader
 import com.andreacovelli.whispertranscriber.history.historyListItem
 import com.andreacovelli.whispertranscriber.history.writeHistoryExport
+import com.andreacovelli.whispertranscriber.services.TranscriptionQueueService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
@@ -58,6 +59,7 @@ sealed interface HistoryUiEvent {
 class HistoryViewModel @Inject constructor(
     @param:ApplicationContext private val appContext: Context,
     private val historyRepository: HistoryRepository,
+    private val queueService: TranscriptionQueueService,
 ) : ViewModel() {
     private companion object {
         const val EXPORT_PAGE_SIZE = 100
@@ -197,13 +199,13 @@ class HistoryViewModel @Inject constructor(
 
     fun deleteHistoryItem(item: TranscriptionHistory) {
         viewModelScope.launch {
-            historyRepository.deleteById(item.id)
+            queueService.cancelRemovedHistoryJobs(historyRepository.deleteById(item.id))
         }
     }
 
     fun deleteAllHistory() {
         viewModelScope.launch {
-            historyRepository.deleteAll()
+            queueService.cancelRemovedHistoryJobs(historyRepository.deleteAll())
         }
     }
 

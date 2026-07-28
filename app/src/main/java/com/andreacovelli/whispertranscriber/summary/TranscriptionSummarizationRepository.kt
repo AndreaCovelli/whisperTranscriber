@@ -13,39 +13,65 @@ class TranscriptionSummarizationRepository @Inject constructor(
     private val jobSummarizationDao: TranscriptionJobSummarizationDao,
     private val historyRepository: HistoryRepository,
 ) {
-    suspend fun setSummarizing(id: Int, isSummarizing: Boolean) {
-        jobSummarizationDao.setSummarizing(id, isSummarizing)
-    }
+    suspend fun clearSummarizing(id: Int, attemptId: String): Boolean =
+        jobSummarizationDao.clearSummarizing(id, attemptId) > 0
 
-    suspend fun updateSummaryStatus(id: Int, status: String) {
-        jobSummarizationDao.updateSummaryStatus(id, status)
-    }
+    suspend fun updateSummaryStatus(id: Int, attemptId: String, status: String): Boolean =
+        jobSummarizationDao.updateSummaryStatus(id, attemptId, status) > 0
 
-    suspend fun succeedSummarization(id: Int, summary: String, summaryProviderName: String, summaryModel: String) {
-        db.withTransaction {
-            jobSummarizationDao.succeedSummarization(id, summary, summaryProviderName, summaryModel)
+    suspend fun succeedSummarization(
+        id: Int,
+        attemptId: String,
+        summary: String,
+        summaryProviderName: String,
+        summaryModel: String,
+    ): Boolean = db.withTransaction {
+        val updated = jobSummarizationDao.succeedSummarization(
+            id,
+            attemptId,
+            summaryProviderName,
+            summaryModel,
+        ) > 0
+        if (updated) {
             historyRepository.updateSummaryByJobId(id, summary, summaryProviderName, summaryModel)
         }
+        updated
     }
 
-    suspend fun failSummarization(id: Int, error: String?) {
-        jobSummarizationDao.failSummarization(id, error)
-    }
+    suspend fun failSummarization(id: Int, attemptId: String, error: String?): Boolean =
+        jobSummarizationDao.failSummarization(id, attemptId, error) > 0
 
     suspend fun cancelSummarization(id: Int): Boolean = jobSummarizationDao.cancelSummarization(id) > 0
 
-    suspend fun claimAutoSummary(id: Int, providerName: String, modelName: String): Boolean =
-        jobSummarizationDao.claimAutoSummary(id, providerName, modelName) > 0
+    suspend fun claimAutoSummary(
+        id: Int,
+        attemptId: String,
+        providerName: String,
+        modelName: String,
+        executionOwnerId: String?,
+    ): Boolean = if (executionOwnerId == null) {
+        jobSummarizationDao.claimAutoSummary(id, attemptId, providerName, modelName) > 0
+    } else {
+        jobSummarizationDao.claimBackgroundAutoSummary(
+            id,
+            executionOwnerId,
+            attemptId,
+            providerName,
+            modelName,
+        ) > 0
+    }
 
-    suspend fun claimManualSummary(id: Int, providerName: String, modelName: String): Boolean =
-        jobSummarizationDao.claimManualSummary(id, providerName, modelName) > 0
+    suspend fun claimManualSummary(id: Int, attemptId: String, providerName: String, modelName: String): Boolean =
+        jobSummarizationDao.claimManualSummary(id, attemptId, providerName, modelName) > 0
 
-    suspend fun resetStaleSummaries(): Int = jobSummarizationDao.resetStaleSummaries()
+    suspend fun invalidateSummaryAttempt(id: Int, attemptId: String): Boolean =
+        jobSummarizationDao.invalidateSummaryAttempt(id, attemptId) > 0
 
     suspend fun clearJobSummary(jobId: Int) {
         db.withTransaction {
-            jobSummarizationDao.clearJobSummaryFields(jobId)
-            historyRepository.updateSummaryByJobId(jobId, "", "", "")
+            if (jobSummarizationDao.clearJobSummaryFields(jobId) > 0) {
+                historyRepository.updateSummaryByJobId(jobId, "", "", "")
+            }
         }
     }
 }

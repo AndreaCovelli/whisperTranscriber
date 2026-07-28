@@ -10,10 +10,15 @@ import androidx.core.net.toUri
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
+import com.andreacovelli.whispertranscriber.queue.QueuedAudioStore
 import com.andreacovelli.whispertranscriber.transcription.QueuedAudioInputResolution
 import com.andreacovelli.whispertranscriber.transcription.QueuedAudioInputResolver
 import java.io.File
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -152,6 +157,41 @@ class ShareIntentAndQueuedAudioInstrumentedTest {
             ),
             resolution,
         )
+    }
+
+    @Test
+    fun stagedFileCleanup_preservesReferencesAndDeletesOnlyOldOrphans() = runBlocking {
+        val now = System.currentTimeMillis()
+        val stagedDir = File(context.noBackupFilesDir, "queued_audio").apply { mkdirs() }
+        val referenced = File(stagedDir, "staged_referenced.wav").apply {
+            writeBytes(byteArrayOf(1))
+            setLastModified(now - TimeUnit.DAYS.toMillis(2))
+        }
+        val orphan = File(stagedDir, "staged_orphan.wav").apply {
+            writeBytes(byteArrayOf(2))
+            setLastModified(now - TimeUnit.DAYS.toMillis(2))
+        }
+        val recent = File(stagedDir, "staged_recent.wav").apply {
+            writeBytes(byteArrayOf(3))
+            setLastModified(now)
+        }
+        val store = QueuedAudioStore(context, Dispatchers.IO)
+
+        try {
+            val result = store.cleanupManagedFiles(
+                referencedStagedPaths = setOf(referenced.absolutePath),
+                nowMillis = now,
+            )
+
+            assertTrue(referenced.exists())
+            assertFalse(orphan.exists())
+            assertTrue(recent.exists())
+            assertEquals(1, result.orphanFilesDeleted)
+        } finally {
+            referenced.delete()
+            orphan.delete()
+            recent.delete()
+        }
     }
 
     private fun PackageManager.getActivityInfoCompat(componentName: ComponentName): ActivityInfo =

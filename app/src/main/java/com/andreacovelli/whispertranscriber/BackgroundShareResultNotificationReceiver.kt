@@ -49,9 +49,10 @@ class BackgroundShareResultNotificationReceiver : BroadcastReceiver() {
                 }
 
                 val job = repository.getJob(jobId)
+                val history = repository.getHistoryForJob(jobId)
                 val text = when (resultKind) {
-                    BackgroundShareResultKind.TRANSCRIPTION -> job?.transcript.orEmpty()
-                    BackgroundShareResultKind.SUMMARY -> job?.summary.orEmpty()
+                    BackgroundShareResultKind.TRANSCRIPTION -> history?.text.orEmpty()
+                    BackgroundShareResultKind.SUMMARY -> history?.summary.orEmpty()
                 }
                 if (text.isBlank()) {
                     backgroundShareNotifier.cancelResult(jobId)

@@ -22,7 +22,6 @@ import com.andreacovelli.whispertranscriber.TranscriptionWorker
 import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.text.BreakIterator
-import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.random.Random
@@ -34,6 +33,8 @@ data class PostTranscriptionWorkSpec(
 )
 
 internal const val RESULT_TEXT_PAGE_MAX_LENGTH = 420
+internal const val RESULT_CACHE_MAX_ENTRIES = 20
+internal const val RESULT_CACHE_TTL_MILLIS = 24L * 60L * 60L * 1_000L
 private const val LIST_ITEM_BREAK_LOOKAHEAD = 120
 
 internal enum class BackgroundShareResultKind {
@@ -57,6 +58,61 @@ private val sentenceBoundaryAbbreviations = setOf(
 )
 
 internal data class CachedShareResult(val displayName: String, val pages: List<String>)
+
+internal class TimedLruCache<K, V>(
+    private val maxEntries: Int,
+    private val ttlMillis: Long,
+    private val nowMillis: () -> Long = System::currentTimeMillis,
+) {
+    private data class Entry<V>(val value: V, val createdAt: Long)
+
+    private val entries = LinkedHashMap<K, Entry<V>>(maxEntries, 0.75f, true)
+
+    init {
+        require(maxEntries > 0) { "Cache size must be positive." }
+        require(ttlMillis > 0) { "Cache TTL must be positive." }
+    }
+
+    @Synchronized
+    operator fun get(key: K): V? {
+        val entry = entries[key] ?: return null
+        if (nowMillis() - entry.createdAt >= ttlMillis) {
+            entries.remove(key)
+            return null
+        }
+        return entry.value
+    }
+
+    @Synchronized
+    operator fun set(key: K, value: V) {
+        removeExpired()
+        entries[key] = Entry(value, nowMillis())
+        while (entries.size > maxEntries) {
+            entries.remove(entries.entries.first().key)
+        }
+    }
+
+    @Synchronized
+    fun remove(key: K) {
+        entries.remove(key)
+    }
+
+    @Synchronized
+    fun removeMatching(predicate: (K) -> Boolean) {
+        entries.keys.removeAll(predicate)
+    }
+
+    @Synchronized
+    fun size(): Int {
+        removeExpired()
+        return entries.size
+    }
+
+    private fun removeExpired() {
+        val now = nowMillis()
+        entries.entries.removeAll { (_, entry) -> now - entry.createdAt >= ttlMillis }
+    }
+}
 
 internal data class BackgroundShareResultPage(val text: String, val index: Int, val total: Int) {
     val hasPrevious: Boolean
@@ -429,7 +485,10 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
     }
 
     private val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    private val pageCache = ConcurrentHashMap<Pair<Int, BackgroundShareResultKind>, CachedShareResult>()
+    private val pageCache = TimedLruCache<Pair<Int, BackgroundShareResultKind>, CachedShareResult>(
+        maxEntries = RESULT_CACHE_MAX_ENTRIES,
+        ttlMillis = RESULT_CACHE_TTL_MILLIS,
+    )
 
     init {
         ensureResultChannel()
@@ -525,9 +584,7 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
     }
 
     internal fun clearCache(jobId: Int) {
-        BackgroundShareResultKind.entries.forEach { kind ->
-            pageCache.remove(jobId to kind)
-        }
+        pageCache.removeMatching { (cachedJobId, _) -> cachedJobId == jobId }
     }
 
     internal fun showCachedResultPage(jobId: Int, resultKind: BackgroundShareResultKind, pageIndex: Int): Boolean {

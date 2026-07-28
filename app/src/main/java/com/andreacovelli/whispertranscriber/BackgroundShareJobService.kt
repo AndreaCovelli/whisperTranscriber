@@ -64,6 +64,7 @@ class BackgroundShareJobService : JobService() {
                 when (
                     runner.runJob(
                         jobId = jobId,
+                        executionOwnerId = "job-scheduler:${params.jobId}",
                         speakerLabelPrefix = speakerLabelPrefix,
                         onProgressNotification = ::updateNotification,
                     )
@@ -76,6 +77,7 @@ class BackgroundShareJobService : JobService() {
                         queueService.onExecutionFinished(jobId)
                         jobFinished(params, false)
                     }
+                    JobRunOutcome.Superseded -> jobFinished(params, false)
                     JobRunOutcome.Retry -> jobFinished(params, true)
                     JobRunOutcome.Failure -> {
                         queueService.onExecutionFinished(jobId)

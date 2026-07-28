@@ -9,9 +9,11 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.andreacovelli.whispertranscriber.security.KeystoreCrypto
+import com.andreacovelli.whispertranscriber.transcription.MicrosoftSpeechRegion
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -130,7 +132,10 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
     }
 
     suspend fun saveMicrosoftSpeechRegion(region: String) {
-        val normalized = region.trim().lowercase()
+        val normalized = region.trim().lowercase(Locale.ROOT)
+        if (normalized.isNotEmpty()) {
+            MicrosoftSpeechRegion.parse(normalized)
+        }
         context.dataStore.edit { prefs ->
             if (normalized.isEmpty()) {
                 prefs.remove(MICROSOFT_SPEECH_REGION)
@@ -181,6 +186,13 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
     // Quick wipe actions
     suspend fun forgetMicrosoftSpeechApiKey() {
         context.dataStore.edit {
+            it.remove(MICROSOFT_SPEECH_API_KEY_ENC)
+        }
+    }
+
+    suspend fun clearInvalidMicrosoftSpeechConfiguration() {
+        context.dataStore.edit {
+            it.remove(MICROSOFT_SPEECH_REGION)
             it.remove(MICROSOFT_SPEECH_API_KEY_ENC)
         }
     }

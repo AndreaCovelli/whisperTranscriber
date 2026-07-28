@@ -204,6 +204,17 @@ private fun toHistoryExportRecord(item: TranscriptionHistory): HistoryExportReco
 private fun formatHistoryTimestamp(timestamp: Long): String =
     DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(timestamp))
 
-private fun escapeCsvValue(value: String): String = "\"${value.replace("\"", "\"\"")}\""
+private fun escapeCsvValue(value: String): String {
+    val firstMeaningfulIndex = value.indexOfFirst { character -> !character.isWhitespace() }
+    val neutralized = if (
+        firstMeaningfulIndex >= 0 &&
+        value[firstMeaningfulIndex] in setOf('=', '+', '-', '@')
+    ) {
+        value.substring(0, firstMeaningfulIndex) + "'" + value.substring(firstMeaningfulIndex)
+    } else {
+        value
+    }
+    return "\"${neutralized.replace("\"", "\"\"")}\""
+}
 
 private fun Writer.writeBlocking(value: String) = write(value)
