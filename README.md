@@ -59,8 +59,74 @@ gradlew.bat connectedDebugAndroidTest --console=plain
 On Linux with KVM, the reproducible managed-device suite is:
 
 ```bash
-sg kvm -c './gradlew pixel6Api34DebugAndroidTest --console=plain'
+./gradlew pixel6Api34DebugAndroidTest --console=plain
 ```
+
+### ADB on a headless server
+
+This server already has ADB 37.0.0 installed at
+`~/android-sdk/platform-tools/adb`. The examples below assume `adb` is on
+`PATH`; otherwise, replace `adb` with that full path. A headless server needs no
+GUI because authorization and pairing happen on the phone.
+
+#### Recommended: wireless debugging
+
+The phone and server must be reachable on the same LAN or VPN.
+
+1. On the phone, enable **Developer options → Wireless debugging**.
+2. Select **Pair device with pairing code**.
+3. On the server over SSH, run:
+
+   ```bash
+   adb pair PHONE_IP:PAIRING_PORT
+   ```
+
+   Enter the six-digit code shown on the phone.
+
+4. Return to the main **Wireless debugging** screen and note its IP address and
+   port. This connection port is usually different from the pairing port:
+
+   ```bash
+   adb connect PHONE_IP:CONNECTION_PORT
+   adb devices -l
+   ```
+
+The result should show the device with state `device`. You can then run:
+
+```bash
+adb -s PHONE_IP:CONNECTION_PORT shell
+./gradlew connectedDebugAndroidTest
+```
+
+If the device and server are on different networks, use a VPN such as WireGuard
+or Tailscale. Never expose an ADB port directly to the public internet.
+
+#### USB connection
+
+Connect the phone physically to the server, enable **USB debugging**, unlock the
+phone, and accept the RSA authorization prompt. Then run:
+
+```bash
+adb devices -l
+```
+
+If Ubuntu reports insufficient USB permissions:
+
+```bash
+sudo apt install android-sdk-platform-tools-common
+sudo usermod -aG plugdev "$USER"
+sudo udevadm control --reload-rules
+```
+
+Log out and back in, reconnect the cable, and retry.
+
+If the server is a VM or container, the USB device must first be passed through
+to it. In the current restricted workspace, ADB cannot access `/dev/bus/usb` or
+open its local port, so run these commands from the server's normal SSH shell
+rather than inside the sandbox or container.
+
+See the official Android documentation for
+[connecting to a device over Wi-Fi](https://developer.android.com/tools/adb#connect-to-a-device-over-wi-fi).
 
 ---
 
