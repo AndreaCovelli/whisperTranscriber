@@ -21,6 +21,7 @@ import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.TranscriptionWorker
 import com.andreacovelli.whispertranscriber.background.BackgroundShareNotifier
 import com.andreacovelli.whispertranscriber.background.PostTranscriptionWorkSpec
+import com.andreacovelli.whispertranscriber.data.HistoryJobCleanup
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
 import com.andreacovelli.whispertranscriber.queue.JobExecutionBackend
@@ -215,12 +216,13 @@ class TranscriptionQueueService @Inject constructor(
         scheduleNextQueuedJobIfIdle()
     }
 
-    suspend fun cancelRemovedHistoryJobs(jobIds: List<Int>) {
-        jobIds.forEach { jobId ->
-            cancelScheduledExecution(jobId)
-            backgroundShareNotifier.cancelResult(jobId)
-            backgroundShareNotifier.cancelRetryScheduled(jobId)
-            backgroundShareNotifier.cancelBackgroundProcessing(jobId)
+    suspend fun cancelRemovedHistoryJobs(jobs: List<HistoryJobCleanup>) {
+        jobs.forEach { job ->
+            cancelScheduledExecution(job.jobId)
+            backgroundShareNotifier.cancelResult(job.jobId)
+            backgroundShareNotifier.cancelRetryScheduled(job.jobId)
+            backgroundShareNotifier.cancelBackgroundProcessing(job.jobId)
+            queuedAudioStore.deleteStagedFile(job.stagedFilePath)
         }
         scheduleNextQueuedJobIfIdle()
     }

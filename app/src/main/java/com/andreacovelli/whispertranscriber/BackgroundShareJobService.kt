@@ -5,6 +5,7 @@ import android.app.job.JobParameters
 import android.app.job.JobService
 import android.os.Build
 import com.andreacovelli.whispertranscriber.background.BackgroundShareNotifier
+import com.andreacovelli.whispertranscriber.background.BackgroundShareRunCoordinator
 import com.andreacovelli.whispertranscriber.queue.backgroundShareSchedulerJobId
 import com.andreacovelli.whispertranscriber.services.TranscriptionQueueService
 import com.andreacovelli.whispertranscriber.transcription.JobRunOutcome
@@ -13,9 +14,12 @@ import dagger.hilt.android.AndroidEntryPoint
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 
 @SuppressLint("SpecifyJobSchedulerIdRange") // WorkManager range is configured in WhisperTranscriberApp.
@@ -31,7 +35,8 @@ class BackgroundShareJobService : JobService() {
     lateinit var backgroundShareNotifier: BackgroundShareNotifier
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val runningJobs = ConcurrentHashMap<Int, kotlinx.coroutines.Job>()
+    private val runCoordinator = BackgroundShareRunCoordinator()
+    private val runningJobs = ConcurrentHashMap<Int, Job>()
     private val runningParams = ConcurrentHashMap<Int, JobParameters>()
 
     override fun onStartJob(params: JobParameters): Boolean {
@@ -59,36 +64,41 @@ class BackgroundShareJobService : JobService() {
             JOB_END_NOTIFICATION_POLICY_REMOVE,
         )
 
-        runningJobs[jobId] = serviceScope.launch {
+        val executionOwnerId = runCoordinator.nextExecutionOwnerId(params.jobId)
+        val runningJob = serviceScope.launch(start = CoroutineStart.LAZY) {
             try {
-                when (
-                    runner.runJob(
-                        jobId = jobId,
-                        executionOwnerId = "job-scheduler:${params.jobId}",
-                        speakerLabelPrefix = speakerLabelPrefix,
-                        onProgressNotification = ::updateNotification,
-                    )
-                ) {
-                    JobRunOutcome.Success -> {
-                        queueService.onExecutionFinished(jobId)
-                        jobFinished(params, false)
-                    }
-                    JobRunOutcome.Skipped -> {
-                        queueService.onExecutionFinished(jobId)
-                        jobFinished(params, false)
-                    }
-                    JobRunOutcome.Superseded -> jobFinished(params, false)
-                    JobRunOutcome.Retry -> jobFinished(params, true)
-                    JobRunOutcome.Failure -> {
-                        queueService.onExecutionFinished(jobId)
-                        jobFinished(params, false)
+                runCoordinator.runSerialized {
+                    when (
+                        runner.runJob(
+                            jobId = jobId,
+                            executionOwnerId = executionOwnerId,
+                            speakerLabelPrefix = speakerLabelPrefix,
+                            onProgressNotification = ::updateNotification,
+                        )
+                    ) {
+                        JobRunOutcome.Success -> {
+                            queueService.onExecutionFinished(jobId)
+                            jobFinished(params, false)
+                        }
+                        JobRunOutcome.Skipped -> {
+                            queueService.onExecutionFinished(jobId)
+                            jobFinished(params, false)
+                        }
+                        JobRunOutcome.Superseded -> jobFinished(params, false)
+                        JobRunOutcome.Retry -> jobFinished(params, true)
+                        JobRunOutcome.Failure -> {
+                            queueService.onExecutionFinished(jobId)
+                            jobFinished(params, false)
+                        }
                     }
                 }
             } finally {
-                runningJobs.remove(jobId)
-                runningParams.remove(jobId)
+                runningJobs.remove(jobId, coroutineContext.job)
+                runningParams.remove(jobId, params)
             }
         }
+        runningJobs[jobId] = runningJob
+        runningJob.start()
         return true
     }
 

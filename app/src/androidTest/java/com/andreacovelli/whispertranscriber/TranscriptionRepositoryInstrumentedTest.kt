@@ -4,6 +4,7 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.andreacovelli.whispertranscriber.data.AppDatabase
+import com.andreacovelli.whispertranscriber.data.HistoryJobCleanup
 import com.andreacovelli.whispertranscriber.data.RoomHistoryRepository
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
@@ -104,6 +105,33 @@ class TranscriptionRepositoryInstrumentedTest {
 
         assertFalse(lateSuccess)
         assertNull(db.transcriptionHistoryDao().getById(originalHistoryId))
+        assertNull(repository.getJob(jobId))
+    }
+
+    @Test
+    fun deletingHistory_removesRecoveredPostTranscriptionJob() = runBlocking {
+        val historyId = historyRepository.insert(
+            TranscriptionHistory(
+                text = "Durable transcript",
+                language = "en",
+                model = "gemini-2.5-flash",
+                displayName = "recovered.wav",
+            ),
+        )
+        val jobId = repository.addJob(
+            TranscriptionJob(
+                uri = "content://test/recovered.wav",
+                displayName = "recovered.wav",
+                stagedFilePath = "/tmp/recovered.wav",
+                status = JOB_STATUS_QUEUED,
+                historyId = historyId,
+            ),
+        ).toInt()
+
+        val removedJobs = historyRepository.deleteById(historyId)
+
+        assertEquals(listOf(HistoryJobCleanup(jobId, "/tmp/recovered.wav")), removedJobs)
+        assertNull(db.transcriptionHistoryDao().getById(historyId))
         assertNull(repository.getJob(jobId))
     }
 
@@ -213,7 +241,7 @@ class TranscriptionRepositoryInstrumentedTest {
         )
         assertEquals("", repository.getJob(jobId)?.transcript)
         assertEquals("Durable transcript", repository.getTranscriptForJob(jobId))
-        assertNotNull(repository.claimJobForExecution(jobId, "owner-1", "Resuming"))
+        assertNull(repository.claimJobForExecution(jobId, "owner-1", "Duplicate"))
     }
 
     @Test

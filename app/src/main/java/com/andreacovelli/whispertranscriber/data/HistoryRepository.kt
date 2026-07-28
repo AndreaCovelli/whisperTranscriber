@@ -24,10 +24,12 @@ interface HistoryRepository {
 
     suspend fun updateText(id: Int, text: String)
 
-    suspend fun deleteById(id: Int): List<Int>
+    suspend fun deleteById(id: Int): List<HistoryJobCleanup>
 
-    suspend fun deleteAll(): List<Int>
+    suspend fun deleteAll(): List<HistoryJobCleanup>
 }
+
+data class HistoryJobCleanup(val jobId: Int, val stagedFilePath: String?)
 
 private fun Long.toHistoryId(): Int {
     require(this in 0..Int.MAX_VALUE.toLong()) { "History id out of Int range: $this" }
@@ -81,19 +83,19 @@ class RoomHistoryRepository @Inject constructor(
         historyDao.updateText(id, text)
     }
 
-    override suspend fun deleteById(id: Int): List<Int> = db.withTransaction {
-        val linkedJobIds = jobDao.getJobIdsByHistoryId(id)
+    override suspend fun deleteById(id: Int): List<HistoryJobCleanup> = db.withTransaction {
+        val linkedJobs = jobDao.getJobCleanupByHistoryId(id)
         jobDao.invalidateOwnersByHistoryId(id)
-        jobDao.deleteTerminalByHistoryId(id)
+        jobDao.deleteByHistoryId(id)
         historyDao.deleteById(id)
-        linkedJobIds
+        linkedJobs
     }
 
-    override suspend fun deleteAll(): List<Int> = db.withTransaction {
-        val linkedJobIds = jobDao.getAllHistoryLinkedJobIds()
+    override suspend fun deleteAll(): List<HistoryJobCleanup> = db.withTransaction {
+        val linkedJobs = jobDao.getAllHistoryLinkedJobCleanup()
         jobDao.invalidateAllHistoryLinkedOwners()
-        jobDao.deleteAllTerminalWithHistory()
+        jobDao.deleteAllWithHistory()
         historyDao.deleteAllHistory()
-        linkedJobIds
+        linkedJobs
     }
 }

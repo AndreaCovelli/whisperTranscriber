@@ -417,11 +417,11 @@ interface TranscriptionJobDao {
     @Query("SELECT historyId FROM active_jobs WHERE id = :jobId")
     suspend fun getHistoryIdByJobId(jobId: Int): Int?
 
-    @Query("SELECT id FROM active_jobs WHERE historyId = :historyId")
-    suspend fun getJobIdsByHistoryId(historyId: Int): List<Int>
+    @Query("SELECT id AS jobId, stagedFilePath FROM active_jobs WHERE historyId = :historyId")
+    suspend fun getJobCleanupByHistoryId(historyId: Int): List<HistoryJobCleanup>
 
-    @Query("SELECT id FROM active_jobs WHERE historyId IS NOT NULL")
-    suspend fun getAllHistoryLinkedJobIds(): List<Int>
+    @Query("SELECT id AS jobId, stagedFilePath FROM active_jobs WHERE historyId IS NOT NULL")
+    suspend fun getAllHistoryLinkedJobCleanup(): List<HistoryJobCleanup>
 
     @Query("UPDATE active_jobs SET historyId = :historyId WHERE id = :jobId")
     suspend fun updateHistoryId(jobId: Int, historyId: Int)
@@ -480,16 +480,8 @@ interface TranscriptionJobDao {
             executionOwnerId = :ownerId,
             status = :status
         WHERE id = :jobId
-          AND (
-              (
-                  isRunning = 0
-                  AND status IN ('$JOB_STATUS_QUEUED', '$JOB_STATUS_RETRY_SCHEDULED')
-              )
-              OR (
-                  isRunning = 1
-                  AND executionOwnerId = :ownerId
-              )
-          )
+          AND isRunning = 0
+          AND status IN ('$JOB_STATUS_QUEUED', '$JOB_STATUS_RETRY_SCHEDULED')
         """,
     )
     suspend fun claimJobForExecution(jobId: Int, ownerId: String, status: String): Int
@@ -617,33 +609,17 @@ interface TranscriptionJobDao {
         """
         DELETE FROM active_jobs
         WHERE historyId = :historyId
-          AND status IN (
-              '$JOB_STATUS_COMPLETED',
-              '$JOB_STATUS_ERROR',
-              '$JOB_STATUS_CANCELLED',
-              '$JOB_STATUS_CLEARED'
-          )
-          AND isRunning = 0
-          AND isSummarizing = 0
         """,
     )
-    suspend fun deleteTerminalByHistoryId(historyId: Int): Int
+    suspend fun deleteByHistoryId(historyId: Int): Int
 
     @Query(
         """
         DELETE FROM active_jobs
         WHERE historyId IS NOT NULL
-          AND status IN (
-              '$JOB_STATUS_COMPLETED',
-              '$JOB_STATUS_ERROR',
-              '$JOB_STATUS_CANCELLED',
-              '$JOB_STATUS_CLEARED'
-          )
-          AND isRunning = 0
-          AND isSummarizing = 0
         """,
     )
-    suspend fun deleteAllTerminalWithHistory(): Int
+    suspend fun deleteAllWithHistory(): Int
 
     @Query(
         """
