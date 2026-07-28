@@ -190,9 +190,9 @@ ui/theme/                    — Material Design 3 theme, colors, typography
 
 Audio files are accessed via Android share intents — no `READ_EXTERNAL_STORAGE` permission is needed.
 
-## Dependency verification and security
+## Repository security
 
-Gradle dependency verification is strict and backed by `gradle/verification-metadata.xml`. Any Gradle dependency update must regenerate checksums with `--write-verification-metadata sha256` and review the metadata diff before merge. CI scans full Git history with Gitleaks while `.gitleaks.toml` excludes generated build, Gradle, and local-tool directories from filesystem scans. Grype receives only the CycloneDX SBOM generated from `releaseRuntimeClasspath` and fails on fixed high or critical findings; it does not crawl the workspace.
+CI scans full Git history with Gitleaks while `.gitleaks.toml` excludes generated build, Gradle, and local-tool directories from filesystem scans. Grype receives only the CycloneDX SBOM generated from `releaseRuntimeClasspath` and fails on fixed high or critical findings; it does not crawl the workspace.
 
 Equivalent scoped local scans are:
 

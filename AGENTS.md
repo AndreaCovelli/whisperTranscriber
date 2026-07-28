@@ -264,8 +264,6 @@ checks and report exactly what was not run and why.
 - Run Grype against `app/build/reports/cyclonedx-release/bom.json`, never a
   workspace `dir:` source. The SBOM is already limited to
   `releaseRuntimeClasspath`.
-- Gradle dependency verification is strict. Dependency PRs must regenerate
-  `gradle/verification-metadata.xml` with SHA-256 checksums and review its diff.
 - Terminal cards expire after 30 days and history is retained until explicit
   deletion. Preserve this distinction in cleanup and migration work.
 - Releases are triggered by tags matching `v*`; the release workflow derives
