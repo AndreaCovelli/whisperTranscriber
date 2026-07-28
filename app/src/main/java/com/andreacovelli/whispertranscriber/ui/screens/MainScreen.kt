@@ -17,7 +17,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.History
@@ -35,6 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -46,7 +49,10 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.settings.ApiKeyState
 import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_QUEUED
@@ -54,6 +60,7 @@ import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_RET
 import com.andreacovelli.whispertranscriber.ui.components.TranscriptionJobCard
 import com.andreacovelli.whispertranscriber.ui.components.TranscriptionJobCardActions
 import com.andreacovelli.whispertranscriber.ui.components.providerDisplayLabel
+import com.andreacovelli.whispertranscriber.ui.main.JobRevealRequest
 import com.andreacovelli.whispertranscriber.ui.main.MainMsg
 import com.andreacovelli.whispertranscriber.ui.main.MainViewModel
 import com.andreacovelli.whispertranscriber.ui.main.TranscriptionJobState
@@ -68,6 +75,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit, onNavi
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val listState = rememberLazyListState()
 
     Scaffold(
         topBar = {
@@ -93,6 +101,10 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit, onNavi
             clipboard = clipboard,
             scope = scope,
             context = context,
+            listState = listState,
+            onJobRevealHandled = { requestToken ->
+                viewModel.dispatch(MainMsg.JobRevealHandled(requestToken))
+            },
         )
     }
 }
@@ -107,14 +119,56 @@ private fun MainScreenContent(
     clipboard: Clipboard,
     scope: CoroutineScope,
     context: Context,
+    listState: LazyListState,
+    onJobRevealHandled: (Long) -> Unit,
+) {
+    MainJobList(
+        uiState = uiState,
+        listState = listState,
+        modifier = Modifier.padding(paddingValues),
+        onNavigateToSettings = onNavigateToSettings,
+        onClearCompleted = onClearCompleted,
+        onJobRevealHandled = onJobRevealHandled,
+    ) { job ->
+        MainJobCard(
+            viewModel = viewModel,
+            job = job,
+            canSummarize = uiState.geminiApiKeyState is ApiKeyState.Present,
+            clipboard = clipboard,
+            scope = scope,
+            context = context,
+        )
+    }
+}
+
+@Composable
+internal fun MainJobList(
+    uiState: UiState,
+    listState: LazyListState,
+    modifier: Modifier = Modifier,
+    onNavigateToSettings: () -> Unit,
+    onClearCompleted: () -> Unit,
+    onJobRevealHandled: (Long) -> Unit,
+    jobContent: @Composable (TranscriptionJobState) -> Unit,
 ) {
     val transcriptionProviderLabel = providerDisplayLabel(uiState.provider, uiState.transcriptionCustomGeminiModelName)
     val summarizerProviderLabel =
         providerDisplayLabel(uiState.summarizerProvider, uiState.summarizerCustomGeminiModelName)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val revealRequest = uiState.jobRevealRequest as? JobRevealRequest.Ready
+    val revealItemIndex = revealRequest?.let { resolveMainJobItemIndex(uiState, it.jobId) }
+
+    LaunchedEffect(revealRequest?.token, revealItemIndex, listState, lifecycleOwner) {
+        if (revealRequest == null || revealItemIndex == null) return@LaunchedEffect
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            listState.animateScrollToItem(revealItemIndex, scrollOffset = 0)
+            onJobRevealHandled(revealRequest.token)
+        }
+    }
+
     LazyColumn(
-        modifier = Modifier
-            .padding(paddingValues)
-            .fillMaxSize(),
+        state = listState,
+        modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -136,21 +190,30 @@ private fun MainScreenContent(
                 item { ClearCompletedRow(onClick = onClearCompleted) }
             }
             items(uiState.jobs, key = { it.id }) { job ->
-                MainJobCard(
-                    viewModel = viewModel,
-                    job = job,
-                    canSummarize = uiState.geminiApiKeyState is ApiKeyState.Present,
-                    clipboard = clipboard,
-                    scope = scope,
-                    context = context,
-                )
+                jobContent(job)
             }
         }
     }
 }
 
+internal fun resolveMainJobItemIndex(uiState: UiState, jobId: Int): Int? {
+    val jobIndex = uiState.jobs.indexOfFirst { it.id == jobId }
+    if (jobIndex == -1) return null
+
+    var itemIndex = MAIN_LIST_FIXED_HEADER_COUNT
+    if (uiState.batchProgressState != null) {
+        itemIndex += 1
+    }
+    if (uiState.jobs.any { !it.isRunning && !it.isQueuedLike() }) {
+        itemIndex += 1
+    }
+    return itemIndex + jobIndex
+}
+
 private fun TranscriptionJobState.isQueuedLike(): Boolean =
     status == DISPLAY_JOB_STATUS_QUEUED || status == DISPLAY_JOB_STATUS_RETRY_SCHEDULED
+
+private const val MAIN_LIST_FIXED_HEADER_COUNT = 2
 
 @Composable
 private fun MainJobCard(
