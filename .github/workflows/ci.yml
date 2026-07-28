@@ -89,6 +89,14 @@ jobs:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
           add-job-summary: "on-failure"
 
+      - name: Reserve disk space for the API 34 managed device
+        run: |
+          if [[ -d /usr/local/lib/android/sdk/ndk ]]; then
+            sudo du -sh /usr/local/lib/android/sdk/ndk
+            sudo rm -rf /usr/local/lib/android/sdk/ndk
+          fi
+          df -h /
+
       - name: Install Android emulator
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "emulator"
@@ -99,6 +107,14 @@ jobs:
       - name: Verify emulator acceleration
         run: |
           "$ANDROID_HOME/emulator/emulator" -accel-check
+
+      - name: Prepare managed device
+        run: >-
+          ./gradlew pixel6Api34Setup
+          -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true
+          -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
+          --info
+          --console=plain
 
       - name: Run managed-device tests
         run: >-
