@@ -109,11 +109,20 @@ jobs:
           "$ANDROID_HOME/emulator/emulator" -accel-check
 
       - name: Prepare managed device
+        id: prepare_managed_device
+        run: >-
+          ./gradlew pixel6Api34Setup
+          -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
+          --console=plain
+
+      - name: Diagnose managed-device setup failure
+        if: ${{ failure() && steps.prepare_managed_device.outcome == 'failure' }}
         run: >-
           ./gradlew pixel6Api34Setup
           -Pandroid.experimental.testOptions.managedDevices.emulator.showKernelLogging=true
           -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
           --info
+          --stacktrace
           --console=plain
 
       - name: Run managed-device tests
