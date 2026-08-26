@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.andreacovelli.whispertranscriber.security.KeystoreCrypto
+import com.andreacovelli.whispertranscriber.transcription.MICROSOFT_MAI_TRANSCRIBE_MODEL
 import com.andreacovelli.whispertranscriber.transcription.MicrosoftSpeechRegion
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.nio.charset.StandardCharsets
@@ -25,8 +26,7 @@ import kotlinx.coroutines.flow.map
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
 enum class TranscriptionProvider(val modelName: String? = null) {
-    ELEVEN_LABS,
-    MICROSOFT_MAI_TRANSCRIBE("mai-transcribe-1"),
+    MICROSOFT_MAI_TRANSCRIBE(MICROSOFT_MAI_TRANSCRIBE_MODEL),
     GEMINI_FLASH_LITE("gemini-flash-lite-latest"),
     GEMINI_FLASH("gemini-flash-latest"),
     GEMINI_PRO("gemini-pro-latest"),
@@ -53,16 +53,8 @@ data class TranscriptionQueueSettings(
 
 data class SummarizationSettings(val provider: TranscriptionProvider, val customModelName: String)
 
-internal fun decodeStoredTranscriptionProvider(name: String?): TranscriptionProvider = when (name) {
-    null, "ELEVEN_LABS" -> TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE
-    "GEMINI_25_FLASH" -> TranscriptionProvider.GEMINI_FLASH
-    else -> runCatching { TranscriptionProvider.valueOf(name) }
-        .getOrDefault(TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE)
-}
-
-internal fun decodeHistoricalTranscriptionProvider(name: String?): TranscriptionProvider = when (name) {
+internal fun decodeTranscriptionProvider(name: String?): TranscriptionProvider = when (name) {
     null -> TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE
-    "ELEVEN_LABS" -> TranscriptionProvider.ELEVEN_LABS
     "GEMINI_25_FLASH" -> TranscriptionProvider.GEMINI_FLASH
     else -> runCatching { TranscriptionProvider.valueOf(name) }
         .getOrDefault(TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE)
@@ -277,7 +269,7 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
     }.distinctUntilChanged()
 
     val transcriptionQueueSettingsFlow: Flow<TranscriptionQueueSettings> = context.dataStore.data.map { prefs ->
-        val provider = decodeStoredTranscriptionProvider(prefs[SELECTED_PROVIDER])
+        val provider = decodeTranscriptionProvider(prefs[SELECTED_PROVIDER])
         TranscriptionQueueSettings(
             provider = provider,
             customModelName = prefs[GEMINI_TRANSCRIPTION_CUSTOM_MODEL_NAME].orEmpty(),

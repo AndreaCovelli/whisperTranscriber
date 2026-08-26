@@ -1,5 +1,3 @@
-@file:Suppress("unused")
-
 package com.andreacovelli.whispertranscriber.queue
 
 import android.os.Build

@@ -17,7 +17,7 @@ import com.andreacovelli.whispertranscriber.security.GenAiClientFactory
 import com.andreacovelli.whispertranscriber.services.SummarizationService
 import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
-import com.andreacovelli.whispertranscriber.settings.decodeStoredTranscriptionProvider
+import com.andreacovelli.whispertranscriber.settings.decodeTranscriptionProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.IOException
@@ -717,8 +717,7 @@ class TranscriptionExecutionRunner @Inject constructor(
     }
 
     private fun resolveProviderExecution(providerName: String?, requestedModel: String?): ProviderExecution =
-        when (val provider = decodeStoredTranscriptionProvider(providerName)) {
-            TranscriptionProvider.ELEVEN_LABS,
+        when (val provider = decodeTranscriptionProvider(providerName)) {
             TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
             -> ProviderExecution.MicrosoftSpeech
             TranscriptionProvider.GEMINI_FLASH_LITE,

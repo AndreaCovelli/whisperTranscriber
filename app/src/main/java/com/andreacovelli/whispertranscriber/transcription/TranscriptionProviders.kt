@@ -46,6 +46,7 @@ private const val NO_TEXT_FOUND = "No text found."
 
 // Current MAI Transcribe examples in Microsoft Learn use this API version.
 internal const val MICROSOFT_SPEECH_API_VERSION = "2025-10-15"
+internal const val MICROSOFT_MAI_TRANSCRIBE_MODEL = "mai-transcribe-1.5"
 
 internal class MicrosoftSpeechTranscriber(
     private val apiKey: CharArray,
@@ -57,7 +58,6 @@ internal class MicrosoftSpeechTranscriber(
     private val ioDispatcher: CoroutineDispatcher,
 ) : ProviderTranscriber {
     companion object {
-        private const val MICROSOFT_SPEECH_MODEL = "mai-transcribe-1"
         private const val MICROSOFT_SPEECH_KEY_HEADER = "Ocp-Apim-Subscription-Key"
     }
 
@@ -75,7 +75,7 @@ internal class MicrosoftSpeechTranscriber(
                     "enhancedMode",
                     JSONObject()
                         .put("enabled", true)
-                        .put("model", MICROSOFT_SPEECH_MODEL),
+                        .put("model", MICROSOFT_MAI_TRANSCRIBE_MODEL),
                 )
                 .toString()
             val multipartBody = MultipartBody.Builder()
@@ -121,7 +121,7 @@ internal class MicrosoftSpeechTranscriber(
                     TranscriptionData(
                         text = parseMicrosoftSpeechTranscriptText(response),
                         language = parseMicrosoftSpeechLanguage(response),
-                        model = MICROSOFT_SPEECH_MODEL,
+                        model = MICROSOFT_MAI_TRANSCRIBE_MODEL,
                     ),
                 ),
             )

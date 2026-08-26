@@ -281,7 +281,6 @@ class TranscriptionQueueService @Inject constructor(
 
     private fun resolveRequestedModel(provider: TranscriptionProvider, customModelName: String): String? =
         when (provider) {
-            TranscriptionProvider.ELEVEN_LABS,
             TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
             TranscriptionProvider.GEMINI_FLASH_LITE,
             TranscriptionProvider.GEMINI_FLASH,

@@ -31,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.andreacovelli.whispertranscriber.R
-import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_CLEARED
 import com.andreacovelli.whispertranscriber.ui.main.TranscriptionJobState
 
@@ -99,9 +98,7 @@ private fun JobSecondaryText(job: TranscriptionJobState, queuedProviderLabel: St
         if (job.model.isNotBlank()) {
             append(" • ")
             append(stringResource(R.string.job_model_label, job.model))
-        } else if (job.requestedModel.isNotBlank() &&
-            job.provider != TranscriptionProvider.ELEVEN_LABS
-        ) {
+        } else if (job.requestedModel.isNotBlank()) {
             append(" • ")
             append(stringResource(R.string.job_queued_model_label, job.requestedModel))
         }

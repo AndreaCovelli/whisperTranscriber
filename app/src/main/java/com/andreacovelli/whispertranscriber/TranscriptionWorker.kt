@@ -18,7 +18,6 @@ import com.andreacovelli.whispertranscriber.transcription.TranscriptionExecution
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 
-@Suppress("unused")
 @HiltWorker
 class TranscriptionWorker @AssistedInject constructor(
     @Assisted appContext: Context,
@@ -59,7 +58,7 @@ class TranscriptionWorker @AssistedInject constructor(
         }
     }
 
-    private suspend fun updateNotification(jobId: Int, displayName: String, progressText: String) {
+    private suspend fun updateNotification(jobId: Int, progressText: String) {
         try {
             setForeground(createForegroundInfo(progressText))
             backgroundShareNotifier.cancelBackgroundProcessing(jobId)
@@ -95,7 +94,9 @@ class TranscriptionWorker @AssistedInject constructor(
                 jobId = jobId,
                 executionOwnerId = id.toString(),
                 speakerLabelPrefix = speakerLabelPrefix,
-                onProgressNotification = ::updateNotification,
+                onProgressNotification = { notificationJobId, _, progressText ->
+                    updateNotification(notificationJobId, progressText)
+                },
             )
         ) {
             JobRunOutcome.Success -> {

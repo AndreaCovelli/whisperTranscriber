@@ -10,6 +10,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.andreacovelli.whispertranscriber.data.AppDatabase
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
+import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_CANCELLED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_COMPLETED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
@@ -385,6 +386,55 @@ class HistoryFtsSyncInstrumentedTest {
     }
 
     @Test
+    fun migrationFromVersion6_assignsCurrentMicrosoftProviderToExistingJobs() {
+        val databaseName = "provider-default-migration-test.db"
+        createLegacyRawDatabase(databaseName, 6) { legacyDb ->
+            legacyDb.execSQL(
+                """
+                INSERT INTO active_jobs(
+                    uri,
+                    displayName,
+                    status,
+                    progress,
+                    transcript,
+                    language,
+                    model,
+                    summary,
+                    isRunning,
+                    isSummarizing,
+                    timestamp
+                ) VALUES (
+                    'content://test/queued.wav',
+                    'queued.wav',
+                    'Queued',
+                    0,
+                    '',
+                    '',
+                    '',
+                    '',
+                    0,
+                    0,
+                    100
+                )
+                """.trimIndent(),
+            )
+        }
+
+        val migratedDb = openMigratedDatabase(databaseName)
+        try {
+            migratedDb.openHelper.readableDatabase.query(
+                "SELECT providerName FROM active_jobs WHERE displayName = 'queued.wav'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE.name, cursor.getString(0))
+            }
+        } finally {
+            migratedDb.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun everyLegacyRawSchemaUpgradesToVersion15() {
         (1..6).forEach { version ->
             val databaseName = "raw-schema-$version-to-15.db"
@@ -396,7 +446,11 @@ class HistoryFtsSyncInstrumentedTest {
 
     private fun ftsMatches(query: String): Boolean = ftsMatches(db, query)
 
-    private fun createLegacyRawDatabase(databaseName: String, version: Int) {
+    private fun createLegacyRawDatabase(
+        databaseName: String,
+        version: Int,
+        seed: (SupportSQLiteDatabase) -> Unit = {},
+    ) {
         val factory = FrameworkSQLiteOpenHelperFactory()
         val callback = object : SupportSQLiteOpenHelper.Callback(version) {
             override fun onCreate(db: SupportSQLiteDatabase) {
@@ -413,6 +467,7 @@ class HistoryFtsSyncInstrumentedTest {
                 AppDatabase.MIGRATIONS
                     .filter { it.endVersion <= version }
                     .forEach { it.migrate(db) }
+                seed(db)
             }
 
             override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit

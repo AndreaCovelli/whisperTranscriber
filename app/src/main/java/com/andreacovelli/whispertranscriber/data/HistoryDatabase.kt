@@ -963,7 +963,9 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE active_jobs ADD COLUMN sourceMimeType TEXT")
                 db.execSQL("ALTER TABLE active_jobs ADD COLUMN stagedFilePath TEXT")
-                db.execSQL("ALTER TABLE active_jobs ADD COLUMN providerName TEXT NOT NULL DEFAULT 'ELEVEN_LABS'")
+                db.execSQL(
+                    "ALTER TABLE active_jobs ADD COLUMN providerName TEXT NOT NULL DEFAULT 'MICROSOFT_MAI_TRANSCRIBE'",
+                )
                 db.execSQL("ALTER TABLE active_jobs ADD COLUMN requestedModel TEXT")
             }
         }

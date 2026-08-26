@@ -87,16 +87,6 @@ class ApiKeyManagerInstrumentedTest {
     }
 
     @Test
-    fun transcriptionQueueSettingsFlow_mapsLegacyElevenLabsSelectionToMicrosoft() = runBlocking {
-        apiKeyManager.saveProvider(TranscriptionProvider.ELEVEN_LABS)
-
-        assertEquals(
-            TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
-            apiKeyManager.transcriptionQueueSettingsFlow.first().provider,
-        )
-    }
-
-    @Test
     fun microsoftSpeechRegionFlow_returnsSavedNormalizedValue() = runBlocking {
         apiKeyManager.saveMicrosoftSpeechRegion(" WestUS ")
 

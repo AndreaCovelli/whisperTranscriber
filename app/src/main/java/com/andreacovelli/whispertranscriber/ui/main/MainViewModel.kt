@@ -19,7 +19,7 @@ import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.settings.TranscriptionQueueSettings
 import com.andreacovelli.whispertranscriber.settings.decodeHistoricalSummarizerProvider
-import com.andreacovelli.whispertranscriber.settings.decodeHistoricalTranscriptionProvider
+import com.andreacovelli.whispertranscriber.settings.decodeTranscriptionProvider
 import com.andreacovelli.whispertranscriber.summary.TranscriptionSummarizationRepository
 import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
@@ -117,7 +117,7 @@ fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     timestamp = timestamp,
     uri = uri.toUri(),
     displayName = displayName,
-    provider = decodeHistoricalTranscriptionProvider(providerName),
+    provider = decodeTranscriptionProvider(providerName),
     requestedModel = requestedModel.orEmpty(),
     status = displayJobStatus(status),
     progress = progress,
@@ -451,7 +451,6 @@ class MainViewModel @Inject constructor(
     override fun onCleared() {
         summaryJobs.values.forEach(Job::cancel)
         summaryJobs.clear()
-        super.onCleared()
     }
 
     private suspend fun resolveTranscriptionQueueSettingsForShare(): TranscriptionQueueSettings {

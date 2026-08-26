@@ -11,8 +11,7 @@ import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.settings.TranscriptionQueueSettings
 import com.andreacovelli.whispertranscriber.settings.decodeHistoricalSummarizerProvider
-import com.andreacovelli.whispertranscriber.settings.decodeHistoricalTranscriptionProvider
-import com.andreacovelli.whispertranscriber.settings.decodeStoredTranscriptionProvider
+import com.andreacovelli.whispertranscriber.settings.decodeTranscriptionProvider
 import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_CANCELLED
 import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_CLEARED
 import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_COMPLETED
@@ -197,32 +196,32 @@ class TranscriptionPresentationTest {
     }
 
     @Test
-    fun decodeStoredTranscriptionProvider_mapsLegacyGemini25FlashValue() {
+    fun decodeTranscriptionProvider_mapsLegacyGemini25FlashValue() {
         assertEquals(
             TranscriptionProvider.GEMINI_FLASH,
-            decodeStoredTranscriptionProvider("GEMINI_25_FLASH"),
+            decodeTranscriptionProvider("GEMINI_25_FLASH"),
         )
     }
 
     @Test
-    fun decodeStoredTranscriptionProvider_mapsLegacyElevenLabsSelectionToMicrosoft() {
+    fun decodeTranscriptionProvider_mapsUnknownValueToMicrosoft() {
         assertEquals(
             TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
-            decodeStoredTranscriptionProvider("ELEVEN_LABS"),
+            decodeTranscriptionProvider("REMOVED_PROVIDER"),
         )
     }
 
     @Test
-    fun decodeHistoricalTranscriptionProvider_preservesLegacyElevenLabsForDisplay() {
+    fun decodeTranscriptionProvider_mapsMissingValueToMicrosoft() {
         assertEquals(
-            TranscriptionProvider.ELEVEN_LABS,
-            decodeHistoricalTranscriptionProvider("ELEVEN_LABS"),
+            TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
+            decodeTranscriptionProvider(null),
         )
     }
 
     @Test
-    fun decodeHistoricalSummarizerProvider_returnsNullForLegacyTranscriptionOnlyProviders() {
-        assertNull(decodeHistoricalSummarizerProvider("ELEVEN_LABS"))
+    fun decodeHistoricalSummarizerProvider_returnsNullForNonSummarizerProviders() {
+        assertNull(decodeHistoricalSummarizerProvider("REMOVED_PROVIDER"))
         assertNull(decodeHistoricalSummarizerProvider("MICROSOFT_MAI_TRANSCRIBE"))
     }
 

@@ -154,7 +154,7 @@ Select **Custom Model** in Settings and type any valid Gemini model identifier (
 ### Microsoft MAI Transcribe flow
 
 1. The audio file is sent in a single request to the Azure Speech `transcriptions:transcribe` endpoint.
-2. The request enables enhanced mode with model `mai-transcribe-1`.
+2. The request enables enhanced mode with model `mai-transcribe-1.5`.
 3. The API processes the audio and returns the full transcript in the response.
 4. The finished transcript is saved to local history.
 
