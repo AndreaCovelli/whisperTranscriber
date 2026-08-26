@@ -24,7 +24,7 @@ work = "2.11.2"
 detekt = "1.23.8"
 spotless = "8.9.0"
 serialization = "1.11.0"
-jackson = "2.22.1"
+jackson = "2.22.2"
 cyclonedx = "3.3.0"
 
 [libraries]
