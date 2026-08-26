@@ -88,7 +88,7 @@ android {
             localDevices {
                 create("pixel6Api34") {
                     device = "Pixel 6"
-                    apiLevel = 34
+                    sdkVersion = 34
                     systemImageSource = "aosp-atd"
                     testedAbi = "x86_64"
                 }
@@ -112,8 +112,10 @@ android {
                     "META-INF/DEPENDENCIES",
                     "META-INF/NOTICE",
                     "META-INF/NOTICE.txt",
+                    "META-INF/NOTICE.md",
                     "META-INF/LICENSE",
                     "META-INF/LICENSE.txt",
+                    "META-INF/LICENSE.md",
                 )
         }
     }
@@ -184,7 +186,7 @@ tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.lifecycle.runtime.compose) // ADD
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
@@ -199,9 +201,6 @@ dependencies {
     // Required to satisfy the google-genai runtime service entry and avoid release-time R8 warnings.
     implementation(libs.jackson.module.kotlin)
     implementation(libs.okhttp.logging.interceptor)
-
-    // FFmpeg - align with com.arthenica package used in imports
-    // implementation(libs.ffmpeg.kit.full)
 
     implementation(libs.androidx.material.icons.core)
     implementation(libs.androidx.material.icons.extended)

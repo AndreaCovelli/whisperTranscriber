@@ -10,16 +10,9 @@ updates:
       include: "scope"
     open-pull-requests-limit: 10
     groups:
-      androidx:
+      gradle-dependencies:
         patterns:
-          - "androidx.*"
-        update-types:
-          - "minor"
-          - "patch"
-      kotlin-ksp:
-        patterns:
-          - "org.jetbrains.kotlin*"
-          - "com.google.devtools.ksp"
+          - "*"
         update-types:
           - "minor"
           - "patch"
