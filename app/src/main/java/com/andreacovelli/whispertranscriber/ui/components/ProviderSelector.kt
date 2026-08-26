@@ -47,11 +47,22 @@ fun ProviderSelector(
 
     Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp)) {
         if (showMicrosoftSpeech) {
-            ProviderRadioOption(
-                text = stringResource(R.string.provider_option_microsoft_speech),
-                isSelected = selected == TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
-                onClick = { onSelect(TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE) },
+            Text(
+                stringResource(R.string.provider_group_microsoft),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                ProviderRadioOption(
+                    text = stringResource(R.string.provider_option_microsoft_speech),
+                    isSelected = selected == TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
+                    onClick = { onSelect(TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE) },
+                )
+            }
 
             Spacer(Modifier.height(8.dp))
         }

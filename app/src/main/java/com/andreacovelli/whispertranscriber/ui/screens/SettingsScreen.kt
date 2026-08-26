@@ -88,15 +88,15 @@ fun SettingsScreen(
                 ) { focusManager.clearFocus() },
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            SettingsSectionHeader(stringResource(R.string.settings_section_general))
             TranscriptionProviderCard(uiState = uiState, dispatch = viewModel::dispatch)
-            SpeakerDiarizationCard(uiState = uiState, dispatch = viewModel::dispatch)
-            SummarizerProviderCard(uiState = uiState, dispatch = viewModel::dispatch)
+            AutomaticSummarizationCard(uiState = uiState, dispatch = viewModel::dispatch)
             BackgroundShareSummaryNotificationsCard(
                 uiState = uiState,
                 onCheckedChange = onBackgroundShareSummaryNotificationsChange,
             )
-            AutomaticSummarizationCard(uiState = uiState, dispatch = viewModel::dispatch)
 
+            SettingsSectionHeader(stringResource(R.string.settings_section_microsoft))
             ApiKeyCard(
                 title = stringResource(R.string.settings_microsoft_speech_api_key_title),
                 label = stringResource(R.string.settings_microsoft_speech_api_key_label),
@@ -109,9 +109,9 @@ fun SettingsScreen(
                 forgetMessage = stringResource(R.string.settings_microsoft_speech_key_forgotten),
                 snackbarHostState = snackbarHostState,
             )
-
             MicrosoftSpeechRegionCard(uiState = uiState, dispatch = viewModel::dispatch)
 
+            SettingsSectionHeader(stringResource(R.string.settings_section_gemini))
             ApiKeyCard(
                 title = stringResource(R.string.settings_gemini_api_key_title),
                 label = stringResource(R.string.settings_gemini_api_key_label),
@@ -124,10 +124,23 @@ fun SettingsScreen(
                 forgetMessage = stringResource(R.string.settings_gemini_key_forgotten),
                 snackbarHostState = snackbarHostState,
             )
+            SummarizerProviderCard(uiState = uiState, dispatch = viewModel::dispatch)
+            SpeakerDiarizationCard(uiState = uiState, dispatch = viewModel::dispatch)
 
+            SettingsSectionHeader(stringResource(R.string.settings_section_about))
             AppInfoCard()
         }
     }
+}
+
+@Composable
+private fun SettingsSectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 4.dp, top = 8.dp),
+    )
 }
 
 @Composable

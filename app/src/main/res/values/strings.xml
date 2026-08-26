@@ -3,6 +3,10 @@
     <string name="app_version_info">Version: %1$s (%2$d)</string>
     <string name="back">Back</string>
     <string name="settings_title">Settings</string>
+    <string name="settings_section_general">General</string>
+    <string name="settings_section_microsoft">Microsoft MAI Transcribe</string>
+    <string name="settings_section_gemini">Gemini</string>
+    <string name="settings_section_about">About</string>
     <string name="settings_transcription_provider">Transcription Provider</string>
     <string name="settings_summarizer_model">Summarizer Model</string>
     <string name="settings_speaker_diarization">Speaker Diarization</string>
@@ -134,6 +138,7 @@
     <string name="api_key_encrypted_saved">Encrypted &amp; saved</string>
     <string name="api_key_keystore_error">Keystore Error: %1$s. Please re-enter your key.</string>
     <string name="api_key_forget">Forget key</string>
+    <string name="provider_group_microsoft">Microsoft Models</string>
     <string name="provider_option_microsoft_speech">Microsoft MAI Transcribe</string>
     <string name="provider_group_gemini_models">Gemini Models</string>
     <string name="provider_option_flash_lite">Gemini Flash Lite</string>
