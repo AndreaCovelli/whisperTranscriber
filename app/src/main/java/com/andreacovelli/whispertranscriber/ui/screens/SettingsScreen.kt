@@ -90,11 +90,13 @@ fun SettingsScreen(
         ) {
             SettingsSectionHeader(stringResource(R.string.settings_section_general))
             TranscriptionProviderCard(uiState = uiState, dispatch = viewModel::dispatch)
-            AutomaticSummarizationCard(uiState = uiState, dispatch = viewModel::dispatch)
+            SpeakerDiarizationCard(uiState = uiState, dispatch = viewModel::dispatch)
+            SummarizerProviderCard(uiState = uiState, dispatch = viewModel::dispatch)
             BackgroundShareSummaryNotificationsCard(
                 uiState = uiState,
                 onCheckedChange = onBackgroundShareSummaryNotificationsChange,
             )
+            AutomaticSummarizationCard(uiState = uiState, dispatch = viewModel::dispatch)
 
             SettingsSectionHeader(stringResource(R.string.settings_section_microsoft))
             ApiKeyCard(
@@ -124,8 +126,6 @@ fun SettingsScreen(
                 forgetMessage = stringResource(R.string.settings_gemini_key_forgotten),
                 snackbarHostState = snackbarHostState,
             )
-            SummarizerProviderCard(uiState = uiState, dispatch = viewModel::dispatch)
-            SpeakerDiarizationCard(uiState = uiState, dispatch = viewModel::dispatch)
 
             SettingsSectionHeader(stringResource(R.string.settings_section_about))
             AppInfoCard()

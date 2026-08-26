@@ -633,15 +633,30 @@ class ValidationService @Inject constructor(
         return try {
             val codes = probeMicrosoftSpeechKey(validatedRegion, rawKey)
             resolveMicrosoftSpeechKeyValidationResults(codes)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: IOException) {
             KeyValidationResult(resolveMicrosoftSpeechRegionIOExceptionMessage(validatedRegion.value, e))
         }
     }
 
-    suspend fun validateMicrosoftSpeechRegion(region: String): RegionValidationResult = try {
-        RegionValidationResult(normalizedRegion = MicrosoftSpeechRegion.parse(region).value)
-    } catch (error: IllegalArgumentException) {
-        RegionValidationResult(errorMessage = error.message ?: "Enter a valid Azure Speech region")
+    suspend fun validateMicrosoftSpeechRegion(region: String): RegionValidationResult {
+        val validatedRegion = try {
+            MicrosoftSpeechRegion.parse(region)
+        } catch (error: IllegalArgumentException) {
+            return RegionValidationResult(errorMessage = error.message ?: "Enter a valid Azure Speech region")
+        }
+
+        return try {
+            probeMicrosoftSpeechRegion(validatedRegion)
+            RegionValidationResult(normalizedRegion = validatedRegion.value)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IOException) {
+            RegionValidationResult(
+                errorMessage = resolveMicrosoftSpeechRegionIOExceptionMessage(validatedRegion.value, e),
+            )
+        }
     }
 
     private fun buildMicrosoftSpeechValidationUrls(region: MicrosoftSpeechRegion) = listOf(
@@ -655,7 +670,13 @@ class ValidationService @Inject constructor(
         ),
     )
 
+    private suspend fun probeMicrosoftSpeechRegion(region: MicrosoftSpeechRegion): List<Int> =
+        probeMicrosoftSpeech(region = region, rawKey = null)
+
     private suspend fun probeMicrosoftSpeechKey(region: MicrosoftSpeechRegion, rawKey: String): List<Int> =
+        probeMicrosoftSpeech(region = region, rawKey = rawKey)
+
+    private suspend fun probeMicrosoftSpeech(region: MicrosoftSpeechRegion, rawKey: String?): List<Int> =
         withContext(ioDispatcher) {
             coroutineScope {
                 buildMicrosoftSpeechValidationUrls(region).map { url ->
@@ -663,7 +684,9 @@ class ValidationService @Inject constructor(
                         val requestBuilder = Request.Builder()
                             .url(url)
                             .get()
-                            .header(MICROSOFT_SPEECH_KEY_HEADER, rawKey)
+                        if (rawKey != null) {
+                            requestBuilder.header(MICROSOFT_SPEECH_KEY_HEADER, rawKey)
+                        }
                         okHttpClient.newCall(requestBuilder.build()).execute().use { response -> response.code }
                     }
                 }.awaitAll()
