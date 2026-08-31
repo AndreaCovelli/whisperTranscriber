@@ -241,7 +241,7 @@ jobs:
         run: ./gradlew :app:cyclonedxDirectBom --console=plain
 
       - name: Report release runtime SBOM vulnerabilities
-        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
         with:
           # The SBOM input is mutually exclusive with a workspace path scan.
           sbom: app/build/reports/cyclonedx-release/bom.json
@@ -251,7 +251,7 @@ jobs:
           fail-build: false
 
       - name: Gate fixed high and critical release runtime vulnerabilities
-        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
         with:
           # Keep Grype scoped to the release runtime dependency graph.
           sbom: app/build/reports/cyclonedx-release/bom.json
