@@ -8,6 +8,11 @@ on:
     types: [opened, reopened, synchronize]
   workflow_dispatch:
   workflow_call:
+    inputs:
+      force:
+        description: Run all checks regardless of changed paths
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -15,10 +20,61 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
+  changes:
+    name: Detect relevant changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      android: ${{ steps.changes.outputs.android }}
+      instrumentation: ${{ steps.changes.outputs.instrumentation }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect Android-relevant changes
+        if: ${{ !inputs.force && github.event_name != 'workflow_dispatch' }}
+        id: changes
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            android:
+              - ".github/workflows/**"
+              - "app/**"
+              - "build.gradle.kts"
+              - "config/**"
+              - "gradle/**"
+              - "gradle.properties"
+              - "gradlew"
+              - "gradlew.bat"
+              - "settings.gradle.kts"
+            instrumentation:
+              - ".github/workflows/ci.yml"
+              - "app/build.gradle.kts"
+              - "app/schemas/**"
+              - "app/src/androidTest/**"
+              - "app/src/main/**"
+              - "build.gradle.kts"
+              - "gradle/**"
+              - "gradle.properties"
+              - "gradlew"
+              - "gradlew.bat"
+              - "settings.gradle.kts"
+
   quality:
     name: Quality
+    needs: changes
+    if: >-
+      ${{
+        inputs.force ||
+        github.event_name == 'workflow_dispatch' ||
+        needs.changes.outputs.android == 'true'
+      }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -44,6 +100,13 @@ jobs:
 
   build-unit:
     name: Build & Unit
+    needs: changes
+    if: >-
+      ${{
+        inputs.force ||
+        github.event_name == 'workflow_dispatch' ||
+        needs.changes.outputs.android == 'true'
+      }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -69,59 +132,34 @@ jobs:
 
   instrumentation:
     name: Instrumentation
+    needs: changes
+    if: >-
+      ${{
+        inputs.force ||
+        github.event_name == 'workflow_dispatch' ||
+        needs.changes.outputs.instrumentation == 'true'
+      }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: 0
           persist-credentials: false
 
-      - name: Determine whether instrumentation is required
-        id: instrumentation_scope
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          if [[ "$EVENT_NAME" != "pull_request" ]]; then
-            echo "required=true" >> "$GITHUB_OUTPUT"
-          elif git diff --quiet "$BASE_SHA" HEAD -- \
-            .github/workflows/ci.yml \
-            app/build.gradle.kts \
-            app/schemas \
-            app/src/androidTest \
-            app/src/main \
-            build.gradle.kts \
-            gradle \
-            gradle.properties \
-            settings.gradle.kts
-          then
-            echo "required=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "required=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Skip instrumentation for unrelated changes
-        if: ${{ steps.instrumentation_scope.outputs.required != 'true' }}
-        run: echo "No Android runtime, instrumentation, schema, or build inputs changed."
-
       - name: Set up JDK 21
-        if: ${{ steps.instrumentation_scope.outputs.required == 'true' }}
         uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
         with:
           distribution: temurin
           java-version: "21"
 
       - name: Setup Gradle
-        if: ${{ steps.instrumentation_scope.outputs.required == 'true' }}
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
           add-job-summary: "on-failure"
 
       - name: Reserve disk space for the API 34 managed device
-        if: ${{ steps.instrumentation_scope.outputs.required == 'true' }}
         run: |
           if [[ -d /usr/local/lib/android/sdk/ndk ]]; then
             sudo du -sh /usr/local/lib/android/sdk/ndk
@@ -131,29 +169,24 @@ jobs:
 
       - name: Restore API 34 ATD system image
         id: atd_cache
-        if: ${{ steps.instrumentation_scope.outputs.required == 'true' }}
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /usr/local/lib/android/sdk/system-images/android-34/aosp_atd/x86_64
           key: ${{ runner.os }}-android-atd-api34-aosp-x86_64-v1
 
       - name: Install Android emulator
-        if: ${{ steps.instrumentation_scope.outputs.required == 'true' }}
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "emulator"
 
       - name: Enable KVM access
-        if: ${{ steps.instrumentation_scope.outputs.required == 'true' }}
         run: sudo chmod 666 /dev/kvm
 
       - name: Verify emulator acceleration
-        if: ${{ steps.instrumentation_scope.outputs.required == 'true' }}
         run: |
           "$ANDROID_HOME/emulator/emulator" -accel-check
 
       - name: Prepare managed device
         id: prepare_managed_device
-        if: ${{ steps.instrumentation_scope.outputs.required == 'true' }}
         run: >-
           ./gradlew pixel6Api34Setup
           -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
@@ -163,7 +196,6 @@ jobs:
         if: >-
           ${{
             failure() &&
-            steps.instrumentation_scope.outputs.required == 'true' &&
             steps.prepare_managed_device.outcome == 'failure'
           }}
         run: >-
@@ -175,7 +207,6 @@ jobs:
           --console=plain
 
       - name: Run managed-device tests
-        if: ${{ steps.instrumentation_scope.outputs.required == 'true' }}
         run: >-
           ./gradlew pixel6Api34DebugAndroidTest
           -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
@@ -186,7 +217,6 @@ jobs:
           ${{
             success() &&
             github.event_name == 'push' &&
-            steps.instrumentation_scope.outputs.required == 'true' &&
             steps.atd_cache.outputs.cache-hit != 'true'
           }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -195,7 +225,7 @@ jobs:
           key: ${{ steps.atd_cache.outputs.cache-primary-key }}
 
       - name: Upload instrumentation reports on failure
-        if: ${{ failure() && steps.instrumentation_scope.outputs.required == 'true' }}
+        if: ${{ failure() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: instrumentation-reports
@@ -206,6 +236,7 @@ jobs:
 
   security:
     name: Security
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -226,21 +257,45 @@ jobs:
           GITLEAKS_ENABLE_COMMENTS: "false"
 
       - name: Set up JDK 21
+        if: >-
+          ${{
+            inputs.force ||
+            github.event_name == 'workflow_dispatch' ||
+            needs.changes.outputs.android == 'true'
+          }}
         uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
         with:
           distribution: temurin
           java-version: "21"
 
       - name: Setup Gradle
+        if: >-
+          ${{
+            inputs.force ||
+            github.event_name == 'workflow_dispatch' ||
+            needs.changes.outputs.android == 'true'
+          }}
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
           add-job-summary: "on-failure"
 
       - name: Generate release runtime CycloneDX SBOM
+        if: >-
+          ${{
+            inputs.force ||
+            github.event_name == 'workflow_dispatch' ||
+            needs.changes.outputs.android == 'true'
+          }}
         run: ./gradlew :app:cyclonedxDirectBom --console=plain
 
       - name: Report release runtime SBOM vulnerabilities
+        if: >-
+          ${{
+            inputs.force ||
+            github.event_name == 'workflow_dispatch' ||
+            needs.changes.outputs.android == 'true'
+          }}
         uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
         with:
           # The SBOM input is mutually exclusive with a workspace path scan.
@@ -251,6 +306,12 @@ jobs:
           fail-build: false
 
       - name: Gate fixed high and critical release runtime vulnerabilities
+        if: >-
+          ${{
+            inputs.force ||
+            github.event_name == 'workflow_dispatch' ||
+            needs.changes.outputs.android == 'true'
+          }}
         uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
         with:
           # Keep Grype scoped to the release runtime dependency graph.
@@ -261,7 +322,13 @@ jobs:
           fail-build: true
 
       - name: Upload release SBOM
-        if: always()
+        if: >-
+          ${{
+            always() &&
+            (inputs.force ||
+            github.event_name == 'workflow_dispatch' ||
+            needs.changes.outputs.android == 'true')
+          }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-runtime-sbom
@@ -271,20 +338,22 @@ jobs:
   ci-gate:
     name: CI Gate
     if: always()
-    needs: [quality, build-unit, instrumentation, security]
+    needs: [changes, quality, build-unit, instrumentation, security]
     runs-on: ubuntu-latest
     steps:
-      - name: Require every verification job
+      - name: Require every applicable verification job
         env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
           QUALITY_RESULT: ${{ needs.quality.result }}
           BUILD_UNIT_RESULT: ${{ needs.build-unit.result }}
           INSTRUMENTATION_RESULT: ${{ needs.instrumentation.result }}
           SECURITY_RESULT: ${{ needs.security.result }}
         run: |
-          test "$QUALITY_RESULT" = "success"
-          test "$BUILD_UNIT_RESULT" = "success"
-          test "$INSTRUMENTATION_RESULT" = "success"
+          test "$CHANGES_RESULT" = "success"
           test "$SECURITY_RESULT" = "success"
+          for result in "$QUALITY_RESULT" "$BUILD_UNIT_RESULT" "$INSTRUMENTATION_RESULT"; do
+            test "$result" = "success" || test "$result" = "skipped"
+          done
 
   legacy-gate:
     name: Build, Test and Auto-merge
