@@ -123,6 +123,8 @@ android {
 
 tasks.named<org.cyclonedx.gradle.CyclonedxDirectTask>("cyclonedxDirectBom") {
     includeConfigs = listOf("releaseRuntimeClasspath")
+    // Keep task input discovery from evaluating CycloneDX's dependency graph provider.
+    resolvedDependencies.setFrom(configurations.named("releaseRuntimeClasspath"))
     projectType = org.cyclonedx.model.Component.Type.APPLICATION
     jsonOutput.set(layout.buildDirectory.file("reports/cyclonedx-release/bom.json"))
     xmlOutput.unsetConvention()
