@@ -1,12 +1,6 @@
 {
   "version": 1,
   "skills": {
-    "code-reviewer": {
-      "source": "AndreaCovelli/my-skills",
-      "sourceType": "github",
-      "skillPath": "skills/code-reviewer/SKILL.md",
-      "computedHash": "a36ae3aacc504820ec66dd859095c4a6603a822961a1d0c5107d54312d3bb75c"
-    },
     "dependabot": {
       "source": "AndreaCovelli/my-skills",
       "sourceType": "github",
