@@ -10,7 +10,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.andreacovelli.whispertranscriber.security.KeystoreCrypto
 import com.andreacovelli.whispertranscriber.transcription.MICROSOFT_MAI_TRANSCRIBE_MODEL
-import com.andreacovelli.whispertranscriber.transcription.MicrosoftSpeechRegion
+import com.andreacovelli.whispertranscriber.transcription.MicrosoftSpeechEndpoint
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
@@ -124,10 +124,11 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
     }
 
     suspend fun saveMicrosoftSpeechRegion(region: String) {
-        val normalized = region.trim().lowercase(Locale.ROOT)
-        if (normalized.isNotEmpty()) {
-            MicrosoftSpeechRegion.parse(normalized)
-        }
+        val trimmed = region.trim()
+        val candidate = if (trimmed.contains("://")) trimmed else trimmed.lowercase(Locale.ROOT)
+        val normalized = candidate.takeIf(String::isNotEmpty)
+            ?.let { MicrosoftSpeechEndpoint.parse(it).value }
+            .orEmpty()
         context.dataStore.edit { prefs ->
             if (normalized.isEmpty()) {
                 prefs.remove(MICROSOFT_SPEECH_REGION)

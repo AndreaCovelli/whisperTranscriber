@@ -44,15 +44,15 @@ internal interface ProviderTranscriber {
 
 private const val NO_TEXT_FOUND = "No text found."
 
-// Current MAI Transcribe examples in Microsoft Learn use this API version.
+// Microsoft documents this as the latest generally available Speech-to-Text REST API version.
 internal const val MICROSOFT_SPEECH_API_VERSION = "2025-10-15"
-internal const val MICROSOFT_MAI_TRANSCRIBE_MODEL = "mai-transcribe-1.5"
+internal const val MICROSOFT_MAI_TRANSCRIBE_MODEL = "MAI-Transcribe-2"
 
 internal class MicrosoftSpeechTranscriber(
     private val apiKey: CharArray,
     private val audioFile: File,
     private val mimeType: String,
-    private val region: MicrosoftSpeechRegion,
+    private val endpoint: MicrosoftSpeechEndpoint,
     private val audioInspection: AudioInspection,
     private val okHttpClient: OkHttpClient,
     private val ioDispatcher: CoroutineDispatcher,
@@ -66,7 +66,7 @@ internal class MicrosoftSpeechTranscriber(
             validateMicrosoftSpeechAudio(audioInspection)
 
             emit(TranscriptionResult.Loading("Uploading audio ($mimeType) to Microsoft Speech..."))
-            val endpoint = region.buildEndpoint(
+            val transcribeUrl = endpoint.buildEndpoint(
                 encodedPath = "speechtotext/transcriptions:transcribe",
                 apiVersion = MICROSOFT_SPEECH_API_VERSION,
             )
@@ -90,7 +90,7 @@ internal class MicrosoftSpeechTranscriber(
 
             val responseBody = apiKey.useAsString { key ->
                 val request = Request.Builder()
-                    .url(endpoint)
+                    .url(transcribeUrl)
                     .header(MICROSOFT_SPEECH_KEY_HEADER, key)
                     .post(multipartBody)
                     .build()
@@ -296,7 +296,7 @@ internal fun friendlyHttpError(code: Int, provider: String): String = when (code
 
 internal fun resolveMicrosoftSpeechErrorMessage(code: Int, bodyText: String): String = when (code) {
     401 -> "Unauthorized. Check your Azure Speech key for Microsoft MAI Transcribe."
-    404 -> "Microsoft MAI Transcribe endpoint not found. Check the configured Speech region."
+    404 -> "Microsoft MAI Transcribe endpoint not found. Check the configured Speech region or custom endpoint."
     429 -> extractMicrosoftSpeechServiceMessage(bodyText)
         ?.let { serviceMessage ->
             if (isMicrosoftSpeechResourceExhaustedMessage(serviceMessage)) {

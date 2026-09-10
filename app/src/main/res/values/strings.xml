@@ -11,7 +11,7 @@
     <string name="settings_summarizer_model">Summarizer Model</string>
     <string name="settings_speaker_diarization">Speaker Diarization</string>
     <string name="settings_speaker_diarization_body">Label speakers in transcriptions when the provider can distinguish them</string>
-    <string name="settings_speaker_diarization_body_microsoft">Microsoft MAI Transcribe does not currently support speaker diarization</string>
+    <string name="settings_speaker_diarization_body_microsoft">Speaker diarization for Microsoft MAI Transcribe 2 is not yet enabled in this app</string>
     <string name="settings_automatic_summarization">Automatic Summarization</string>
     <string name="settings_automatic_summarization_body">Summarize completed transcriptions automatically</string>
     <string name="settings_background_share_summary_notifications">Stay in current app when sharing</string>
@@ -20,11 +20,11 @@
     <string name="settings_microsoft_speech_api_key_title">Microsoft MAI Transcribe Resource Key</string>
     <string name="settings_microsoft_speech_api_key_label">Enter the Speech resource key for your Foundry resource</string>
     <string name="settings_microsoft_speech_key_forgotten">Microsoft MAI Transcribe key forgotten</string>
-    <string name="settings_microsoft_speech_region_title">Azure Speech Region</string>
-    <string name="settings_microsoft_speech_region_body">Enter the Azure Speech region for your Foundry resource, for example eastus or westus. If validation fails, make sure you used the resource key and not a project API key.</string>
-    <string name="settings_microsoft_speech_region_label">Region</string>
-    <string name="settings_microsoft_speech_region_validating">Validating region…</string>
-    <string name="settings_microsoft_speech_region_valid">Region "%1$s" is valid</string>
+    <string name="settings_microsoft_speech_region_title">Azure Speech Endpoint</string>
+    <string name="settings_microsoft_speech_region_body">Enter an Azure Speech region such as eastus, or a custom HTTPS base endpoint such as https://my-resource.cognitiveservices.azure.com. Your resource key is sent to the configured endpoint.</string>
+    <string name="settings_microsoft_speech_region_label">Region or custom endpoint</string>
+    <string name="settings_microsoft_speech_region_validating">Validating endpoint…</string>
+    <string name="settings_microsoft_speech_region_valid">Azure Speech endpoint "%1$s" is valid</string>
     <string name="settings_gemini_api_key_title">Gemini API Key</string>
     <string name="settings_gemini_api_key_label">Enter Gemini API key</string>
     <string name="settings_gemini_key_forgotten">Gemini key forgotten</string>
@@ -139,7 +139,7 @@
     <string name="api_key_keystore_error">Keystore Error: %1$s. Please re-enter your key.</string>
     <string name="api_key_forget">Forget key</string>
     <string name="provider_group_microsoft">Microsoft Models</string>
-    <string name="provider_option_microsoft_speech">Microsoft MAI Transcribe</string>
+    <string name="provider_option_microsoft_speech">MAI Transcribe 2</string>
     <string name="provider_group_gemini_models">Gemini Models</string>
     <string name="provider_option_flash_lite">Gemini Flash Lite</string>
     <string name="provider_option_flash">Gemini Flash</string>

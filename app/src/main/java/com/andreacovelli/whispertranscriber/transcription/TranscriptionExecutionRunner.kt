@@ -223,7 +223,7 @@ class TranscriptionExecutionRunner @Inject constructor(
 
         val providerExecution = resolveProviderExecution(job.providerName, job.requestedModel)
         if (providerExecution is ProviderExecution.MicrosoftSpeech) {
-            validatePersistedMicrosoftSpeechRegion()
+            validatePersistedMicrosoftSpeechEndpoint()
         }
         val stagedUri = when (val resolution = QueuedAudioInputResolver.resolve(job)) {
             is QueuedAudioInputResolution.Ready -> resolution.uri
@@ -671,12 +671,12 @@ class TranscriptionExecutionRunner @Inject constructor(
             }
             var keyOwnershipTransferred = false
             try {
-                val region = MicrosoftSpeechRegion.parse(settings.microsoftSpeechRegionFlow.first())
+                val endpoint = MicrosoftSpeechEndpoint.parse(settings.microsoftSpeechRegionFlow.first())
                 val transcriber = MicrosoftSpeechTranscriber(
                     apiKey = keyChars,
                     audioFile = microsoftSpeechInput.file,
                     mimeType = microsoftSpeechInput.mimeType,
-                    region = region,
+                    endpoint = endpoint,
                     audioInspection = microsoftSpeechInput.inspection,
                     okHttpClient = okHttpClient,
                     ioDispatcher = ioDispatcher,
@@ -730,12 +730,13 @@ class TranscriptionExecutionRunner @Inject constructor(
             )
         }
 
-    private suspend fun validatePersistedMicrosoftSpeechRegion(): MicrosoftSpeechRegion {
-        val persistedRegion = settings.microsoftSpeechRegionFlow.first()
-        return MicrosoftSpeechRegion.parseOrNull(persistedRegion) ?: run {
+    private suspend fun validatePersistedMicrosoftSpeechEndpoint(): MicrosoftSpeechEndpoint {
+        val persistedEndpoint = settings.microsoftSpeechRegionFlow.first()
+        return MicrosoftSpeechEndpoint.parseOrNull(persistedEndpoint) ?: run {
             settings.clearInvalidMicrosoftSpeechConfiguration()
             error(
-                "The saved Azure Speech region was invalid. Reconfigure Microsoft Speech and rotate its API key.",
+                "The saved Azure Speech region or endpoint was invalid. " +
+                    "Reconfigure Microsoft Speech and rotate its API key.",
             )
         }
     }

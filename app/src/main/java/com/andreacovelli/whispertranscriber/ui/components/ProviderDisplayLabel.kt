@@ -3,7 +3,7 @@ package com.andreacovelli.whispertranscriber.ui.components
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 
 fun providerDisplayLabel(provider: TranscriptionProvider, customModelName: String): String = when (provider) {
-    TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE -> "Microsoft MAI Transcribe"
+    TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE -> "Microsoft MAI Transcribe 2"
     TranscriptionProvider.GEMINI_FLASH_LITE -> "Gemini Flash Lite"
     TranscriptionProvider.GEMINI_FLASH -> "Gemini Flash"
     TranscriptionProvider.GEMINI_PRO -> "Gemini Pro"
@@ -12,7 +12,7 @@ fun providerDisplayLabel(provider: TranscriptionProvider, customModelName: Strin
 }
 
 fun providerFamilyLabel(provider: TranscriptionProvider): String = when (provider) {
-    TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE -> "Microsoft MAI Transcribe"
+    TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE -> "Microsoft MAI Transcribe 2"
     TranscriptionProvider.GEMINI_FLASH_LITE -> "Gemini Flash Lite"
     TranscriptionProvider.GEMINI_FLASH -> "Gemini Flash"
     TranscriptionProvider.GEMINI_PRO -> "Gemini Pro"
