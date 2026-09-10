@@ -5,8 +5,8 @@ import android.content.Context
 import android.content.Intent
 import com.andreacovelli.whispertranscriber.background.BackgroundShareNotifier
 import com.andreacovelli.whispertranscriber.background.BackgroundShareResultKind
+import com.andreacovelli.whispertranscriber.background.StoredResultPublisher
 import com.andreacovelli.whispertranscriber.di.ApplicationScope
-import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
@@ -15,7 +15,7 @@ import kotlinx.coroutines.launch
 @AndroidEntryPoint
 class BackgroundShareResultNotificationReceiver : BroadcastReceiver() {
     @Inject
-    lateinit var repository: TranscriptionRepository
+    lateinit var storedResultPublisher: StoredResultPublisher
 
     @Inject
     lateinit var backgroundShareNotifier: BackgroundShareNotifier
@@ -35,7 +35,6 @@ class BackgroundShareResultNotificationReceiver : BroadcastReceiver() {
 
         if (intent.action != ACTION_PREVIOUS_RESULT_PAGE && intent.action != ACTION_NEXT_RESULT_PAGE) return
 
-        val displayName = intent.getStringExtra(EXTRA_DISPLAY_NAME).orEmpty()
         val resultKind = intent.getStringExtra(EXTRA_RESULT_KIND)
             ?.let { enumValueOfOrNull<BackgroundShareResultKind>(it) }
             ?: return
@@ -44,27 +43,7 @@ class BackgroundShareResultNotificationReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         applicationScope.launch {
             try {
-                if (backgroundShareNotifier.showCachedResultPage(jobId, resultKind, pageIndex)) {
-                    return@launch
-                }
-
-                val job = repository.getJob(jobId)
-                val history = repository.getHistoryForJob(jobId)
-                val text = when (resultKind) {
-                    BackgroundShareResultKind.TRANSCRIPTION -> history?.text.orEmpty()
-                    BackgroundShareResultKind.SUMMARY -> history?.summary.orEmpty()
-                }
-                if (text.isBlank()) {
-                    backgroundShareNotifier.cancelResult(jobId)
-                    return@launch
-                }
-                backgroundShareNotifier.showResultPage(
-                    jobId = jobId,
-                    displayName = displayName.ifBlank { job?.displayName.orEmpty() },
-                    resultKind = resultKind,
-                    text = text,
-                    pageIndex = pageIndex,
-                )
+                storedResultPublisher.publish(jobId, resultKind, pageIndex)
             } finally {
                 pendingResult.finish()
             }

@@ -636,7 +636,13 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
     @SuppressLint("MissingPermission")
     private fun notify(id: Int, builder: NotificationCompat.Builder) {
         if (!canPostNotifications()) return
-        NotificationManagerCompat.from(context).notify(id, builder.build())
+        try {
+            NotificationManagerCompat.from(context).notify(id, builder.build())
+        } catch (_: SecurityException) {
+            // Notification permission may be revoked after the permission check.
+        } catch (_: RuntimeException) {
+            // A notification service failure must not undo durable queue work.
+        }
     }
 
     private fun ensureResultChannel() {

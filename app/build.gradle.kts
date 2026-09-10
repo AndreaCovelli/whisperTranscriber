@@ -48,6 +48,12 @@ android {
         versionName = propVersionName ?: "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Permission recreation needs a fresh install before other tests grant notification access.
+        // CI runs it explicitly in its own managed-device invocation.
+        if (providers.gradleProperty("android.testInstrumentationRunnerArguments.class").orNull == null) {
+            testInstrumentationRunnerArguments["notClass"] =
+                "com.andreacovelli.whispertranscriber.NotificationPermissionRecreationInstrumentedTest"
+        }
     }
 
     sourceSets {
@@ -75,7 +81,14 @@ android {
             )
             signingConfig = if (releaseSigningConfigured) signingConfigs.getByName("release") else null
         }
+        create("minifiedSmoke") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            proguardFiles("proguard-minified-smoke.pro")
+            matchingFallbacks += "release"
+        }
     }
+    testBuildType = providers.gradleProperty("instrumentationBuildType").orElse("debug").get()
 
     buildFeatures {
         compose = true
@@ -238,6 +251,8 @@ dependencies {
     debugImplementation(libs.androidx.ui.test.manifest)
 
     constraints {
+        // AndroidX Test's ViewCapture needs SuspendToFutureAdapter in the shared app/test runtime.
+        implementation(libs.androidx.concurrent.futures.ktx)
         // Keep Room migration testing and AndroidX saved state/navigation on one serialization runtime.
         implementation(libs.kotlinx.serialization.core)
         implementation(libs.kotlinx.serialization.json)

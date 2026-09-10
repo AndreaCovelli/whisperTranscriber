@@ -3,6 +3,8 @@
 package com.andreacovelli.whispertranscriber.di
 
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.work.WorkManager
 import com.andreacovelli.whispertranscriber.data.AppDatabase
 import com.andreacovelli.whispertranscriber.data.HistoryRepository
@@ -10,8 +12,11 @@ import com.andreacovelli.whispertranscriber.data.RoomHistoryRepository
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistoryDao
 import com.andreacovelli.whispertranscriber.data.TranscriptionJobDao
 import com.andreacovelli.whispertranscriber.data.TranscriptionJobSummarizationDao
+import com.andreacovelli.whispertranscriber.history.HistoryDateSource
+import com.andreacovelli.whispertranscriber.history.SystemHistoryDateSource
 import com.andreacovelli.whispertranscriber.security.DefaultGenAiClientFactory
 import com.andreacovelli.whispertranscriber.security.GenAiClientFactory
+import com.andreacovelli.whispertranscriber.settings.settingsDataStore
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -39,6 +44,11 @@ annotation class ApplicationScope
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
+    @Provides
+    @Singleton
+    fun provideSettingsDataStore(@ApplicationContext context: Context): DataStore<Preferences> =
+        context.settingsDataStore
+
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase = AppDatabase.getDatabase(context)
@@ -90,6 +100,16 @@ object AppModule {
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class RepositoryModule {
+    @Binds
+    @Singleton
+    abstract fun bindQueueScheduler(
+        scheduler: com.andreacovelli.whispertranscriber.queue.AndroidQueueScheduler,
+    ): com.andreacovelli.whispertranscriber.queue.QueueScheduler
+
+    @Binds
+    @Singleton
+    abstract fun bindHistoryDateSource(source: SystemHistoryDateSource): HistoryDateSource
+
     @Binds
     @Singleton
     abstract fun bindHistoryRepository(repository: RoomHistoryRepository): HistoryRepository

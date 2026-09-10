@@ -1,4 +1,5 @@
 <resources>
+    <string name="gemini_audio_too_long">Gemini audio must be no longer than 9.5 hours.</string>
     <string name="app_name">WhisperTranscriber</string>
     <string name="app_version_info">Version: %1$s (%2$d)</string>
     <string name="back">Back</string>
@@ -48,7 +49,7 @@
     <string name="background_share_preparing_notification_body">Preparing shared audio…</string>
     <string name="background_share_waiting_to_start_notification_body">Queued. Waiting to start…</string>
     <string name="transcription_foreground_denied_switching_backend">Android denied WorkManager foreground execution; switching to a user-initiated job.</string>
-    <string name="transcription_foreground_denied_reopen">Android blocked foreground transcription. Reopen the app to retry; no audio was uploaded.</string>
+    <string name="transcription_foreground_denied_reopen">Android blocked foreground transcription. Reopen the app to retry.</string>
     <string name="background_share_result_previous">Previous</string>
     <string name="background_share_result_next">Next</string>
     <string name="background_share_result_part_label">Part %1$d of %2$d</string>
@@ -147,4 +148,18 @@
     <string name="provider_option_custom">Custom model</string>
     <string name="provider_custom_placeholder">e.g. gemini-2.0-flash</string>
     <string name="provider_validating">Validating…</string>
+    <string name="retry_queue_full">The queue already contains 50 unfinished jobs. Wait for a job to finish before retrying.</string>
+    <string name="queued_audio_unavailable">Queued audio is no longer available. Please share it again.</string>
+    <string name="retry_ineligible">Only failed or cancelled transcriptions can be retried. Share the audio again for a new transcription.</string>
+    <string name="provider_response_invalid">The provider returned an invalid or empty response. Please retry.</string>
+    <string name="provider_response_blocked">The provider blocked this response. Try another provider or different audio.</string>
+    <string name="provider_response_truncated">The provider returned an incomplete response. Try shorter audio or another model.</string>
+    <string name="provider_file_failed">The provider could not process the uploaded audio. Try another audio format.</string>
+    <string name="provider_request_failed">The provider request failed. Check your connection, credentials, and provider limits, then retry.</string>
+    <string name="api_key_forgotten">Saved API key deleted.</string>
+    <string name="api_key_decryption_failed">The saved key cannot be decrypted. Please enter it again.</string>
+    <string name="settings_persistence_failed">Settings could not be saved. Please try again.</string>
+    <string name="history_load_failed">History could not be loaded.</string>
+    <string name="clipboard_copy_failed">This text could not be copied. Use Share to send it as a file.</string>
+    <string name="text_share_failed">The text could not be shared. Please try again.</string>
 </resources>

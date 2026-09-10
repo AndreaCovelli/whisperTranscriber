@@ -1,37 +1,24 @@
 package com.andreacovelli.whispertranscriber.services
 
-import android.app.job.JobInfo
-import android.app.job.JobScheduler
-import android.content.ComponentName
 import android.content.Context
-import android.database.SQLException
 import android.net.Uri
-import android.os.Build
-import android.os.PersistableBundle
-import androidx.work.BackoffPolicy
-import androidx.work.Constraints
-import androidx.work.NetworkType
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.OutOfQuotaPolicy
-import androidx.work.WorkInfo
-import androidx.work.WorkManager
-import androidx.work.workDataOf
-import com.andreacovelli.whispertranscriber.BackgroundShareJobService
 import com.andreacovelli.whispertranscriber.R
-import com.andreacovelli.whispertranscriber.TranscriptionWorker
 import com.andreacovelli.whispertranscriber.background.BackgroundShareNotifier
 import com.andreacovelli.whispertranscriber.background.PostTranscriptionWorkSpec
+import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.data.HistoryJobCleanup
+import com.andreacovelli.whispertranscriber.data.HistoryRepository
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
 import com.andreacovelli.whispertranscriber.queue.JobExecutionBackend
+import com.andreacovelli.whispertranscriber.queue.JobOperationRegistry
 import com.andreacovelli.whispertranscriber.queue.PersistedPostTranscriptionConfig
-import com.andreacovelli.whispertranscriber.queue.PreparedSharedAudio
+import com.andreacovelli.whispertranscriber.queue.QueueExecutionCoordinator
 import com.andreacovelli.whispertranscriber.queue.QueuedAudioStore
-import com.andreacovelli.whispertranscriber.queue.backgroundShareSchedulerJobId
+import com.andreacovelli.whispertranscriber.queue.RetryResult
+import com.andreacovelli.whispertranscriber.queue.SharedAudioIntake
 import com.andreacovelli.whispertranscriber.queue.executionBackendOrDefault
 import com.andreacovelli.whispertranscriber.queue.resolveShareExecutionBackend
-import com.andreacovelli.whispertranscriber.queue.supportedOnThisDevice
 import com.andreacovelli.whispertranscriber.queue.toPersistedConfig
 import com.andreacovelli.whispertranscriber.security.GenAiClientFactory
 import com.andreacovelli.whispertranscriber.security.useGenAiClient
@@ -42,8 +29,11 @@ import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.summary.TranscriptionSummarizationRepository
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.transcription.MicrosoftSpeechEndpoint
+import com.andreacovelli.whispertranscriber.transcription.ProviderResponseException
 import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_SUMMARIZING
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
+import com.andreacovelli.whispertranscriber.transcription.awaitResult
+import com.andreacovelli.whispertranscriber.transcription.validatedGeminiText
 import com.google.genai.errors.ApiException
 import com.google.genai.errors.GenAiIOException
 import com.google.genai.types.Content
@@ -53,7 +43,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
 import java.net.UnknownHostException
 import java.util.UUID
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -62,7 +51,11 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -77,9 +70,14 @@ class TranscriptionQueueService @Inject constructor(
     private val settings: ApiKeyManager,
     private val repository: TranscriptionRepository,
     private val queuedAudioStore: QueuedAudioStore,
-    private val workManager: WorkManager,
+    private val scheduler: com.andreacovelli.whispertranscriber.queue.QueueScheduler,
+    private val historyRepository: HistoryRepository,
     private val backgroundShareNotifier: BackgroundShareNotifier,
+    private val executionCoordinator: QueueExecutionCoordinator,
+    private val operations: JobOperationRegistry,
 ) {
+    private val schedulingMutex = Mutex()
+
     companion object {
         internal const val QUEUED_JOB_ID_INPUT = "jobId"
         internal const val QUEUED_JOB_DISPLAY_NAME_INPUT = "displayName"
@@ -95,25 +93,27 @@ class TranscriptionQueueService @Inject constructor(
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec? = null,
     ): QueuedShareResult {
         repository.requireQueueCapacity(uris.size)
-        val preparedAudio = queuedAudioStore.prepareSharedAudio(uris)
-        return enqueuePreparedSharedAudio(
-            preparedAudio = preparedAudio,
-            provider = provider,
-            customModelName = customModelName,
-            speakerDiarizationEnabled = speakerDiarizationEnabled,
-            preferImmediateBackgroundStart = preferImmediateBackgroundStart,
-            postTranscriptionWorkSpec = postTranscriptionWorkSpec,
-        )
+        return queuedAudioStore.withPreparedAudio(uris) { intake ->
+            enqueuePreparedSharedAudio(
+                intake,
+                provider,
+                customModelName,
+                speakerDiarizationEnabled,
+                preferImmediateBackgroundStart,
+                postTranscriptionWorkSpec,
+            )
+        }
     }
 
     private suspend fun enqueuePreparedSharedAudio(
-        preparedAudio: List<PreparedSharedAudio>,
+        intake: SharedAudioIntake,
         provider: TranscriptionProvider,
         customModelName: String,
         speakerDiarizationEnabled: Boolean,
         preferImmediateBackgroundStart: Boolean = false,
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec? = null,
     ): QueuedShareResult {
+        val preparedAudio = intake.preparedAudio
         if (preparedAudio.isEmpty()) {
             return QueuedShareResult(
                 jobsCreated = 0,
@@ -123,7 +123,6 @@ class TranscriptionQueueService @Inject constructor(
 
         val batchId = UUID.randomUUID().toString()
         val requestedModel = resolveRequestedModel(provider, customModelName)
-        val pendingPreparedAudio = preparedAudio.toMutableList()
         val executionBackend = resolveShareExecutionBackend(preferImmediateBackgroundStart)
         val persistedPostTranscriptionConfig = postTranscriptionWorkSpec?.toPersistedConfig()
             ?: PersistedPostTranscriptionConfig(
@@ -133,65 +132,57 @@ class TranscriptionQueueService @Inject constructor(
                 queuedSummarizerCustomModelName = "",
             )
 
-        try {
-            val jobs = preparedAudio.map { prepared ->
-                TranscriptionJob(
-                    uri = prepared.originalUri.toString(),
-                    displayName = prepared.displayName,
-                    sourceMimeType = prepared.mimeType,
-                    stagedFilePath = prepared.stagedFile.absolutePath,
-                    providerName = provider.name,
-                    requestedModel = requestedModel,
-                    executionBackend = executionBackend.name,
-                    summarizeAfterTranscription = persistedPostTranscriptionConfig.summarizeAfterTranscription,
-                    notifyResult = persistedPostTranscriptionConfig.notifyResult,
-                    queuedSummarizerProviderName = persistedPostTranscriptionConfig.queuedSummarizerProviderName,
-                    queuedSummarizerCustomModelName =
-                    persistedPostTranscriptionConfig.queuedSummarizerCustomModelName,
-                    batchId = batchId,
-                    speakerDiarizationEnabled = speakerDiarizationEnabled,
-                    status = JOB_STATUS_QUEUED,
-                    progress = 0f,
-                    isRunning = false,
-                )
-            }
+        val jobs = preparedAudio.map { prepared ->
+            TranscriptionJob(
+                uri = prepared.originalUri.toString(),
+                displayName = prepared.displayName,
+                sourceMimeType = prepared.mimeType,
+                stagedFilePath = prepared.stagedFile.absolutePath,
+                providerName = provider.name,
+                requestedModel = requestedModel,
+                executionBackend = executionBackend.name,
+                summarizeAfterTranscription = persistedPostTranscriptionConfig.summarizeAfterTranscription,
+                notifyResult = persistedPostTranscriptionConfig.notifyResult,
+                queuedSummarizerProviderName = persistedPostTranscriptionConfig.queuedSummarizerProviderName,
+                queuedSummarizerCustomModelName =
+                persistedPostTranscriptionConfig.queuedSummarizerCustomModelName,
+                batchId = batchId,
+                speakerDiarizationEnabled = provider.isGemini() && speakerDiarizationEnabled,
+                status = JOB_STATUS_QUEUED,
+                progress = 0f,
+                isRunning = false,
+            )
+        }
+        // Finish the short database handoff even if the receiving Activity stops.
+        // Ownership must move before crossing a cancellable suspension boundary.
+        currentCoroutineContext().ensureActive()
+        return withContext(NonCancellable) {
             val jobIds = repository.addJobsWithinCapacity(jobs)
+            intake.transferOwnership()
             preparedAudio.zip(jobIds).forEach { (prepared, rawJobId) ->
-                val jobId = rawJobId.toInt()
-                backgroundShareNotifier.showBackgroundProcessing(
-                    jobId = jobId,
-                    displayName = prepared.displayName,
-                    message = context.getString(R.string.background_share_waiting_to_start_notification_body),
-                )
+                try {
+                    backgroundShareNotifier.showBackgroundProcessing(
+                        jobId = rawJobId.toInt(),
+                        displayName = prepared.displayName,
+                        message = context.getString(R.string.background_share_waiting_to_start_notification_body),
+                    )
+                } catch (_: RuntimeException) {
+                    // Notification failures must not prevent scheduling committed jobs.
+                }
             }
-            pendingPreparedAudio.clear()
             scheduleNextQueuedJobIfIdle()
-            return QueuedShareResult(
+            QueuedShareResult(
                 jobsCreated = preparedAudio.size,
                 statusMessage = context.getString(R.string.main_queued_files, preparedAudio.size),
                 firstCreatedJobId = jobIds.firstOrNull()?.toInt(),
             )
-        } catch (e: IOException) {
-            queuedAudioStore.deletePreparedAudio(pendingPreparedAudio)
-            throw e
-        } catch (e: SecurityException) {
-            queuedAudioStore.deletePreparedAudio(pendingPreparedAudio)
-            throw e
-        } catch (e: IllegalArgumentException) {
-            queuedAudioStore.deletePreparedAudio(pendingPreparedAudio)
-            throw e
-        } catch (e: IllegalStateException) {
-            queuedAudioStore.deletePreparedAudio(pendingPreparedAudio)
-            throw e
-        } catch (e: SQLException) {
-            queuedAudioStore.deletePreparedAudio(pendingPreparedAudio)
-            throw e
         }
     }
 
     suspend fun cancelJob(jobId: Int) {
         val job = repository.getJob(jobId)
         repository.cancelJob(jobId)
+        operations.cancel(jobId)
         cancelScheduledExecution(job)
         backgroundShareNotifier.cancelResult(jobId)
         backgroundShareNotifier.cancelRetryScheduled(jobId)
@@ -211,6 +202,7 @@ class TranscriptionQueueService @Inject constructor(
     suspend fun deleteJob(jobId: Int) {
         val job = repository.getJob(jobId)
         repository.invalidateOwners(jobId)
+        operations.cancel(jobId)
         cancelScheduledExecution(job)
         backgroundShareNotifier.cancelResult(jobId)
         backgroundShareNotifier.cancelRetryScheduled(jobId)
@@ -221,6 +213,7 @@ class TranscriptionQueueService @Inject constructor(
 
     suspend fun cancelRemovedHistoryJobs(jobs: List<HistoryJobCleanup>) {
         jobs.forEach { job ->
+            operations.cancel(job.jobId)
             cancelScheduledExecution(job.jobId)
             backgroundShareNotifier.cancelResult(job.jobId)
             backgroundShareNotifier.cancelRetryScheduled(job.jobId)
@@ -230,53 +223,49 @@ class TranscriptionQueueService @Inject constructor(
         scheduleNextQueuedJobIfIdle()
     }
 
-    suspend fun clearJobTranscription(jobId: Int) {
-        val job = repository.getJob(jobId)
-        repository.invalidateOwners(jobId)
-        cancelScheduledExecution(job)
-        if (repository.clearJobTranscription(jobId)) {
-            backgroundShareNotifier.cancelResult(jobId)
-            backgroundShareNotifier.cancelRetryScheduled(jobId)
-            backgroundShareNotifier.cancelBackgroundProcessing(jobId)
+    suspend fun clearJobTranscription(jobId: Int) = clearJobContent(jobId, HistoryContentField.TRANSCRIPT)
+
+    suspend fun clearJobContent(jobId: Int, field: HistoryContentField) = operations.withClaimLock {
+        val job = repository.getJob(jobId) ?: return@withClaimLock
+        if (repository.clearJobContent(jobId, field)) {
+            cancelRemovedHistoryJobs(listOf(HistoryJobCleanup(jobId, job.stagedFilePath)))
         }
-        scheduleNextQueuedJobIfIdle()
     }
 
-    suspend fun retryJob(
-        jobId: Int,
-        provider: TranscriptionProvider,
-        customModelName: String,
-        postTranscriptionWorkSpec: PostTranscriptionWorkSpec? = null,
-    ) {
-        val existingJob = repository.getJob(jobId)
-        repository.invalidateOwners(jobId)
-        cancelScheduledExecution(existingJob)
-        backgroundShareNotifier.cancelResult(jobId)
-        backgroundShareNotifier.cancelRetryScheduled(jobId)
-        backgroundShareNotifier.cancelBackgroundProcessing(jobId)
-        val requestedModel = resolveRequestedModel(provider, customModelName)
-        val persistedConfig = (postTranscriptionWorkSpec ?: resolveAutomaticSummarizationWorkSpec())
-            ?.toPersistedConfig()
-            ?: PersistedPostTranscriptionConfig(
-                summarizeAfterTranscription = false,
-                notifyResult = false,
-                queuedSummarizerProviderName = "",
-                queuedSummarizerCustomModelName = "",
-            )
-        if (
-            repository.retryJob(
+    suspend fun clearHistoryContent(historyId: Int, field: HistoryContentField) = operations.withClaimLock {
+        cancelRemovedHistoryJobs(historyRepository.clearContent(historyId, field))
+    }
+
+    suspend fun retryJob(jobId: Int): RetryResult {
+        executionCoordinator.awaitRecovery()
+        val snapshot = settings.getTranscriptionQueueSettings()
+        val persistedConfig = resolveAutomaticSummarizationWorkSpec()?.toPersistedConfig()
+            ?: PersistedPostTranscriptionConfig(false, false, "", "")
+        val result = schedulingMutex.withLock {
+            val retry = repository.retryJob(
                 jobId = jobId,
-                providerName = provider.name,
-                requestedModel = requestedModel,
+                providerName = snapshot.provider.name,
+                requestedModel = resolveRequestedModel(snapshot.provider, snapshot.customModelName),
                 executionBackend = JobExecutionBackend.WORK_MANAGER.name,
                 summarizeAfterTranscription = persistedConfig.summarizeAfterTranscription,
                 notifyResult = persistedConfig.notifyResult,
                 queuedSummarizerProviderName = persistedConfig.queuedSummarizerProviderName,
                 queuedSummarizerCustomModelName = persistedConfig.queuedSummarizerCustomModelName,
+                speakerDiarizationEnabled = snapshot.speakerDiarizationEnabled,
             )
-        ) {
+            if (retry == RetryResult.ACCEPTED) {
+                operations.cancel(jobId)
+                scheduler.cancel(jobId)
+            }
+            retry
+        }
+        if (result == RetryResult.ACCEPTED) {
+            backgroundShareNotifier.cancelResult(jobId)
+            backgroundShareNotifier.cancelRetryScheduled(jobId)
+            backgroundShareNotifier.cancelBackgroundProcessing(jobId)
             scheduleNextQueuedJobIfIdle()
         }
+        return result
     }
 
     private fun resolveRequestedModel(provider: TranscriptionProvider, customModelName: String): String? =
@@ -294,18 +283,11 @@ class TranscriptionQueueService @Inject constructor(
     }
 
     suspend fun recoverAndMaintainQueue() {
-        repository.cancelOrphanedUiSummaries()
+        executionCoordinator.awaitRecovery()
         val expiredCards = repository.deleteExpiredTerminalCards()
         expiredCards.forEach { expired ->
             backgroundShareNotifier.cancelResult(expired.jobId)
             queuedAudioStore.deleteStagedFile(expired.stagedFilePath)
-        }
-
-        val recoverableJobs = repository.getRecoverableJobs()
-        recoverableJobs.forEach { job ->
-            if (!hasActiveSchedulerEntry(job)) {
-                repository.requeueOrphanedExecution(job.id, job.executionOwnerId)
-            }
         }
 
         val referencedPaths = repository.getReferencedStagedFilePaths()
@@ -323,6 +305,7 @@ class TranscriptionQueueService @Inject constructor(
         val job = repository.getJob(jobId) ?: return false
         if (!job.isRunning || !job.isSummarizing) return false
         repository.cancelJob(jobId)
+        operations.cancel(jobId)
         cancelScheduledExecution(job)
         backgroundShareNotifier.cancelBackgroundProcessing(jobId)
         backgroundShareNotifier.cancelRetryScheduled(jobId)
@@ -331,11 +314,12 @@ class TranscriptionQueueService @Inject constructor(
     }
 
     suspend fun onForegroundPromotionDenied(jobId: Int): Boolean {
+        executionCoordinator.awaitRecovery()
         val job = repository.getJob(jobId) ?: return false
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        if (scheduler.supportsUserInitiatedJobs) {
             repository.updateExecutionBackend(jobId, JobExecutionBackend.USER_INITIATED_JOB.name)
             val userInitiatedJob = job.copy(executionBackend = JobExecutionBackend.USER_INITIATED_JOB.name)
-            if (enqueueUserInitiatedJob(userInitiatedJob)) {
+            if (scheduler.enqueueUserInitiatedJob(userInitiatedJob)) {
                 backgroundShareNotifier.showBackgroundProcessing(
                     jobId,
                     job.displayName,
@@ -345,13 +329,27 @@ class TranscriptionQueueService @Inject constructor(
             }
         }
 
-        repository.updateExecutionBackend(jobId, JobExecutionBackend.WORK_MANAGER.name)
+        failBackgroundStart(jobId)
+        return false
+    }
+
+    suspend fun failBackgroundStart(jobId: Int) {
+        executionCoordinator.awaitRecovery()
+        val job = repository.getJob(jobId) ?: return
+        if (!repository.failUnstartedJob(
+                jobId,
+                context.getString(R.string.transcription_foreground_denied_reopen),
+            )
+        ) {
+            return
+        }
+        backgroundShareNotifier.cancelBackgroundProcessing(jobId)
         backgroundShareNotifier.showFailure(
             jobId = jobId,
             displayName = job.displayName,
             message = context.getString(R.string.transcription_foreground_denied_reopen),
         )
-        return false
+        scheduleNextQueuedJobIfIdle()
     }
 
     private suspend fun resolveAutomaticSummarizationWorkSpec(): PostTranscriptionWorkSpec? {
@@ -373,10 +371,13 @@ class TranscriptionQueueService @Inject constructor(
     }
 
     suspend fun scheduleNextQueuedJobIfIdle(): Boolean {
-        if (repository.countBlockingJobs() > 0) return false
-
-        val queuedJob = repository.getOldestQueuedJob() ?: return false
-        return scheduleExecutionForJob(queuedJob)
+        executionCoordinator.awaitRecovery()
+        return schedulingMutex.withLock {
+            if (repository.countBlockingJobs() > 0) return@withLock false
+            val queuedJob = repository.getOldestQueuedJob() ?: return@withLock false
+            if (scheduler.hasActiveEntry(queuedJob)) return@withLock true
+            scheduleExecutionForJob(queuedJob)
+        }
     }
 
     suspend fun onExecutionFinished(jobId: Int) {
@@ -387,112 +388,29 @@ class TranscriptionQueueService @Inject constructor(
 
     private suspend fun scheduleExecutionForJob(job: TranscriptionJob): Boolean {
         val backend = job.executionBackendOrDefault()
-        if (!backend.supportedOnThisDevice()) {
+        if (backend == JobExecutionBackend.USER_INITIATED_JOB && !scheduler.supportsUserInitiatedJobs) {
             repository.updateExecutionBackend(job.id, JobExecutionBackend.WORK_MANAGER.name)
-            return enqueueWorker(job.copy(executionBackend = JobExecutionBackend.WORK_MANAGER.name))
+            return scheduler.enqueueWorker(job.copy(executionBackend = JobExecutionBackend.WORK_MANAGER.name))
         }
 
         return when (backend) {
-            JobExecutionBackend.WORK_MANAGER -> enqueueWorker(job)
+            JobExecutionBackend.WORK_MANAGER -> scheduler.enqueueWorker(job)
             JobExecutionBackend.USER_INITIATED_JOB -> {
-                if (enqueueUserInitiatedJob(job)) {
+                if (scheduler.enqueueUserInitiatedJob(job)) {
                     true
                 } else {
                     repository.updateExecutionBackend(job.id, JobExecutionBackend.WORK_MANAGER.name)
-                    enqueueWorker(job.copy(executionBackend = JobExecutionBackend.WORK_MANAGER.name))
+                    scheduler.enqueueWorker(job.copy(executionBackend = JobExecutionBackend.WORK_MANAGER.name))
                 }
             }
         }
     }
 
-    private suspend fun hasActiveSchedulerEntry(job: TranscriptionJob): Boolean =
-        when (job.executionBackendOrDefault()) {
-            JobExecutionBackend.WORK_MANAGER -> workManager.getWorkInfosForUniqueWorkFlow(jobWorkName(job.id))
-                .first()
-                .any { workInfo ->
-                    workInfo.state == WorkInfo.State.ENQUEUED ||
-                        workInfo.state == WorkInfo.State.RUNNING ||
-                        workInfo.state == WorkInfo.State.BLOCKED
-                }
-            JobExecutionBackend.USER_INITIATED_JOB -> {
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    false
-                } else {
-                    context.getSystemService(JobScheduler::class.java)
-                        ?.allPendingJobs
-                        ?.any { pending -> pending.id == backgroundShareSchedulerJobId(job.id) }
-                        ?: false
-                }
-            }
-        }
-
-    private fun enqueueWorker(job: TranscriptionJob): Boolean {
-        val workRequestBuilder = OneTimeWorkRequestBuilder<TranscriptionWorker>()
-            .setInputData(
-                workDataOf(
-                    QUEUED_JOB_ID_INPUT to job.id,
-                    SPEAKER_LABEL_PREFIX_INPUT to context.getString(R.string.speaker_label_prefix),
-                ),
-            )
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .build(),
-            )
-            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
-            .addTag(jobTag(job.id))
-
-        if (job.notifyResult) {
-            workRequestBuilder.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-        }
-
-        val workRequest = workRequestBuilder.build()
-
-        workManager.enqueueUniqueWork(jobWorkName(job.id), androidx.work.ExistingWorkPolicy.KEEP, workRequest)
-        return true
+    private suspend fun cancelScheduledExecution(job: TranscriptionJob?) {
+        if (job != null) scheduler.cancel(job.id)
     }
 
-    private fun enqueueUserInitiatedJob(job: TranscriptionJob): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return false
-
-        val jobScheduler = context.getSystemService(JobScheduler::class.java) ?: return false
-        if (!jobScheduler.canRunUserInitiatedJobs()) return false
-        val schedulerJobId = backgroundShareSchedulerJobId(job.id)
-
-        val extras = PersistableBundle().apply {
-            putInt(QUEUED_JOB_ID_INPUT, job.id)
-            putString(QUEUED_JOB_DISPLAY_NAME_INPUT, job.displayName)
-            putString(SPEAKER_LABEL_PREFIX_INPUT, context.getString(R.string.speaker_label_prefix))
-        }
-        val jobInfo = JobInfo.Builder(schedulerJobId, ComponentName(context, BackgroundShareJobService::class.java))
-            .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
-            .setBackoffCriteria(30_000L, JobInfo.BACKOFF_POLICY_EXPONENTIAL)
-            .setExtras(extras)
-            .setUserInitiated(true)
-            .build()
-
-        return runCatching {
-            jobScheduler.schedule(jobInfo) == JobScheduler.RESULT_SUCCESS
-        }.getOrDefault(false)
-    }
-
-    private fun cancelScheduledExecution(job: TranscriptionJob?) {
-        if (job == null) return
-
-        cancelScheduledExecution(job.id)
-    }
-
-    private fun cancelScheduledExecution(jobId: Int) {
-        workManager.cancelUniqueWork(jobWorkName(jobId))
-        workManager.cancelAllWorkByTag(jobTag(jobId))
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            context.getSystemService(JobScheduler::class.java)?.cancel(backgroundShareSchedulerJobId(jobId))
-        }
-    }
-
-    private fun jobTag(jobId: Int): String = "TranscriptionJob_$jobId"
-
-    private fun jobWorkName(jobId: Int): String = "TranscriptionJobWork_$jobId"
+    private suspend fun cancelScheduledExecution(jobId: Int) = scheduler.cancel(jobId)
 }
 
 data class KeyValidationResult(val errorMessage: String? = null) {
@@ -581,7 +499,7 @@ class ValidationService @Inject constructor(
             .header(GEMINI_API_KEY_HEADER, rawKey)
             .build()
         val result = withContext(ioDispatcher) {
-            okHttpClient.newCall(request).execute().use { response ->
+            okHttpClient.newCall(request).awaitResult { response ->
                 response.isSuccessful to response.code
             }
         }
@@ -615,7 +533,7 @@ class ValidationService @Inject constructor(
                 .header(GEMINI_API_KEY_HEADER, String(keyChars))
                 .build()
             val (isSuccess, code, bodyText) = withContext(ioDispatcher) {
-                okHttpClient.newCall(request).execute().use { response ->
+                okHttpClient.newCall(request).awaitResult { response ->
                     Triple(
                         response.isSuccessful,
                         response.code,
@@ -712,7 +630,7 @@ class ValidationService @Inject constructor(
                         if (rawKey != null) {
                             requestBuilder.header(MICROSOFT_SPEECH_KEY_HEADER, rawKey)
                         }
-                        okHttpClient.newCall(requestBuilder.build()).execute().use { response -> response.code }
+                        okHttpClient.newCall(requestBuilder.build()).awaitResult { response -> response.code }
                     }
                 }.awaitAll()
             }
@@ -731,10 +649,23 @@ class SummarizationService @Inject constructor(
     private val repository: TranscriptionRepository,
     private val summarizationRepository: TranscriptionSummarizationRepository,
     private val genAiClientFactory: GenAiClientFactory,
+    private val executionCoordinator: QueueExecutionCoordinator,
+    private val operations: JobOperationRegistry,
     @param:ApplicationContext private val applicationContext: Context,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
     suspend fun summarize(
+        jobId: Int,
+        settings: SummarizationSettings,
+        allowResummarize: Boolean,
+        executionOwnerId: String? = null,
+        fallbackStatusMessage: String = "",
+        onStatusUpdate: suspend (String) -> Unit = {},
+    ): SummarizationResult = operations.track(jobId) {
+        summarizeAttempt(jobId, settings, allowResummarize, executionOwnerId, fallbackStatusMessage, onStatusUpdate)
+    }
+
+    private suspend fun summarizeAttempt(
         jobId: Int,
         settings: SummarizationSettings,
         allowResummarize: Boolean,
@@ -748,27 +679,30 @@ class SummarizationService @Inject constructor(
             return SummarizationResult(statusMessage = "Error: ${e.message}", errorMessage = e.message)
         }
 
-        val attemptId = UUID.randomUUID().toString()
-        val claimed = if (allowResummarize) {
-            summarizationRepository.claimManualSummary(
-                jobId,
-                attemptId,
-                summarizerSelection.provider.name,
-                summarizerSelection.modelName,
-            )
-        } else {
-            summarizationRepository.claimAutoSummary(
-                jobId,
-                attemptId,
-                summarizerSelection.provider.name,
-                summarizerSelection.modelName,
-                executionOwnerId,
-            )
-        }
-        if (!claimed) return SummarizationResult(statusMessage = fallbackStatusMessage)
-
+        executionCoordinator.awaitRecovery()
+        val attemptId = executionCoordinator.ownerId()
         var summarizingCleared = false
         return try {
+            val claimed = operations.withClaimLock {
+                if (allowResummarize) {
+                    summarizationRepository.claimManualSummary(
+                        jobId,
+                        attemptId,
+                        summarizerSelection.provider.name,
+                        summarizerSelection.modelName,
+                    )
+                } else {
+                    summarizationRepository.claimAutoSummary(
+                        jobId,
+                        attemptId,
+                        summarizerSelection.provider.name,
+                        summarizerSelection.modelName,
+                        executionOwnerId,
+                    )
+                }
+            }
+            if (!claimed) return SummarizationResult(statusMessage = fallbackStatusMessage)
+
             val job = repository.getJob(jobId)
             if (job == null) {
                 summarizationRepository.invalidateSummaryAttempt(jobId, attemptId)
@@ -817,25 +751,28 @@ class SummarizationService @Inject constructor(
             }
             summarizingCleared = true
             throw e
-        } catch (e: ApiException) {
-            val message = "Gemini summarization error (HTTP ${e.code()}): ${e.message() ?: "request failed"}"
+        } catch (_: ApiException) {
+            val message = applicationContext.getString(R.string.provider_request_failed)
             summarizationRepository.failSummarization(jobId, attemptId, message)
             summarizingCleared = true
             SummarizationResult("Summarization error: $message", message)
-        } catch (e: GenAiIOException) {
-            val message = e.message ?: "Gemini summarization request failed"
+        } catch (_: GenAiIOException) {
+            val message = applicationContext.getString(R.string.provider_request_failed)
             summarizationRepository.failSummarization(jobId, attemptId, message)
             summarizingCleared = true
             SummarizationResult("Summarization error: $message", message)
-        } catch (e: IOException) {
-            summarizationRepository.failSummarization(jobId, attemptId, e.message)
+        } catch (_: IOException) {
+            val message = applicationContext.getString(R.string.provider_request_failed)
+            summarizationRepository.failSummarization(jobId, attemptId, message)
             summarizingCleared = true
-            SummarizationResult("Summarization error: ${e.message}", e.message)
+            SummarizationResult(message, message)
         } catch (e: IllegalStateException) {
-            summarizationRepository.failSummarization(jobId, attemptId, e.message)
+            val message = applicationContext.getString(
+                (e as? ProviderResponseException)?.messageId ?: R.string.provider_request_failed,
+            )
+            summarizationRepository.failSummarization(jobId, attemptId, message)
             summarizingCleared = true
-            val message = e.message ?: "Summarization failed"
-            SummarizationResult("Error: $message", message)
+            SummarizationResult(message, message)
         } finally {
             if (!summarizingCleared) {
                 withContext(NonCancellable + ioDispatcher) {
@@ -847,6 +784,7 @@ class SummarizationService @Inject constructor(
 
     suspend fun cancelSummary(jobId: Int): String {
         val cancelled = summarizationRepository.cancelSummarization(jobId)
+        operations.cancel(jobId)
         return if (cancelled) {
             applicationContext.getString(R.string.summarization_status_cancelled)
         } else {
@@ -900,9 +838,9 @@ class SummarizationService @Inject constructor(
             val config = GenerateContentConfig.builder()
                 .responseMimeType("text/plain")
                 .build()
-            val response = client.models.generateContent(modelName, content, config)
+            val response = client.call { it.models.generateContent(modelName, content, config) }
             SummaryData(
-                text = response.text()?.trim().orEmpty().ifBlank { "No summary generated." },
+                text = validatedGeminiText(response),
                 model = response.modelVersion().orElse(null)?.takeIf { it.isNotBlank() } ?: modelName,
             )
         }

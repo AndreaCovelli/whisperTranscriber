@@ -18,8 +18,8 @@ internal data class HistoryDateBucket(val key: String, val label: HistoryDateLab
 internal sealed interface HistoryListRow {
     val stableKey: String
 
-    data class Header(val bucket: HistoryDateBucket) : HistoryListRow {
-        override val stableKey: String = "header:${bucket.key}"
+    data class Header(val bucket: HistoryDateBucket, val firstItemId: Int) : HistoryListRow {
+        override val stableKey: String = "header:${bucket.key}:$firstItemId"
     }
 
     data class Item(val history: TranscriptionHistory, val bucket: HistoryDateBucket) : HistoryListRow {
@@ -54,7 +54,14 @@ internal fun historyDateBucket(timestamp: Long, currentDate: LocalDate, zoneId: 
 internal fun historyDateHeader(
     previousBucket: HistoryDateBucket?,
     currentBucket: HistoryDateBucket,
-): HistoryListRow.Header? = if (previousBucket?.key == currentBucket.key) null else HistoryListRow.Header(currentBucket)
+    firstItemId: Int,
+): HistoryListRow.Header? = if (previousBucket?.key ==
+    currentBucket.key
+) {
+    null
+} else {
+    HistoryListRow.Header(currentBucket, firstItemId)
+}
 
 internal fun historyListItem(
     history: TranscriptionHistory,

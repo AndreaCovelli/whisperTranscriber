@@ -131,7 +131,7 @@ class AutoSummaryClaimInstrumentedTest {
             ),
         )
 
-        assertEquals(1, jobDao.cancelOrphanedUiSummaries())
+        assertEquals(1, jobDao.cancelOrphanedUiSummaries("new-session:"))
 
         val uiJob = jobDao.getJobById(uiJobId)
         val backgroundJob = jobDao.getJobById(backgroundJobId)

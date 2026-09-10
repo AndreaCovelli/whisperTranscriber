@@ -47,7 +47,8 @@ class MainJobRevealInstrumentedTest {
             uiState.value = uiState.value.copy(jobRevealRequest = null)
         }
 
-        composeRule.waitUntil { acknowledgementCount == 1 }
+        composeRule.mainClock.advanceTimeUntil { acknowledgementCount == 1 }
+        composeRule.waitForIdle()
         composeRule.onNodeWithText(jobs.last().displayName).assertIsDisplayed()
         composeRule.runOnIdle {
             uiState.value = uiState.value.copy(status = "Recomposed")
@@ -74,7 +75,8 @@ class MainJobRevealInstrumentedTest {
             )
         }
 
-        composeRule.waitUntil { acknowledgedToken == 7L }
+        composeRule.mainClock.advanceTimeUntil { acknowledgedToken == 7L }
+        composeRule.waitForIdle()
         composeRule.onNodeWithText(jobs.last().displayName).assertIsDisplayed()
     }
 
@@ -118,8 +120,14 @@ class MainJobRevealInstrumentedTest {
             showMain.value = true
         }
 
-        composeRule.waitUntil { acknowledgementCount == 1 }
+        composeRule.mainClock.advanceTimeUntil { acknowledgementCount == 1 }
+        composeRule.waitForIdle()
         composeRule.onNodeWithText(jobs.last().displayName).assertIsDisplayed()
+        composeRule.runOnIdle {
+            uiState.value = uiState.value.copy(status = "Recomposed")
+        }
+        composeRule.waitForIdle()
+        assertEquals(1, acknowledgementCount)
     }
 
     private fun setMainJobList(uiState: MutableState<UiState>, onJobRevealHandled: (Long) -> Unit) {

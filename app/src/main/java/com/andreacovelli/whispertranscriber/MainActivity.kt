@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -15,7 +16,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -28,6 +32,7 @@ import com.andreacovelli.whispertranscriber.ui.screens.SettingsScreen
 import com.andreacovelli.whispertranscriber.ui.theme.WhisperTranscriberTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.launch
 
 object AppRoutes {
     const val MAIN = "main"
@@ -89,7 +94,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        maybeRequestNotificationPermission()
+        pendingEnableBackgroundShareSummaryNotifications =
+            savedInstanceState?.getBoolean(PENDING_NOTIFICATION_INTENT) ?: false
+        if (savedInstanceState == null) maybeRequestNotificationPermission()
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                mainViewModel.events.collect { messageId ->
+                    Toast.makeText(this@MainActivity, messageId, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
         if (savedInstanceState == null) {
             consumeBackgroundShareResultNotificationIntent(intent)
             consumeSharedAudioIntent(intent)
@@ -189,6 +203,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean(PENDING_NOTIFICATION_INTENT, pendingEnableBackgroundShareSummaryNotifications)
+        super.onSaveInstanceState(outState)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -252,6 +271,7 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        private const val PENDING_NOTIFICATION_INTENT = "pendingBackgroundNotificationPermission"
         const val EXTRA_BACKGROUND_SHARE_RESULT_JOB_ID = "backgroundShareResultJobId"
     }
 }

@@ -8,6 +8,8 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.di.IoDispatcher
 import com.andreacovelli.whispertranscriber.security.KeystoreCrypto
 import com.andreacovelli.whispertranscriber.transcription.MICROSOFT_MAI_TRANSCRIBE_MODEL
 import com.andreacovelli.whispertranscriber.transcription.MicrosoftSpeechEndpoint
@@ -17,13 +19,18 @@ import java.security.GeneralSecurityException
 import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
+internal val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
 enum class TranscriptionProvider(val modelName: String? = null) {
     MICROSOFT_MAI_TRANSCRIBE(MICROSOFT_MAI_TRANSCRIBE_MODEL),
@@ -74,7 +81,11 @@ private fun normalizeSpeakerDiarization(provider: TranscriptionProvider, enabled
     provider.isGemini() && enabled
 
 @Singleton
-class ApiKeyManager @Inject constructor(@param:ApplicationContext private val context: Context) {
+class ApiKeyManager @Inject constructor(
+    @param:ApplicationContext private val context: Context,
+    @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val store: DataStore<Preferences> = context.settingsDataStore,
+) {
     companion object {
         private val MICROSOFT_SPEECH_API_KEY_ENC = stringPreferencesKey("microsoft_speech_api_key_enc")
         private val MICROSOFT_SPEECH_REGION = stringPreferencesKey("microsoft_speech_region")
@@ -90,34 +101,43 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
         private val SPEAKER_DIARIZATION_ENABLED = booleanPreferencesKey("speaker_diarization_enabled")
     }
 
-    val automaticSummarizationFlow: Flow<Boolean> = context.dataStore.data.map { p ->
+    val automaticSummarizationFlow: Flow<Boolean> = store.data.map { p ->
         p[AUTOMATIC_SUMMARIZATION_ENABLED] ?: false
     }
 
-    val backgroundShareSummaryNotificationsEnabledFlow: Flow<Boolean> = context.dataStore.data.map { p ->
+    val backgroundShareSummaryNotificationsEnabledFlow: Flow<Boolean> = store.data.map { p ->
         p[BACKGROUND_SHARE_SUMMARY_NOTIFICATIONS_ENABLED] ?: false
     }
 
     suspend fun saveAutomaticSummarization(enabled: Boolean) {
-        context.dataStore.edit { it[AUTOMATIC_SUMMARIZATION_ENABLED] = enabled }
+        store.edit { it[AUTOMATIC_SUMMARIZATION_ENABLED] = enabled }
     }
 
     suspend fun saveBackgroundShareSummaryNotificationsEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[BACKGROUND_SHARE_SUMMARY_NOTIFICATIONS_ENABLED] = enabled }
+        store.edit { it[BACKGROUND_SHARE_SUMMARY_NOTIFICATIONS_ENABLED] = enabled }
     }
 
     suspend fun saveSpeakerDiarization(enabled: Boolean) {
-        context.dataStore.edit { it[SPEAKER_DIARIZATION_ENABLED] = enabled }
+        store.edit { it[SPEAKER_DIARIZATION_ENABLED] = enabled }
+    }
+
+    private suspend fun encryptKey(key: String): String = withContext(ioDispatcher) {
+        val bytes = key.toByteArray(Charsets.UTF_8)
+        try {
+            KeystoreCrypto.encryptToBase64(bytes)
+        } finally {
+            bytes.fill(0)
+        }
     }
 
     // Save (encrypt before persisting)
     suspend fun saveMicrosoftSpeechApiKey(key: String) {
         val trimmed = key.trim()
-        context.dataStore.edit { prefs ->
+        store.edit { prefs ->
             if (trimmed.isEmpty()) {
                 prefs.remove(MICROSOFT_SPEECH_API_KEY_ENC)
             } else {
-                val enc = KeystoreCrypto.encryptToBase64(trimmed.toByteArray(Charsets.UTF_8))
+                val enc = encryptKey(trimmed)
                 prefs[MICROSOFT_SPEECH_API_KEY_ENC] = enc
             }
         }
@@ -129,7 +149,7 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
         val normalized = candidate.takeIf(String::isNotEmpty)
             ?.let { MicrosoftSpeechEndpoint.parse(it).value }
             .orEmpty()
-        context.dataStore.edit { prefs ->
+        store.edit { prefs ->
             if (normalized.isEmpty()) {
                 prefs.remove(MICROSOFT_SPEECH_REGION)
             } else {
@@ -140,26 +160,26 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
 
     suspend fun saveGeminiApiKey(key: String) {
         val trimmed = key.trim()
-        context.dataStore.edit { prefs ->
+        store.edit { prefs ->
             if (trimmed.isEmpty()) {
                 prefs.remove(GEMINI_API_KEY_ENC)
             } else {
-                val enc = KeystoreCrypto.encryptToBase64(trimmed.toByteArray(Charsets.UTF_8))
+                val enc = encryptKey(trimmed)
                 prefs[GEMINI_API_KEY_ENC] = enc
             }
         }
     }
 
     suspend fun saveProvider(provider: TranscriptionProvider) {
-        context.dataStore.edit { it[SELECTED_PROVIDER] = provider.name }
+        store.edit { it[SELECTED_PROVIDER] = provider.name }
     }
 
     suspend fun saveSummarizerProvider(provider: TranscriptionProvider) {
-        context.dataStore.edit { it[SELECTED_SUMMARIZER_PROVIDER] = provider.name }
+        store.edit { it[SELECTED_SUMMARIZER_PROVIDER] = provider.name }
     }
 
     private suspend fun saveCustomModelName(name: String, key: Preferences.Key<String>) {
-        context.dataStore.edit { prefs ->
+        store.edit { prefs ->
             if (name.isBlank()) {
                 prefs.remove(key)
             } else {
@@ -178,89 +198,98 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
 
     // Quick wipe actions
     suspend fun forgetMicrosoftSpeechApiKey() {
-        context.dataStore.edit {
+        store.edit {
             it.remove(MICROSOFT_SPEECH_API_KEY_ENC)
         }
     }
 
     suspend fun clearInvalidMicrosoftSpeechConfiguration() {
-        context.dataStore.edit {
+        store.edit {
             it.remove(MICROSOFT_SPEECH_REGION)
             it.remove(MICROSOFT_SPEECH_API_KEY_ENC)
         }
     }
 
     suspend fun forgetGeminiApiKey() {
-        context.dataStore.edit {
+        store.edit {
             it.remove(GEMINI_API_KEY_ENC)
         }
     }
 
     // Read flows for UI state (does not expose keys)
-    private fun getApiKeyStateFlow(key: Preferences.Key<String>): Flow<ApiKeyState> = context.dataStore.data.map { p ->
+    private fun getApiKeyStateFlow(key: Preferences.Key<String>): Flow<ApiKeyState> = store.data.map { p ->
         val enc = p[key]
         if (enc == null) {
             ApiKeyState.Missing
         } else {
             try {
-                KeystoreCrypto.decryptFromBase64(enc)?.fill(0)
+                KeystoreCrypto.decryptFromBase64(enc).fill(0)
                 ApiKeyState.Present
-            } catch (e: GeneralSecurityException) {
-                ApiKeyState.Error(e.message ?: "Keystore decryption failed")
-            } catch (e: IllegalArgumentException) {
-                ApiKeyState.Error(e.message ?: "Keystore decryption failed")
+            } catch (_: GeneralSecurityException) {
+                ApiKeyState.Error(context.getString(R.string.api_key_decryption_failed))
+            } catch (_: IllegalArgumentException) {
+                ApiKeyState.Error(context.getString(R.string.api_key_decryption_failed))
             }
         }
-    }
+    }.flowOn(ioDispatcher)
 
     val microsoftSpeechApiKeyStateFlow: Flow<ApiKeyState> = getApiKeyStateFlow(MICROSOFT_SPEECH_API_KEY_ENC)
     val geminiApiKeyStateFlow: Flow<ApiKeyState> = getApiKeyStateFlow(GEMINI_API_KEY_ENC)
-    val microsoftSpeechRegionFlow: Flow<String> = context.dataStore.data.map { p ->
+    val microsoftSpeechRegionFlow: Flow<String> = store.data.map { p ->
         p[MICROSOFT_SPEECH_REGION].orEmpty()
     }.distinctUntilChanged()
 
     // Suspend functions to securely read keys on-demand
     private suspend fun getApiKey(key: Preferences.Key<String>): CharArray? {
-        val prefs = context.dataStore.data.firstOrNull() ?: return null
-        val enc = prefs[key] ?: return null
-        var bytes: ByteArray? = null
-        var decodedChars: CharArray? = null
-        var charBuffer: java.nio.CharBuffer? = null
-        return try {
-            bytes = KeystoreCrypto.decryptFromBase64(enc) ?: return null
-            charBuffer = StandardCharsets.UTF_8.decode(java.nio.ByteBuffer.wrap(bytes))
-            decodedChars = CharArray(charBuffer.remaining())
-            charBuffer.get(decodedChars)
-            decodedChars.copyOf()
-        } catch (e: GeneralSecurityException) {
-            Log.w("ApiKeyManager", "Failed to decrypt API key", e)
-            null
-        } catch (e: IllegalArgumentException) {
-            Log.w("ApiKeyManager", "Failed to decode stored API key", e)
-            null
-        } finally {
-            bytes?.fill(0)
-            decodedChars?.fill('\u0000')
-            if (charBuffer?.hasArray() == true) {
-                charBuffer.array().fill('\u0000')
+        var result: CharArray? = null
+        try {
+            return withContext(ioDispatcher) {
+                val prefs = store.data.firstOrNull() ?: return@withContext null
+                val enc = prefs[key] ?: return@withContext null
+                var bytes: ByteArray? = null
+                var decodedChars: CharArray? = null
+                var charBuffer: java.nio.CharBuffer? = null
+                try {
+                    bytes = KeystoreCrypto.decryptFromBase64(enc)
+                    charBuffer = StandardCharsets.UTF_8.decode(java.nio.ByteBuffer.wrap(bytes))
+                    decodedChars = CharArray(charBuffer.remaining())
+                    charBuffer.get(decodedChars)
+                    decodedChars.copyOf().also { result = it }
+                } catch (_: GeneralSecurityException) {
+                    Log.w("ApiKeyManager", "Failed to decrypt API key")
+                    null
+                } catch (_: IllegalArgumentException) {
+                    Log.w("ApiKeyManager", "Failed to decode stored API key")
+                    null
+                } finally {
+                    bytes?.fill(0)
+                    decodedChars?.fill('\u0000')
+                    if (charBuffer?.hasArray() == true) {
+                        charBuffer.array().fill('\u0000')
+                    }
+                }
             }
+        } catch (error: CancellationException) {
+            // withContext may discard a decrypted result when returning to a cancelled caller.
+            result?.fill('\u0000')
+            throw error
         }
     }
 
     suspend fun getMicrosoftSpeechApiKey(): CharArray? = getApiKey(MICROSOFT_SPEECH_API_KEY_ENC)
     suspend fun getGeminiApiKey(): CharArray? = getApiKey(GEMINI_API_KEY_ENC)
 
-    val summarizerCustomGeminiModelNameFlow: Flow<String?> = context.dataStore.data.map { p ->
+    val summarizerCustomGeminiModelNameFlow: Flow<String?> = store.data.map { p ->
         p[GEMINI_SUMMARIZER_CUSTOM_MODEL_NAME]?.takeIf { it.isNotBlank() }
     }
 
-    val summarizerProviderFlow: Flow<TranscriptionProvider> = context.dataStore.data.map { p ->
+    val summarizerProviderFlow: Flow<TranscriptionProvider> = store.data.map { p ->
         p[SELECTED_SUMMARIZER_PROVIDER]
             ?.let { runCatching { TranscriptionProvider.valueOf(it) }.getOrNull() }
             ?: TranscriptionProvider.GEMINI_FLASH
     }
 
-    val summarizationSettingsFlow: Flow<SummarizationSettings> = context.dataStore.data.map { prefs ->
+    val summarizationSettingsFlow: Flow<SummarizationSettings> = store.data.map { prefs ->
         SummarizationSettings(
             provider = prefs[SELECTED_SUMMARIZER_PROVIDER]
                 ?.let { runCatching { TranscriptionProvider.valueOf(it) }.getOrNull() }
@@ -269,7 +298,7 @@ class ApiKeyManager @Inject constructor(@param:ApplicationContext private val co
         )
     }.distinctUntilChanged()
 
-    val transcriptionQueueSettingsFlow: Flow<TranscriptionQueueSettings> = context.dataStore.data.map { prefs ->
+    val transcriptionQueueSettingsFlow: Flow<TranscriptionQueueSettings> = store.data.map { prefs ->
         val provider = decodeTranscriptionProvider(prefs[SELECTED_PROVIDER])
         TranscriptionQueueSettings(
             provider = provider,

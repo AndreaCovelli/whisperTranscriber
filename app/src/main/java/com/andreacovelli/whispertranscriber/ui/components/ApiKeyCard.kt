@@ -18,10 +18,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,9 +36,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.settings.ApiKeyState
 import com.andreacovelli.whispertranscriber.ui.main.KeyValidationState
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 @Composable
@@ -50,13 +55,35 @@ fun ApiKeyCard(
     onSave: (String) -> Unit,
     onForget: () -> Unit,
     onResetValidation: () -> Unit,
-    forgetMessage: String,
-    snackbarHostState: SnackbarHostState,
 ) {
     val scope = rememberCoroutineScope()
     var inputKey by remember { mutableStateOf("") }
     var showKey by remember { mutableStateOf(false) }
     var revealedSavedKey by remember { mutableStateOf<String?>(null) }
+    var revealJob by remember { mutableStateOf<Job?>(null) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    fun clearRevealedKey() {
+        revealJob?.cancel()
+        revealJob = null
+        revealedSavedKey = null
+        showKey = false
+    }
+    LaunchedEffect(apiKeyState) {
+        if (apiKeyState !is ApiKeyState.Present) clearRevealedKey()
+    }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                clearRevealedKey()
+                inputKey = ""
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            clearRevealedKey()
+        }
+    }
     val fieldValue = inputKey.ifBlank { revealedSavedKey.orEmpty() }
 
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
@@ -93,7 +120,8 @@ fun ApiKeyCard(
                 visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = {
                     IconButton(onClick = {
-                        scope.launch {
+                        revealJob?.cancel()
+                        revealJob = scope.launch {
                             if (showKey) {
                                 showKey = false
                                 if (inputKey.isBlank()) {
@@ -132,7 +160,7 @@ fun ApiKeyCard(
                     inputKey = ""
                     revealedSavedKey = null
                     showKey = false
-                    scope.launch { snackbarHostState.showSnackbar(forgetMessage) }
+                    clearRevealedKey()
                 }) {
                     Text(stringResource(R.string.api_key_forget))
                 }

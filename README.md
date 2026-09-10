@@ -1,7 +1,7 @@
 # WhisperTranscriber
 
 An Android app that transcribes audio files using AI — powered by [Microsoft Azure Speech MAI Transcribe](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/mai-transcribe) or [Google Gemini](https://ai.google.dev/).
- Share one or more audio files with the app from any file manager or audio player, and receive transcripts in seconds.
+Share one or more audio files from a file manager or audio player to queue them for transcription.
 
 ---
 
@@ -47,6 +47,10 @@ gradlew.bat assembleDebug
 ./gradlew assembleDebug
 ```
 
+Install JDK 21 and the Android SDK (platform 37), and configure `ANDROID_HOME` or
+a local, untracked `local.properties`. Use the checked-in wrapper. Run only one
+Gradle invocation at a time in this workspace.
+
 The APK will be written to `app/build/outputs/apk/debug/`.
 
 ### 3. Run tests
@@ -59,15 +63,21 @@ gradlew.bat connectedDebugAndroidTest --console=plain
 On Linux with KVM, the reproducible managed-device suite is:
 
 ```bash
+# Permission recreation runs on a fresh install before the general suite grants access.
+./gradlew pixel6Api34DebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.andreacovelli.whispertranscriber.NotificationPermissionRecreationInstrumentedTest
 ./gradlew pixel6Api34DebugAndroidTest --console=plain
+
+# Verify JSON exports with R8 enabled; production release signing is unchanged.
+./gradlew pixel6Api34MinifiedSmokeAndroidTest -PinstrumentationBuildType=minifiedSmoke \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.andreacovelli.whispertranscriber.HistoryExportInstrumentedTest
 ```
 
 ### ADB on a headless server
 
-This server already has ADB 37.0.0 installed at
-`~/android-sdk/platform-tools/adb`. The examples below assume `adb` is on
-`PATH`; otherwise, replace `adb` with that full path. A headless server needs no
-GUI because authorization and pairing happen on the phone.
+Install Android SDK Platform Tools and add its `platform-tools` directory to
+`PATH`. The examples below use `adb` from that installation. A headless server
+needs no GUI because authorization and pairing happen on the phone.
 
 #### Recommended: wireless debugging
 
@@ -120,10 +130,8 @@ sudo udevadm control --reload-rules
 
 Log out and back in, reconnect the cable, and retry.
 
-If the server is a VM or container, the USB device must first be passed through
-to it. In the current restricted workspace, ADB cannot access `/dev/bus/usb` or
-open its local port, so run these commands from the server's normal SSH shell
-rather than inside the sandbox or container.
+If the server is a VM or container, pass the USB device through to it and ensure
+ADB can access the device and open its local port.
 
 See the official Android documentation for
 [connecting to a device over Wi-Fi](https://developer.android.com/tools/adb#connect-to-a-device-over-wi-fi).
@@ -145,7 +153,7 @@ All configuration is done inside the app — no config files or build secrets ne
 
 ### Custom Gemini model
 
-Select **Custom Model** in Settings and type any valid Gemini model identifier (e.g. `gemini-3-flash`). The app validates the name against the Google API in real time and shows the model's display name on success.
+Select **Custom Model** in Settings and type any valid Gemini model identifier from your Google AI Studio project. The app validates the name against the Google API in real time and shows the model's display name on success.
 
 ### Custom Microsoft Speech endpoint
 
@@ -166,9 +174,13 @@ Microsoft MAI inputs must be strictly smaller than **250,000,000 bytes** and sho
 
 ### Gemini flow
 
-1. Audio is uploaded through the Gemini File API
-2. The model returns a structured JSON response containing the detected language code and transcript text
-3. The finished transcript is saved to local history.
+1. Audio is uploaded through the Gemini Files API and polled until it is active.
+2. The model returns a structured JSON response containing the detected language code and transcript text.
+3. Complete, valid results are saved to local history; uploaded files are deleted on completion or cancellation.
+
+Measurable native and converted audio is limited to 9.5 hours. Blocked, truncated,
+or malformed responses preserve staged audio for retry. Transient failures allow
+up to three automatic retries.
 
 ### Audio conversion
 
@@ -192,11 +204,13 @@ If the selected provider does not natively support the file's MIME type, `Hardwa
 
 ### Main
 
-The main screen shows every active job and up to the 100 most recent terminal cards. Terminal cards are retained for 30 days; transcription history remains until the user explicitly deletes it.
+The main screen shows every active job and up to the 100 most recent terminal cards. Terminal cards are retained for 30 days; transcription history remains until the user explicitly deletes it. Failed or cancelled jobs can be retried while staged audio remains available and the queue has capacity. Share the audio again to create a new transcription after success.
 
 ### History
 
-A searchable list of all past transcriptions. Each item can be expanded to reveal the full text and any summary. Individual items or the entire history can be deleted.
+A searchable list of all past transcriptions. Each item can be expanded to reveal the full text and any summary. Clearing a transcript preserves its summary and metadata. Clearing either field cancels pending summarization so late results cannot restore cleared content. Individual items or the entire history can be deleted. TXT, CSV, and JSON exports read a consistent database snapshot.
+
+Text sharing uses inline text below 128 KiB UTF-8 and a temporary text file for larger results. Shared text files expire after 24 hours and are removed during maintenance or the next file share. Oversized clipboard requests show an error with a sharing alternative.
 
 ### Settings
 
@@ -206,19 +220,14 @@ Configure the transcription provider, manage API keys, enter a Microsoft Speech 
 
 ## Architecture
 
-```
-MainActivity.kt              — Single Activity, NavHost, share-intent handling
-MainViewModel.kt             — Sequential queue orchestration, staging, settings state
-HistoryViewModel.kt          — Room history as StateFlow
-ApiKeyManager.kt             — Encrypted credential storage (DataStore + Keystore)
-TranscriptionProviders.kt    — Microsoft Speech + Gemini transcription providers
-data/HistoryDatabase.kt      — Room entity, DAO, FTS, and migrations (schema v15)
-security/KeystoreCrypto.kt   — AES-256-GCM encryption helpers
-media/HardwareAudioConverter.kt — MediaCodec audio → 16 kHz mono WAV
-ui/theme/                    — Material Design 3 theme, colors, typography
-```
+- `MainActivity` hosts Compose navigation; `ShareReceiverActivity` accepts Android share intents through a retained intake ViewModel.
+- Main and History ViewModels expose immutable state through `StateFlow` and existing MVU messages/reducers. History uses Room-backed Paging with date grouping.
+- `TranscriptionQueueService`, `QueueExecutionCoordinator`, and `TranscriptionExecutionRunner` stage, recover, serialize, and persist work across WorkManager and the Android job service.
+- Room stores history, FTS search, and persistent queue state (schema v15). Content mutations and claims are transactional; prior-process claims recover independently of surviving scheduler entries.
+- `ApiKeyManager` and `KeystoreCrypto` encrypt credentials in DataStore. Provider transports cancel each operation independently.
+- `HardwareAudioConverter` uses MediaExtractor/MediaCodec for 16 kHz mono WAV conversion.
 
-**Pattern:** single-Activity MVVM with Jetpack Compose. No fragments. UI state is exposed as `StateFlow` and collected with `collectAsStateWithLifecycle()`.
+UI state is collected with `collectAsStateWithLifecycle()`. Persistence, network requests, and conversion run outside composables.
 
 **Navigation routes:**
 
@@ -234,16 +243,16 @@ ui/theme/                    — Material Design 3 theme, colors, typography
 
 | Library                    | Version    | Purpose                      |
 |----------------------------|------------|------------------------------|
-| Jetpack Compose BOM        | 2026.06.01 | Declarative UI               |
+| Jetpack Compose BOM        | 2026.08.00 | Declarative UI               |
 | Material3                  | (via BOM)  | Material Design 3 components |
-| Navigation Compose         | 2.9.8      | In-app navigation            |
+| Navigation Compose         | 2.10.0      | In-app navigation            |
 | Lifecycle / ViewModel      | 2.11.0     | MVVM lifecycle management    |
 | Room                       | 2.8.4      | Local SQLite database        |
 | DataStore Preferences      | 1.2.1      | Persistent key-value storage |
-| OkHttp                     | 5.4.0      | Microsoft Speech HTTP client |
-| OkHttp Logging Interceptor | 5.4.0      | HTTP logging (bodies off)     |
-| Google Generative AI SDK   | 1.63.0     | Gemini API client            |
-| KSP                        | 2.3.10     | Room annotation processing   |
+| OkHttp                     | 5.5.0      | Microsoft Speech HTTP client |
+| OkHttp Logging Interceptor | 5.5.0      | HTTP logging (bodies off)     |
+| Google Generative AI SDK   | 1.70.0     | Gemini API client            |
+| KSP                        | 2.3.11     | Room annotation processing   |
 | Kotlin                     | 2.4.10     | Language                     |
 
 ---
@@ -273,7 +282,7 @@ gitleaks dir --config .gitleaks.toml --redact .
 grype sbom:app/build/reports/cyclonedx-release/bom.json --only-fixed --fail-on high
 ```
 
-The build intentionally remains on Gradle 9.6.1 and Detekt 1.23.8 until Detekt 2.0 is stable. The accepted tooling-only Gradle 10 deprecation is tracked in [issue #159](https://github.com/AndreaCovelli/whisperTranscriber/issues/159) for review by 2026-10-26.
+The build intentionally remains on Gradle 9.7.1 and Detekt 1.23.8 until Detekt 2.0 is stable. The accepted tooling-only Gradle 10 deprecation is tracked in [issue #159](https://github.com/AndreaCovelli/whisperTranscriber/issues/159) for review by 2026-10-26.
 
 ---
 

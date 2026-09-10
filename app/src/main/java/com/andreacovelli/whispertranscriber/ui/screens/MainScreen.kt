@@ -1,8 +1,6 @@
 package com.andreacovelli.whispertranscriber.ui.screens
 
-import android.content.ClipData
 import android.content.Context
-import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -43,7 +41,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
@@ -60,6 +57,7 @@ import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_RET
 import com.andreacovelli.whispertranscriber.ui.components.TranscriptionJobCard
 import com.andreacovelli.whispertranscriber.ui.components.TranscriptionJobCardActions
 import com.andreacovelli.whispertranscriber.ui.components.providerDisplayLabel
+import com.andreacovelli.whispertranscriber.ui.copyTextWithFeedback
 import com.andreacovelli.whispertranscriber.ui.main.JobRevealRequest
 import com.andreacovelli.whispertranscriber.ui.main.MainMsg
 import com.andreacovelli.whispertranscriber.ui.main.MainViewModel
@@ -383,22 +381,16 @@ private fun rememberJobActions(
             clearTranscript = { viewModel.dispatch(MainMsg.ClearTranscript(job.id)) },
             copyTranscript = {
                 scope.launch {
-                    clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", job.transcript)))
-                    Toast.makeText(
-                        context,
-                        context.getString(R.string.main_copied_transcript),
-                        Toast.LENGTH_SHORT,
-                    ).show()
+                    copyTextWithFeedback(context, clipboard, job.transcript, R.string.main_copied_transcript)
                 }
             },
             copySummary = {
                 scope.launch {
-                    clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", job.summary)))
-                    Toast.makeText(context, context.getString(R.string.main_copied_summary), Toast.LENGTH_SHORT).show()
+                    copyTextWithFeedback(context, clipboard, job.summary, R.string.main_copied_summary)
                 }
             },
-            shareTranscript = { shareText(context, job.transcript, shareTranscriptTitle) },
-            shareSummary = { shareText(context, job.summary, shareSummaryTitle) },
+            shareTranscript = { scope.launch { shareText(viewModel, context, job.transcript, shareTranscriptTitle) } },
+            shareSummary = { scope.launch { shareText(viewModel, context, job.summary, shareSummaryTitle) } },
             retryTranscription = { viewModel.dispatch(MainMsg.RetryJob(job.id)) },
             retrySummary = { viewModel.dispatch(MainMsg.SummarizeJob(job.id)) },
             cancel = { viewModel.dispatch(MainMsg.CancelJob(job.id)) },
@@ -409,10 +401,8 @@ private fun rememberJobActions(
     }
 }
 
-private fun shareText(context: Context, text: String, title: String? = null) {
-    val sendIntent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_TEXT, text)
+private suspend fun shareText(viewModel: MainViewModel, context: Context, text: String, title: String) {
+    if (!viewModel.shareText(text, title, context::startActivity)) {
+        Toast.makeText(context, R.string.text_share_failed, Toast.LENGTH_SHORT).show()
     }
-    context.startActivity(Intent.createChooser(sendIntent, title))
 }

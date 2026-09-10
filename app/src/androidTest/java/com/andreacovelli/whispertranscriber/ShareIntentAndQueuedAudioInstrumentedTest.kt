@@ -102,7 +102,7 @@ class ShareIntentAndQueuedAudioInstrumentedTest {
     }
 
     @Test
-    fun queuedAudioResolver_usesLegacyJobUriWhenNoStagedFileExistsField() {
+    fun queuedAudioResolver_requiresResharingWhenStagedPathIsMissing() {
         val originalUri = "content://test/legacy.wav"
         val resolution = QueuedAudioInputResolver.resolve(
             TranscriptionJob(
@@ -113,14 +113,18 @@ class ShareIntentAndQueuedAudioInstrumentedTest {
         )
 
         assertEquals(
-            QueuedAudioInputResolution.Ready(Uri.parse(originalUri)),
+            QueuedAudioInputResolution.MissingStagedFile(
+                "Queued audio is no longer available. Please share it again.",
+            ),
             resolution,
         )
     }
 
     @Test
     fun queuedAudioResolver_returnsStagedFileWhenPresent() {
-        val stagedFile = File.createTempFile("staged_test_", ".wav", context.cacheDir)
+        val stagedFile = File.createTempFile("staged_test_", ".wav", context.cacheDir).apply {
+            writeBytes(byteArrayOf(1))
+        }
         try {
             val resolution = QueuedAudioInputResolver.resolve(
                 TranscriptionJob(

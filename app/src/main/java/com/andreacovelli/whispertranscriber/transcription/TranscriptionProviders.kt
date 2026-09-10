@@ -1,5 +1,7 @@
 package com.andreacovelli.whispertranscriber.transcription
 
+import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.security.GeminiApiFailure
 import com.andreacovelli.whispertranscriber.security.GenAiClientFactory
 import com.andreacovelli.whispertranscriber.security.useAsString
 import com.andreacovelli.whispertranscriber.security.useGenAiClient
@@ -16,9 +18,13 @@ import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -96,7 +102,7 @@ internal class MicrosoftSpeechTranscriber(
                     .post(multipartBody)
                     .build()
                 withContext(ioDispatcher) {
-                    okHttpClient.newCall(request).execute().use { response ->
+                    okHttpClient.newCall(request).awaitResult { response ->
                         val bodyText = response.body.string()
                         if (!response.isSuccessful) {
                             throw MicrosoftSpeechHttpException(
@@ -111,11 +117,8 @@ internal class MicrosoftSpeechTranscriber(
 
             val response = try {
                 JSONObject(responseBody)
-            } catch (e: JSONException) {
-                throw IllegalStateException(
-                    "Failed to parse Microsoft Speech response body (length=${responseBody.length}).",
-                    e,
-                )
+            } catch (_: JSONException) {
+                throw ProviderResponseException(R.string.provider_response_invalid)
             }
             emit(
                 TranscriptionResult.Success(
@@ -128,6 +131,8 @@ internal class MicrosoftSpeechTranscriber(
             )
         } catch (e: CancellationException) {
             throw e
+        } catch (e: ProviderResponseException) {
+            emit(TranscriptionResult.Error(e))
         } catch (e: MicrosoftSpeechHttpException) {
             val error = if (shouldRetryHttp(e.code)) {
                 TransientWorkException(e.message, e)
@@ -136,7 +141,7 @@ internal class MicrosoftSpeechTranscriber(
             }
             emit(TranscriptionResult.Error(error))
         } catch (e: IOException) {
-            emit(TranscriptionResult.Error(TransientWorkException("Microsoft Speech error: ${e.message}", e)))
+            emit(TranscriptionResult.Error(TransientWorkException("Microsoft Speech request failed.", e)))
         } catch (e: IllegalArgumentException) {
             emit(TranscriptionResult.Error(IllegalStateException(e.message ?: "Microsoft Speech request failed.", e)))
         } finally {
@@ -168,49 +173,34 @@ internal class GeminiTranscriber(
 
         try {
             emit(TranscriptionResult.Loading("Uploading audio ($mimeType) via File API..."))
-            apiKey.useGenAiClient(
-                clientFactory = clientFactory,
-                timeoutMillis = GEMINI_TRANSCRIPTION_TIMEOUT_MILLIS,
-            ) { client ->
-                uploadedFile = withContext(ioDispatcher) {
-                    val uploadConfig = UploadFileConfig.builder().mimeType(mimeType).build()
-                    client.files.upload(audioFile.absolutePath, uploadConfig)
+            withTimeout(GEMINI_TRANSCRIPTION_TIMEOUT_MILLIS.toLong()) {
+                apiKey.useGenAiClient(clientFactory, ioDispatcher, GEMINI_TRANSCRIPTION_TIMEOUT_MILLIS) { operation ->
+                    val initial = operation.call { client ->
+                        val config = UploadFileConfig.builder().mimeType(mimeType).build()
+                        client.files.upload(audioFile.absolutePath, config).also { uploadedFile = it }
+                    }
+                    val activeFile = awaitGeminiFileActive(initial) { name ->
+                        operation.call { it.files.get(name, null) }
+                    }
+                    val audioPart = Part.fromUri(activeFile.uri().orElseThrow(), activeFile.mimeType().orElse(mimeType))
+                    val config = GenerateContentConfig.builder()
+                        .responseMimeType("application/json")
+                        .responseSchema(buildResponseSchema())
+                        .build()
+                    val content = Content.fromParts(Part.fromText(buildPrompt()), audioPart)
+                    val response = operation.call { it.models.generateContent(modelName, content, config) }
+                    parseGeminiTranscription(
+                        validatedGeminiText(response),
+                        speakerDiarizationEnabled,
+                        response.modelVersion().filter(String::isNotBlank).orElse(modelName),
+                    )
                 }
-                val currentUploadedFile = checkNotNull(uploadedFile) { "File upload failed." }
-                val audioPart = Part.fromUri(
-                    currentUploadedFile.uri().orElseThrow { IllegalStateException("Missing URI") },
-                    currentUploadedFile.mimeType().orElse(mimeType),
-                )
-                emit(TranscriptionResult.Loading("Transcribing audio..."))
-                val config = GenerateContentConfig.builder()
-                    .responseMimeType("application/json")
-                    .responseSchema(buildResponseSchema())
-                    .build()
-                val content = Content.fromParts(
-                    Part.fromText(
-                        buildPrompt(),
-                    ),
-                    audioPart,
-                )
-                val response = withContext(ioDispatcher) {
-                    client.models.generateContent(modelName, content, config)
-                }
-                val json = response.text() ?: "{}"
-                val obj = try {
-                    JSONObject(json)
-                } catch (e: JSONException) {
-                    throw IllegalStateException("Failed to parse Gemini response: $json", e)
-                }
-                emit(
-                    TranscriptionResult.Success(
-                        TranscriptionData(
-                            text = parseTranscriptText(obj),
-                            language = obj.optString("language_code", "und"),
-                            model = response.modelVersion().filter(String::isNotBlank).orElse(modelName),
-                        ),
-                    ),
-                )
-            }
+            }.let { emit(TranscriptionResult.Success(it)) }
+        } catch (_: TimeoutCancellationException) {
+            currentCoroutineContext().ensureActive()
+            emit(TranscriptionResult.Error(TransientWorkException("Gemini request timed out.")))
+        } catch (e: ProviderResponseException) {
+            emit(TranscriptionResult.Error(e))
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
@@ -240,17 +230,19 @@ internal class GeminiTranscriber(
     @Suppress("TooGenericExceptionCaught")
     private suspend fun deleteUploadedFileBestEffort(remoteFile: GenAiFile) {
         try {
-            apiKey.useGenAiClient(clientFactory) { client ->
-                withContext(NonCancellable + ioDispatcher) {
-                    remoteFile.name().orElse(null)?.let { remoteFileName ->
-                        client.files.delete(remoteFileName, null)
+            withContext(NonCancellable + ioDispatcher) {
+                withTimeout(30_000) {
+                    apiKey.useGenAiClient(clientFactory, ioDispatcher, timeoutMillis = 30_000) { operation ->
+                        remoteFile.name().orElse(null)?.let { name ->
+                            operation.call { it.files.delete(name, null) }
+                        }
                     }
                 }
             }
         } catch (_: CancellationException) {
             // Preserve the cancellation already being processed by the transcription flow.
-        } catch (error: Exception) {
-            android.util.Log.w("TranscriptionWorker", "Failed to delete remote Gemini file", error)
+        } catch (_: Exception) {
+            android.util.Log.w("TranscriptionWorker", "Failed to delete remote Gemini file")
         }
     }
 
@@ -270,11 +262,6 @@ internal class GeminiTranscriber(
         "Transcribe the provided audio. Return only a compact JSON object with fields: language_code (BCP-47 like en-US) and text (full transcript). Do not include any extra commentary."
     }
 
-    private fun parseTranscriptText(obj: JSONObject): String = parseTranscriptTextValue(
-        transcriptText = obj.optString("text"),
-        speakerDiarizationEnabled = speakerDiarizationEnabled,
-    )
-
     private fun resolveGeminiErrorMessage(
         error: Throwable,
         httpCode: Int? = extractHttpStatusFromMessage(error),
@@ -285,7 +272,7 @@ internal class GeminiTranscriber(
             friendlyHttpError(code, "Gemini")
         }
     }
-        ?: "Gemini error: ${error.message ?: error::class.java.simpleName}"
+        ?: "Gemini request failed."
 }
 
 internal fun friendlyHttpError(code: Int, provider: String): String = when (code) {
@@ -295,25 +282,27 @@ internal fun friendlyHttpError(code: Int, provider: String): String = when (code
     else -> "HTTP $code: unexpected error from $provider."
 }
 
-internal fun resolveMicrosoftSpeechErrorMessage(code: Int, bodyText: String): String = when (code) {
-    401 -> "Unauthorized. Check your Azure Speech key for Microsoft MAI Transcribe."
-    404 -> "Microsoft MAI Transcribe endpoint not found. Check the configured Speech region or custom endpoint."
-    429 -> extractMicrosoftSpeechServiceMessage(bodyText)
-        ?.let { serviceMessage ->
-            if (isMicrosoftSpeechResourceExhaustedMessage(serviceMessage)) {
-                "Microsoft Speech resource exhausted. The service hit its current rate, concurrency, or preview capacity limits. The app will retry automatically."
-            } else {
-                "HTTP 429: $serviceMessage"
-            }
-        }
-        ?: friendlyHttpError(code, "Microsoft Speech")
-    in 500..599 -> friendlyHttpError(code, "Microsoft Speech")
-    else -> extractMicrosoftSpeechServiceMessage(bodyText)
-        ?.let { "HTTP $code: $it" }
-        ?: "HTTP $code: unexpected error from Microsoft Speech."
+internal fun resolveMicrosoftSpeechErrorMessage(code: Int, bodyText: String): String = when {
+    code == 401 -> "Unauthorized. Check your Azure Speech key for Microsoft MAI Transcribe."
+    code == 404 -> "Microsoft MAI Transcribe endpoint not found. Check the configured Speech region or custom endpoint."
+    code == 429 && isMicrosoftSpeechResourceExhaustedMessage(extractMicrosoftSpeechServiceMessage(bodyText)) ->
+        "Microsoft Speech resource exhausted. The app will retry automatically."
+    else -> friendlyHttpError(code, "Microsoft Speech")
 }
 
 internal fun parseMicrosoftSpeechTranscriptText(response: JSONObject): String {
+    if (!response.has("combinedPhrases") && !response.has("phrases")) {
+        throw ProviderResponseException(R.string.provider_response_invalid)
+    }
+    listOf("combinedPhrases", "phrases").filter(response::has).forEach { field ->
+        val phrases =
+            response.opt(field) as? JSONArray ?: throw ProviderResponseException(R.string.provider_response_invalid)
+        for (index in 0 until phrases.length()) {
+            val phrase =
+                phrases.optJSONObject(index) ?: throw ProviderResponseException(R.string.provider_response_invalid)
+            if (phrase.opt("text") !is String) throw ProviderResponseException(R.string.provider_response_invalid)
+        }
+    }
     val combinedText = response.optJSONArray("combinedPhrases")
         ?.joinTexts()
         .orEmpty()
@@ -360,7 +349,10 @@ internal fun shouldRetryHttp(code: Int): Boolean = code == 429 || code in 500..5
 
 internal fun shouldRetryGeminiApiError(error: ApiException): Boolean {
     if (error.code() == 429) {
-        return !isQuotaExhaustedMessage(error.message())
+        return (error as? GeminiApiFailure)?.retrySuggested == true ||
+            error.message().orEmpty().contains("retryDelay", ignoreCase = true) ||
+            error.message().orEmpty().contains("retryInfo", ignoreCase = true) ||
+            !isQuotaExhaustedMessage(error.message())
     }
     return shouldRetryHttp(error.code())
 }
@@ -370,13 +362,12 @@ internal fun isQuotaExhaustedMessage(message: String?): Boolean {
     if (normalized.isBlank()) return false
 
     return listOf(
-        "quota",
-        "resource exhausted",
-        "resource_exhausted",
-        "quota exceeded",
-        "exceeded your current quota",
         "billing",
         "daily limit",
+        "per day",
+        "per_day",
+        "perday",
+        "daily quota",
     ).any(normalized::contains)
 }
 

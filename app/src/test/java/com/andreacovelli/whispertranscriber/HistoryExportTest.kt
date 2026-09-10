@@ -75,13 +75,11 @@ class HistoryExportTest {
             writeHistoryExport(
                 writer = writer,
                 format = HistoryExportFormat.CSV,
-                pageSize = 1,
-            ) { limit, offset ->
-                listOf(
+                items = listOf(
                     historyItem(id = 2, timestamp = 2_000L, text = "Newest"),
                     historyItem(id = 1, timestamp = 1_000L, text = "Older"),
-                ).drop(offset).take(limit)
-            }
+                ),
+            )
         }
 
         assertEquals(
@@ -152,8 +150,8 @@ class HistoryExportTest {
                 writeHistoryExport(
                     writer = writer,
                     format = format,
-                    pageSize = 1,
-                ) { _, _ -> emptyList() }
+                    items = emptyList(),
+                )
             }
             fail("Expected export to fail for empty history.")
         } catch (_: IllegalArgumentException) {

@@ -32,7 +32,7 @@ import com.andreacovelli.whispertranscriber.transcription.resolveMicrosoftSpeech
 import com.andreacovelli.whispertranscriber.ui.components.providerDisplayLabel
 import com.andreacovelli.whispertranscriber.ui.components.providerFamilyLabel
 import com.andreacovelli.whispertranscriber.ui.components.providerFamilyLabelForModel
-import com.andreacovelli.whispertranscriber.ui.components.shouldShowRetranscribeAction
+import com.andreacovelli.whispertranscriber.ui.components.shouldShowStopAction
 import com.andreacovelli.whispertranscriber.ui.main.TranscriptionJobState
 import com.andreacovelli.whispertranscriber.ui.main.UiState
 import com.andreacovelli.whispertranscriber.ui.main.resolveShareQueueSettings
@@ -368,20 +368,20 @@ class TranscriptionPresentationTest {
     }
 
     @Test
-    fun shouldShowRetranscribeAction_returnsTrueForClearedJobWithoutTranscript() {
+    fun shouldShowStopAction_returnsFalseForClearedJobWithoutTranscript() {
         assertEquals(
-            true,
+            false,
             testUiJob(
                 id = 1,
                 batchId = "",
                 status = DISPLAY_JOB_STATUS_CLEARED,
                 transcript = "",
-            ).shouldShowRetranscribeAction(),
+            ).shouldShowStopAction(),
         )
     }
 
     @Test
-    fun shouldShowRetranscribeAction_returnsFalseForIdleBlankJob() {
+    fun shouldShowStopAction_returnsFalseForIdleBlankJob() {
         assertEquals(
             false,
             testUiJob(
@@ -389,7 +389,7 @@ class TranscriptionPresentationTest {
                 batchId = "",
                 status = DISPLAY_JOB_STATUS_COMPLETED,
                 transcript = "",
-            ).shouldShowRetranscribeAction(),
+            ).shouldShowStopAction(),
         )
     }
 

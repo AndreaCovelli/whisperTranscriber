@@ -7,10 +7,13 @@ import android.net.Uri
 import androidx.core.net.toUri
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.background.BackgroundShareNotifier
+import com.andreacovelli.whispertranscriber.background.BackgroundShareResultKind
 import com.andreacovelli.whispertranscriber.background.PostTranscriptionWorkSpec
+import com.andreacovelli.whispertranscriber.background.StoredResultPublisher
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
 import com.andreacovelli.whispertranscriber.media.HardwareAudioConverter
+import com.andreacovelli.whispertranscriber.queue.QueueExecutionCoordinator
 import com.andreacovelli.whispertranscriber.queue.QueuedAudioStore
 import com.andreacovelli.whispertranscriber.queue.postTranscriptionWorkSpec
 import com.andreacovelli.whispertranscriber.security.GenAiClientFactory
@@ -72,8 +75,10 @@ class TranscriptionExecutionRunner @Inject constructor(
     @param:ApplicationContext private val applicationContext: Context,
     private val settings: ApiKeyManager,
     private val repository: TranscriptionRepository,
+    private val executionCoordinator: QueueExecutionCoordinator,
     private val summarizationService: SummarizationService,
     private val backgroundShareNotifier: BackgroundShareNotifier,
+    private val storedResultPublisher: StoredResultPublisher,
     private val queuedAudioStore: QueuedAudioStore,
     private val genAiClientFactory: GenAiClientFactory,
     private val okHttpClient: OkHttpClient,
@@ -84,6 +89,24 @@ class TranscriptionExecutionRunner @Inject constructor(
     }
 
     internal suspend fun runJob(
+        jobId: Int,
+        executionOwnerId: String,
+        speakerLabelPrefix: String,
+        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
+    ): JobRunOutcome = executionCoordinator.runSerialized(jobId) {
+        val ownerId = executionCoordinator.ownerId(executionOwnerId)
+        try {
+            runAttempt(jobId, ownerId, speakerLabelPrefix, onProgressNotification)
+        } catch (e: CancellationException) {
+            // Claim acquisition may commit before Room resumes this coroutine.
+            withContext(NonCancellable + ioDispatcher) {
+                repository.resetRunningToQueued(jobId, ownerId)
+            }
+            throw e
+        }
+    }
+
+    private suspend fun runAttempt(
         jobId: Int,
         executionOwnerId: String,
         speakerLabelPrefix: String,
@@ -124,8 +147,8 @@ class TranscriptionExecutionRunner @Inject constructor(
             throw e
         } catch (_: SupersededExecutionException) {
             JobRunOutcome.Superseded
-        } catch (e: TransientWorkException) {
-            val message = e.message ?: e::class.java.simpleName
+        } catch (_: TransientWorkException) {
+            val message = applicationContext.getString(R.string.provider_request_failed)
             if (job.retryCount >= MAX_AUTOMATIC_RETRY_ATTEMPTS) {
                 val exhaustedMessage =
                     "Automatic retries exhausted after $MAX_AUTOMATIC_RETRY_ATTEMPTS attempts. $message"
@@ -164,7 +187,9 @@ class TranscriptionExecutionRunner @Inject constructor(
                 executionOwnerId,
                 displayName,
                 postTranscriptionWorkSpec,
-                e.message ?: e::class.java.simpleName,
+                applicationContext.getString(
+                    (e as? ProviderResponseException)?.messageId ?: R.string.provider_request_failed,
+                ),
             )
             JobRunOutcome.Failure
         } catch (e: IllegalArgumentException) {
@@ -206,14 +231,13 @@ class TranscriptionExecutionRunner @Inject constructor(
         } else {
             job.transcript
         }
-        if (durableTranscript.isNotBlank()) {
+        if (job.historyId != null || durableTranscript.isNotBlank()) {
             queuedAudioStore.deleteStagedFile(job.stagedFilePath)
             requireOwnedUpdate(repository.clearStagedFilePath(job.id, executionOwnerId))
             resumePostTranscriptionWork(
                 jobId = job.id,
                 executionOwnerId = executionOwnerId,
                 displayName = job.displayName,
-                transcript = durableTranscript,
                 postTranscriptionWorkSpec = postTranscriptionWorkSpec,
                 onProgressNotification = onProgressNotification,
             )
@@ -318,7 +342,6 @@ class TranscriptionExecutionRunner @Inject constructor(
                 jobId = jobId,
                 executionOwnerId = executionOwnerId,
                 displayName = displayName,
-                transcript = result.text,
                 postTranscriptionWorkSpec = postTranscriptionWorkSpec,
                 onProgressNotification = onProgressNotification,
             )
@@ -400,12 +423,14 @@ class TranscriptionExecutionRunner @Inject constructor(
             displayName,
             applicationContext.getString(R.string.transcription_notification_converting),
         )
-        val outputFile = withContext(ioDispatcher) {
-            File.createTempFile("${QueuedAudioStore.CONVERTED_FILE_PREFIX}$jobId", ".wav", app.cacheDir)
-        }
+        var createdFile: File? = null
         var converted = false
         var lastReportedProgressBucket = -1
         try {
+            val outputFile = withContext(ioDispatcher) {
+                File.createTempFile("${QueuedAudioStore.CONVERTED_FILE_PREFIX}$jobId", ".wav", app.cacheDir)
+                    .also { createdFile = it }
+            }
             val conversionResult = HardwareAudioConverter.convertTo16kMonoWav(
                 context = app,
                 inputUri = uri,
@@ -473,7 +498,7 @@ class TranscriptionExecutionRunner @Inject constructor(
             return preparedInput
         } finally {
             if (!converted) {
-                deleteTemporaryFile(outputFile)
+                withContext(NonCancellable + ioDispatcher) { createdFile?.let(::deleteTemporaryFile) }
             }
         }
     }
@@ -549,7 +574,7 @@ class TranscriptionExecutionRunner @Inject constructor(
                 ),
             )
             PreparedAudioInput.Gemini(
-                file = reusableLocalFile,
+                file = reusableLocalFile.also(::validateMeasurableGeminiAudio),
                 mimeType = inputMimeType,
                 tempFileToClean = null,
             )
@@ -579,7 +604,11 @@ class TranscriptionExecutionRunner @Inject constructor(
                     1f,
                 ),
             )
-            PreparedAudioInput.Gemini(file = tempFile, mimeType = inputMimeType, tempFileToClean = tempFile)
+            PreparedAudioInput.Gemini(
+                file = tempFile.also(::validateMeasurableGeminiAudio),
+                mimeType = inputMimeType,
+                tempFileToClean = tempFile,
+            )
         }
     }
 
@@ -757,7 +786,6 @@ class TranscriptionExecutionRunner @Inject constructor(
         jobId: Int,
         executionOwnerId: String,
         displayName: String,
-        transcript: String,
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec?,
         onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
     ) {
@@ -777,14 +805,7 @@ class TranscriptionExecutionRunner @Inject constructor(
             requireOwnedUpdate(repository.markRunningAsCompleted(jobId, executionOwnerId))
             if (postTranscriptionWorkSpec.notifyResult) {
                 if (summarizationResult.errorMessage == null) {
-                    val completedHistory = repository.getHistoryForJob(jobId)
-                    backgroundShareNotifier.showSummary(
-                        jobId = jobId,
-                        displayName = displayName,
-                        summary = completedHistory?.summary.orEmpty().ifBlank {
-                            summarizationResult.statusMessage
-                        },
-                    )
+                    storedResultPublisher.publish(jobId, BackgroundShareResultKind.SUMMARY)
                 } else {
                     backgroundShareNotifier.showFailure(
                         jobId = jobId,
@@ -796,11 +817,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         } else {
             requireOwnedUpdate(repository.markRunningAsCompleted(jobId, executionOwnerId))
             if (postTranscriptionWorkSpec?.notifyResult == true) {
-                backgroundShareNotifier.showTranscription(
-                    jobId = jobId,
-                    displayName = displayName,
-                    transcript = transcript,
-                )
+                storedResultPublisher.publish(jobId, BackgroundShareResultKind.TRANSCRIPTION)
             }
         }
     }
@@ -831,11 +848,13 @@ internal object QueuedAudioInputResolver {
     fun resolve(job: TranscriptionJob): QueuedAudioInputResolution {
         val stagedPath = job.stagedFilePath?.takeIf { it.isNotBlank() }
         if (stagedPath == null) {
-            return QueuedAudioInputResolution.Ready(job.uri.toUri())
+            return QueuedAudioInputResolution.MissingStagedFile(
+                "Queued audio is no longer available. Please share it again.",
+            )
         }
 
         val stagedFile = File(stagedPath)
-        return if (stagedFile.exists()) {
+        return if (stagedFile.isFile && stagedFile.canRead() && stagedFile.length() > 0) {
             QueuedAudioInputResolution.Ready(stagedFile.toUri())
         } else {
             QueuedAudioInputResolution.MissingStagedFile(

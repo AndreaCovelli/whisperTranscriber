@@ -1,6 +1,7 @@
 package com.andreacovelli.whispertranscriber.ui.history
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -9,27 +10,24 @@ import androidx.paging.cachedIn
 import androidx.paging.insertSeparators
 import androidx.paging.map
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.data.HistoryRepository
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
+import com.andreacovelli.whispertranscriber.history.HistoryDateSource
 import com.andreacovelli.whispertranscriber.history.HistoryExportFormat
 import com.andreacovelli.whispertranscriber.history.HistoryListRow
 import com.andreacovelli.whispertranscriber.history.historyDateHeader
 import com.andreacovelli.whispertranscriber.history.historyListItem
-import com.andreacovelli.whispertranscriber.history.writeHistoryExport
 import com.andreacovelli.whispertranscriber.services.TranscriptionQueueService
+import com.andreacovelli.whispertranscriber.ui.TextTransfer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
-import java.time.Duration
-import java.time.LocalDate
-import java.time.ZoneId
-import java.time.ZonedDateTime
 import javax.inject.Inject
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -39,13 +37,11 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 sealed interface HistoryUiEvent {
     data class LaunchExport(val format: HistoryExportFormat) : HistoryUiEvent
@@ -60,13 +56,11 @@ class HistoryViewModel @Inject constructor(
     @param:ApplicationContext private val appContext: Context,
     private val historyRepository: HistoryRepository,
     private val queueService: TranscriptionQueueService,
+    private val textTransfer: TextTransfer,
+    private val dateSource: HistoryDateSource,
 ) : ViewModel() {
-    private companion object {
-        const val EXPORT_PAGE_SIZE = 100
-        const val DATE_CHANGE_BUFFER_MILLIS = 500L
-    }
-
-    private data class HistoryGroupingContext(val currentDate: LocalDate, val zoneId: ZoneId)
+    suspend fun shareText(text: String, title: String, launch: (Intent) -> Unit): Boolean =
+        textTransfer.share(text, title, launch)
 
     private val _model = MutableStateFlow(HistoryModel())
     val model: StateFlow<HistoryModel> = _model.asStateFlow()
@@ -76,14 +70,6 @@ class HistoryViewModel @Inject constructor(
 
     private val _uiEvents = Channel<HistoryUiEvent>()
     val uiEvents = _uiEvents.receiveAsFlow()
-    private val historyGroupingContext: Flow<HistoryGroupingContext> = flow {
-        while (true) {
-            val zoneId = ZoneId.systemDefault()
-            emit(HistoryGroupingContext(currentDate = LocalDate.now(zoneId), zoneId = zoneId))
-            delay(millisUntilNextLocalDateChange(zoneId))
-        }
-    }.distinctUntilChanged()
-
     fun prepareShareTranscript(item: TranscriptionHistory) {
         viewModelScope.launch {
             _uiEvents.send(
@@ -119,23 +105,16 @@ class HistoryViewModel @Inject constructor(
     fun exportHistory(uri: Uri, format: HistoryExportFormat) {
         viewModelScope.launch {
             val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    val outputStream = appContext.contentResolver.openOutputStream(uri)
+                historyRepository.exportHistory(format, appContext.cacheDir) {
+                    appContext.contentResolver.openOutputStream(uri)
                         ?: throw IOException("Failed to open export destination.")
-                    outputStream.bufferedWriter(Charsets.UTF_8).use { writer ->
-                        writeHistoryExport(
-                            writer = writer,
-                            format = format,
-                            pageSize = EXPORT_PAGE_SIZE,
-                            loadPage = historyRepository::getExportPage,
-                        )
-                    }
                 }
             }
 
             result.onSuccess {
                 _uiEvents.send(HistoryUiEvent.Toast(appContext.getString(R.string.history_export_success)))
             }.onFailure {
+                if (it is CancellationException) throw it
                 _uiEvents.send(HistoryUiEvent.Toast(appContext.getString(R.string.history_export_failed)))
             }
         }
@@ -165,7 +144,8 @@ class HistoryViewModel @Inject constructor(
         .debounce(250)
         .distinctUntilChanged()
         .flatMapLatest(historyRepository::getPagedHistory)
-        .combine(historyGroupingContext) { pagingData, groupingContext ->
+        .cachedIn(viewModelScope)
+        .combine(dateSource.changes) { pagingData, groupingContext ->
             pagingData
                 .map { history ->
                     historyListItem(
@@ -180,6 +160,7 @@ class HistoryViewModel @Inject constructor(
                     historyDateHeader(
                         previousBucket = previousItem?.bucket,
                         currentBucket = nextItem.bucket,
+                        firstItemId = nextItem.history.id,
                     )
                 }
         }
@@ -187,13 +168,13 @@ class HistoryViewModel @Inject constructor(
 
     fun clearSummary(item: TranscriptionHistory) {
         viewModelScope.launch {
-            historyRepository.updateSummary(item.id, "", "", "")
+            queueService.clearHistoryContent(item.id, HistoryContentField.SUMMARY)
         }
     }
 
     fun clearTranscript(item: TranscriptionHistory) {
         viewModelScope.launch {
-            historyRepository.updateText(item.id, "")
+            queueService.clearHistoryContent(item.id, HistoryContentField.TRANSCRIPT)
         }
     }
 
@@ -207,11 +188,5 @@ class HistoryViewModel @Inject constructor(
         viewModelScope.launch {
             queueService.cancelRemovedHistoryJobs(historyRepository.deleteAll())
         }
-    }
-
-    private fun millisUntilNextLocalDateChange(zoneId: ZoneId): Long {
-        val now = ZonedDateTime.now(zoneId)
-        val nextLocalMidnight = now.toLocalDate().plusDays(1).atStartOfDay(zoneId)
-        return Duration.between(now, nextLocalMidnight).toMillis().coerceAtLeast(1L) + DATE_CHANGE_BUFFER_MILLIS
     }
 }

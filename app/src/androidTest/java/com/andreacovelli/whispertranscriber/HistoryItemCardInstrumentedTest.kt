@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -133,5 +134,42 @@ class HistoryItemCardInstrumentedTest {
         composeRule.onAllNodesWithContentDescription(copySummaryLabel).assertCountEquals(1)
         composeRule.onAllNodesWithContentDescription(copyTranscriptLabel).assertCountEquals(0)
         composeRule.onNodeWithText("Summary only content", substring = true).assertExists()
+    }
+
+    @Test
+    fun recreatedExpandedCard_keepsItsCollapseControl() {
+        var generation by mutableStateOf(0)
+        var expanded by mutableStateOf(true)
+        composeRule.setContent {
+            MaterialTheme {
+                key(generation) {
+                    HistoryItemCard(
+                        item = TranscriptionHistory(
+                            id = 9,
+                            text = "Long transcript ".repeat(100),
+                            language = "en",
+                            displayName = "audio.wav",
+                        ),
+                        expanded = expanded,
+                        onToggleExpand = { expanded = !expanded },
+                        actions = HistoryItemCardActions({}, {}, {}, {}, {}, {}, {}),
+                    )
+                }
+            }
+        }
+        composeRule.runOnIdle { generation += 1 }
+        composeRule.onNodeWithText(context.getString(R.string.history_item_show_less)).performClick()
+        composeRule.runOnIdle { org.junit.Assert.assertFalse(expanded) }
+    }
+
+    @Test
+    fun historyLoadFailure_exposesARetryAction() {
+        var retries = 0
+        composeRule.setContent {
+            MaterialTheme { com.andreacovelli.whispertranscriber.ui.screens.HistoryLoadError { retries += 1 } }
+        }
+        composeRule.onNodeWithText(context.getString(R.string.history_load_failed)).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.retry)).performClick()
+        composeRule.runOnIdle { org.junit.Assert.assertEquals(1, retries) }
     }
 }

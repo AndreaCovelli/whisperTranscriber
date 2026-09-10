@@ -44,6 +44,7 @@ jobs:
         with:
           filters: |
             android:
+              - ".editorconfig"
               - ".github/workflows/**"
               - "app/**"
               - "build.gradle.kts"
@@ -56,6 +57,7 @@ jobs:
             instrumentation:
               - ".github/workflows/ci.yml"
               - "app/build.gradle.kts"
+              - "app/*.pro"
               - "app/schemas/**"
               - "app/src/androidTest/**"
               - "app/src/main/**"
@@ -140,7 +142,7 @@ jobs:
         needs.changes.outputs.instrumentation == 'true'
       }}
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -206,11 +208,39 @@ jobs:
           --stacktrace
           --console=plain
 
+      - name: Verify notification permission recreation
+        run: >-
+          ./gradlew pixel6Api34DebugAndroidTest --console=plain
+          -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
+          -Pandroid.testInstrumentationRunnerArguments.class=com.andreacovelli.whispertranscriber.NotificationPermissionRecreationInstrumentedTest
+
       - name: Run managed-device tests
         run: >-
           ./gradlew pixel6Api34DebugAndroidTest
           -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
           --console=plain
+
+      - name: Verify minified JSON exports
+        run: >-
+          ./gradlew pixel6Api34MinifiedSmokeAndroidTest --console=plain
+          -PinstrumentationBuildType=minifiedSmoke
+          -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
+          -Pandroid.testInstrumentationRunnerArguments.class=com.andreacovelli.whispertranscriber.HistoryExportInstrumentedTest
+
+      - name: Require minified export test results
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          reports = Path("app/build/outputs/androidTest-results/managedDevice/minifiedsmoke/pixel6Api34")
+          cases = [case for report in reports.glob("TEST-*.xml")
+                   for case in ET.parse(report).iter("testcase")
+                   if case.get("classname", "").endswith(".HistoryExportInstrumentedTest")]
+          if len(cases) < 4 or any(case.find(tag) is not None
+                                   for case in cases for tag in ("failure", "error", "skipped")):
+              raise SystemExit("All four minified export scenarios must execute and pass.")
+          PY
 
       - name: Save API 34 ATD system image
         if: >-

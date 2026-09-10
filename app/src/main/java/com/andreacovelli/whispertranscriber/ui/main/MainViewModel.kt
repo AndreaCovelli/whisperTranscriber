@@ -1,6 +1,7 @@
 package com.andreacovelli.whispertranscriber.ui.main
 
 import android.content.Context
+import android.content.Intent
 import android.database.SQLException
 import android.net.Uri
 import androidx.core.net.toUri
@@ -10,6 +11,8 @@ import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.background.PostTranscriptionWorkSpec
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
+import com.andreacovelli.whispertranscriber.queue.JobOperationRegistry
+import com.andreacovelli.whispertranscriber.queue.RetryResult
 import com.andreacovelli.whispertranscriber.services.SummarizationService
 import com.andreacovelli.whispertranscriber.services.TranscriptionQueueService
 import com.andreacovelli.whispertranscriber.services.ValidationService
@@ -20,11 +23,13 @@ import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.settings.TranscriptionQueueSettings
 import com.andreacovelli.whispertranscriber.settings.decodeHistoricalSummarizerProvider
 import com.andreacovelli.whispertranscriber.settings.decodeTranscriptionProvider
-import com.andreacovelli.whispertranscriber.summary.TranscriptionSummarizationRepository
 import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_QUEUED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_CANCELLED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_ERROR
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
 import com.andreacovelli.whispertranscriber.transcription.displayJobStatus
 import com.andreacovelli.whispertranscriber.transcription.displaySummaryStatus
+import com.andreacovelli.whispertranscriber.ui.TextTransfer
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 import com.andreacovelli.whispertranscriber.ui.screens.buildBatchProgressState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -35,9 +40,11 @@ import javax.inject.Inject
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -110,6 +117,7 @@ data class TranscriptionJobState(
     val summaryError: String? = null,
     val isRunning: Boolean = false,
     val isSummarizing: Boolean = false,
+    val canRetry: Boolean = false,
 )
 
 fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
@@ -137,6 +145,8 @@ fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     summaryError = summaryError,
     isRunning = isRunning,
     isSummarizing = isSummarizing,
+    canRetry = status in setOf(JOB_STATUS_ERROR, JOB_STATUS_CANCELLED) &&
+        !isRunning && !isSummarizing && !stagedFilePath.isNullOrBlank(),
 )
 
 internal data class JobPresentationState(
@@ -193,16 +203,22 @@ class MainViewModel @Inject constructor(
     @param:ApplicationContext private val appContext: Context,
     private val settings: ApiKeyManager,
     private val repository: TranscriptionRepository,
-    private val summarizationRepository: TranscriptionSummarizationRepository,
     private val queueService: TranscriptionQueueService,
+    private val operations: JobOperationRegistry,
+    private val textTransfer: TextTransfer,
     private val validationService: ValidationService,
     private val summarizationService: SummarizationService,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
+    suspend fun shareText(text: String, title: String, launch: (Intent) -> Unit): Boolean =
+        textTransfer.share(text, title, launch)
+
     private val _uiState = MutableStateFlow(
         UiState(status = appContext.getString(R.string.main_waiting_for_audios)),
     )
     val uiState = _uiState.asStateFlow()
+    private val _events = Channel<Int>(Channel.BUFFERED)
+    val events = _events.receiveAsFlow()
     private val summaryJobs = ConcurrentHashMap<Int, Job>()
     private val transcriptionSettingsHydrated = MutableStateFlow(false)
     private val settingsDelegate = MainSettingsDelegate(
@@ -212,6 +228,7 @@ class MainViewModel @Inject constructor(
         validationService = validationService,
         scope = viewModelScope,
         ioDispatcher = ioDispatcher,
+        notify = { _events.trySend(it) },
     )
 
     init {
@@ -304,7 +321,12 @@ class MainViewModel @Inject constructor(
             }
             MainMsg.ClearCompletedJobs -> viewModelScope.launch { queueService.clearCompletedJobs() }
             is MainMsg.SummarizeJob -> runSummarization(msg.jobId, allowResummarize = msg.allowResummarize)
-            is MainMsg.ClearSummary -> viewModelScope.launch { summarizationRepository.clearJobSummary(msg.jobId) }
+            is MainMsg.ClearSummary -> viewModelScope.launch {
+                queueService.clearJobContent(
+                    msg.jobId,
+                    com.andreacovelli.whispertranscriber.data.HistoryContentField.SUMMARY,
+                )
+            }
             is MainMsg.ClearTranscript -> viewModelScope.launch { queueService.clearJobTranscription(msg.jobId) }
             is MainMsg.RetryJob -> retryJob(msg.jobId)
             is MainMsg.CancelJob -> viewModelScope.launch { queueService.cancelJob(msg.jobId) }
@@ -403,28 +425,33 @@ class MainViewModel @Inject constructor(
 
     private fun retryJob(jobId: Int) {
         viewModelScope.launch {
-            summaryJobs.remove(jobId)?.cancel()
-            queueService.retryJob(
-                jobId,
-                _uiState.value.provider,
-                _uiState.value.transcriptionCustomGeminiModelName,
-                resolveAutomaticSummarizationWorkSpecForQueue(),
-            )
+            val result = queueService.retryJob(jobId)
+            val messageId = when (result) {
+                RetryResult.ACCEPTED -> null
+                RetryResult.QUEUE_FULL -> R.string.retry_queue_full
+                RetryResult.UNAVAILABLE_AUDIO -> R.string.queued_audio_unavailable
+                RetryResult.INELIGIBLE_STATUS -> R.string.retry_ineligible
+            }
+            if (messageId != null) {
+                _events.send(messageId)
+            }
         }
     }
 
     private fun runSummarization(jobId: Int, allowResummarize: Boolean) {
         val previousSummaryJob = summaryJobs.remove(jobId)
         summaryJobs[jobId] = viewModelScope.launch {
-            previousSummaryJob?.cancelAndJoin()
-            val currentState = _uiState.value
-            val result = summarizationService.summarize(
-                jobId = jobId,
-                settings = currentState.toSummarizationSettings(),
-                allowResummarize = allowResummarize,
-                fallbackStatusMessage = currentState.status,
-            )
-            reduce(MainMsg.StatusChanged(result.statusMessage))
+            operations.track(jobId) {
+                previousSummaryJob?.cancelAndJoin()
+                val currentState = _uiState.value
+                val result = summarizationService.summarize(
+                    jobId = jobId,
+                    settings = currentState.toSummarizationSettings(),
+                    allowResummarize = allowResummarize,
+                    fallbackStatusMessage = currentState.status,
+                )
+                reduce(MainMsg.StatusChanged(result.statusMessage))
+            }
         }.also { job ->
             job.invokeOnCompletion {
                 summaryJobs.remove(jobId, job)
