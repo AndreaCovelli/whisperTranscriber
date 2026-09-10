@@ -2,7 +2,10 @@ package com.andreacovelli.whispertranscriber
 
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -11,10 +14,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -142,24 +147,29 @@ class HistoryItemCardInstrumentedTest {
         var expanded by mutableStateOf(true)
         composeRule.setContent {
             MaterialTheme {
-                key(generation) {
-                    HistoryItemCard(
-                        item = TranscriptionHistory(
-                            id = 9,
-                            text = "Long transcript ".repeat(100),
-                            language = "en",
-                            displayName = "audio.wav",
-                        ),
-                        expanded = expanded,
-                        onToggleExpand = { expanded = !expanded },
-                        actions = HistoryItemCardActions({}, {}, {}, {}, {}, {}, {}),
-                    )
+                // Keep the collapse control below the viewport regardless of the device's screen size.
+                Box(modifier = Modifier.width(220.dp).height(320.dp).verticalScroll(rememberScrollState())) {
+                    key(generation) {
+                        HistoryItemCard(
+                            item = TranscriptionHistory(
+                                id = 9,
+                                text = "Long transcript ".repeat(100),
+                                language = "en",
+                                displayName = "audio.wav",
+                            ),
+                            expanded = expanded,
+                            onToggleExpand = { expanded = !expanded },
+                            actions = HistoryItemCardActions({}, {}, {}, {}, {}, {}, {}),
+                        )
+                    }
                 }
             }
         }
         composeRule.runOnIdle { generation += 1 }
-        composeRule.onNodeWithText(context.getString(R.string.history_item_show_less)).performClick()
+        composeRule.onNodeWithText(context.getString(R.string.history_item_show_less))
+            .performScrollTo().assertIsDisplayed().performClick()
         composeRule.runOnIdle { org.junit.Assert.assertFalse(expanded) }
+        composeRule.onNodeWithText(context.getString(R.string.history_item_show_more)).assertExists()
     }
 
     @Test
