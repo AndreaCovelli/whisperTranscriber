@@ -530,6 +530,22 @@ internal fun resolveMicrosoftSpeechKeyValidationResults(codes: List<Int>): KeyVa
     return KeyValidationResult("Validation failed: HTTP $reportedCode")
 }
 
+internal fun resolveMicrosoftSpeechRegionValidationResults(
+    codes: List<Int>,
+    normalizedEndpoint: String,
+): RegionValidationResult {
+    if (codes.any { it in 200..299 || it == 401 || it == 403 }) {
+        return RegionValidationResult(normalizedRegion = normalizedEndpoint)
+    }
+
+    val reportedCode = codes.firstOrNull { it == 404 || it == 405 || it == 400 || it == 429 || it in 500..599 }
+        ?: codes.firstOrNull()
+        ?: return RegionValidationResult(errorMessage = "Validation failed")
+    return RegionValidationResult(
+        errorMessage = "Could not validate Azure Speech region or endpoint: HTTP $reportedCode",
+    )
+}
+
 internal fun resolveMicrosoftSpeechRegionIOExceptionMessage(normalizedRegion: String, error: IOException): String {
     val message = error.message.orEmpty()
     return if (error is UnknownHostException || message.contains("Unable to resolve host", ignoreCase = true)) {
@@ -657,8 +673,8 @@ class ValidationService @Inject constructor(
         }
 
         return try {
-            probeMicrosoftSpeechRegion(validatedEndpoint)
-            RegionValidationResult(normalizedRegion = validatedEndpoint.value)
+            val codes = probeMicrosoftSpeechRegion(validatedEndpoint)
+            resolveMicrosoftSpeechRegionValidationResults(codes, validatedEndpoint.value)
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {

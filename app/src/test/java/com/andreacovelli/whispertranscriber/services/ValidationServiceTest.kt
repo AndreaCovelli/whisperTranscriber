@@ -121,6 +121,26 @@ class ValidationServiceTest {
     }
 
     @Test
+    fun validateMicrosoftSpeechRegion_customEndpointWithMissingRoutes_returnsError() = runBlocking {
+        val service = createValidationService { chain ->
+            Response.Builder()
+                .request(chain.request())
+                .protocol(Protocol.HTTP_1_1)
+                .code(404)
+                .message("Not Found")
+                .body("{}".toResponseBody("application/json".toMediaType()))
+                .build()
+        }
+
+        val result = service.validateMicrosoftSpeechRegion(
+            "https://not-speech.cognitiveservices.azure.com",
+        )
+
+        assertFalse(result.isValid)
+        assertTrue(result.errorMessage?.contains("HTTP 404") == true)
+    }
+
+    @Test
     fun validateMicrosoftSpeechKey_validKey_returnsValid() = runBlocking {
         val service = createValidationService { chain ->
             assertEquals("valid-test-key", chain.request().header("Ocp-Apim-Subscription-Key"))

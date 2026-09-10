@@ -53,6 +53,7 @@ internal class MicrosoftSpeechTranscriber(
     private val audioFile: File,
     private val mimeType: String,
     private val endpoint: MicrosoftSpeechEndpoint,
+    private val modelName: String,
     private val audioInspection: AudioInspection,
     private val okHttpClient: OkHttpClient,
     private val ioDispatcher: CoroutineDispatcher,
@@ -75,7 +76,7 @@ internal class MicrosoftSpeechTranscriber(
                     "enhancedMode",
                     JSONObject()
                         .put("enabled", true)
-                        .put("model", MICROSOFT_MAI_TRANSCRIBE_MODEL),
+                        .put("model", modelName),
                 )
                 .toString()
             val multipartBody = MultipartBody.Builder()
@@ -121,7 +122,7 @@ internal class MicrosoftSpeechTranscriber(
                     TranscriptionData(
                         text = parseMicrosoftSpeechTranscriptText(response),
                         language = parseMicrosoftSpeechLanguage(response),
-                        model = MICROSOFT_MAI_TRANSCRIBE_MODEL,
+                        model = modelName,
                     ),
                 ),
             )
