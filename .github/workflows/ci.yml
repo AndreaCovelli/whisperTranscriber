@@ -13,6 +13,14 @@ on:
         description: Run all checks regardless of changed paths
         type: boolean
         default: false
+      skip-jobs:
+        description: JSON list of jobs already verified on the exact release commit
+        type: string
+        default: "[]"
+      instrumentation-suites:
+        description: JSON list of device suites still requiring verification
+        type: string
+        default: '["debug", "minifiedSmoke"]'
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -36,6 +44,9 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Test release CI selection
+        run: python3 -B -m unittest discover --start-directory .github/scripts --pattern 'test_*.py' --verbose
 
       - name: Detect Android-relevant changes
         if: ${{ !inputs.force && github.event_name != 'workflow_dispatch' }}
@@ -73,9 +84,10 @@ jobs:
     needs: changes
     if: >-
       ${{
-        inputs.force ||
+        !contains(fromJSON(inputs.skip-jobs || '[]'), 'quality') &&
+        (inputs.force ||
         github.event_name == 'workflow_dispatch' ||
-        needs.changes.outputs.android == 'true'
+        needs.changes.outputs.android == 'true')
       }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -105,9 +117,10 @@ jobs:
     needs: changes
     if: >-
       ${{
-        inputs.force ||
+        !contains(fromJSON(inputs.skip-jobs || '[]'), 'build-unit') &&
+        (inputs.force ||
         github.event_name == 'workflow_dispatch' ||
-        needs.changes.outputs.android == 'true'
+        needs.changes.outputs.android == 'true')
       }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -137,16 +150,17 @@ jobs:
     needs: changes
     if: >-
       ${{
-        inputs.force ||
+        inputs.instrumentation-suites != '[]' &&
+        (inputs.force ||
         github.event_name == 'workflow_dispatch' ||
-        needs.changes.outputs.instrumentation == 'true'
+        needs.changes.outputs.instrumentation == 'true')
       }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        suite: [debug, minifiedSmoke]
+        suite: ${{ fromJSON(inputs.instrumentation-suites || '["debug", "minifiedSmoke"]') }}
     env:
       # Leave room for the Android emulator and runner on private-repository VMs.
       GRADLE_OPTS: >-
@@ -286,6 +300,7 @@ jobs:
   security:
     name: Security
     needs: changes
+    if: ${{ !contains(fromJSON(inputs.skip-jobs || '[]'), 'security') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -397,9 +412,14 @@ jobs:
           BUILD_UNIT_RESULT: ${{ needs.build-unit.result }}
           INSTRUMENTATION_RESULT: ${{ needs.instrumentation.result }}
           SECURITY_RESULT: ${{ needs.security.result }}
+          SECURITY_REUSED: ${{ contains(fromJSON(inputs.skip-jobs || '[]'), 'security') }}
         run: |
           test "$CHANGES_RESULT" = "success"
-          test "$SECURITY_RESULT" = "success"
+          if [ "$SECURITY_RESULT" = "skipped" ]; then
+            test "$SECURITY_REUSED" = "true"
+          else
+            test "$SECURITY_RESULT" = "success"
+          fi
           for result in "$QUALITY_RESULT" "$BUILD_UNIT_RESULT" "$INSTRUMENTATION_RESULT"; do
             test "$result" = "success" || test "$result" = "skipped"
           done
