@@ -7,6 +7,7 @@ import com.andreacovelli.whispertranscriber.security.useClosing
 import com.andreacovelli.whispertranscriber.transcription.AudioInspection
 import com.andreacovelli.whispertranscriber.transcription.MICROSOFT_SPEECH_MAX_DURATION_US
 import com.andreacovelli.whispertranscriber.transcription.MICROSOFT_SPEECH_MAX_UPLOAD_BYTES
+import com.andreacovelli.whispertranscriber.transcription.MicrosoftSpeechEndpoint
 import com.andreacovelli.whispertranscriber.transcription.MicrosoftSpeechRegion
 import com.andreacovelli.whispertranscriber.transcription.validateMicrosoftSpeechAudio
 import java.io.ByteArrayInputStream
@@ -107,6 +108,41 @@ class SecurityBoundaryTest {
         assertEquals("sweden-central.api.cognitive.microsoft.com", endpoint.host)
         assertEquals("/speechtotext/transcriptions:transcribe", endpoint.encodedPath)
         assertEquals("2025-10-15", endpoint.queryParameter("api-version"))
+    }
+
+    @Test
+    fun microsoftSpeechEndpoint_acceptsRegionOrHttpsResourceBaseUrl() {
+        val regionalEndpoint = MicrosoftSpeechEndpoint.parse("sweden-central").buildEndpoint(
+            encodedPath = "speechtotext/transcriptions:transcribe",
+            apiVersion = "2025-10-15",
+        )
+        val customEndpoint = MicrosoftSpeechEndpoint.parse(
+            "https://My-Speech-Resource.cognitiveservices.azure.com/",
+        ).buildEndpoint(
+            encodedPath = "speechtotext/transcriptions:transcribe",
+            apiVersion = "2025-10-15",
+        )
+
+        assertEquals("sweden-central.api.cognitive.microsoft.com", regionalEndpoint.host)
+        assertEquals("my-speech-resource.cognitiveservices.azure.com", customEndpoint.host)
+        assertEquals("/speechtotext/transcriptions:transcribe", customEndpoint.encodedPath)
+        assertEquals("2025-10-15", customEndpoint.queryParameter("api-version"))
+    }
+
+    @Test
+    fun microsoftSpeechEndpoint_rejectsUnsafeOrNonBaseUrls() {
+        listOf(
+            "http://speech.example.com",
+            "https://user:password@speech.example.com",
+            "https://speech.example.com/custom/path",
+            "https://speech.example.com?api-version=custom",
+            "https://speech.example.com/#fragment",
+            "https://speech.example.com",
+        ).forEach { value ->
+            assertThrows(IllegalArgumentException::class.java) {
+                MicrosoftSpeechEndpoint.parse(value)
+            }
+        }
     }
 
     @Test

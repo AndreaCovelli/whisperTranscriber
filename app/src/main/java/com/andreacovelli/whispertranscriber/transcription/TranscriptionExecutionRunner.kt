@@ -41,7 +41,7 @@ internal sealed interface JobRunOutcome {
 private class SupersededExecutionException : Exception()
 
 private sealed interface ProviderExecution {
-    data object MicrosoftSpeech : ProviderExecution
+    data class MicrosoftSpeech(val modelName: String) : ProviderExecution
 
     data class Gemini(val modelName: String) : ProviderExecution
 }
@@ -223,7 +223,7 @@ class TranscriptionExecutionRunner @Inject constructor(
 
         val providerExecution = resolveProviderExecution(job.providerName, job.requestedModel)
         if (providerExecution is ProviderExecution.MicrosoftSpeech) {
-            validatePersistedMicrosoftSpeechRegion()
+            validatePersistedMicrosoftSpeechEndpoint()
         }
         val stagedUri = when (val resolution = QueuedAudioInputResolver.resolve(job)) {
             is QueuedAudioInputResolution.Ready -> resolution.uri
@@ -661,7 +661,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         speakerDiarizationEnabled: Boolean,
         speakerLabelPrefix: String,
     ): ProviderTranscriber = when (providerExecution) {
-        ProviderExecution.MicrosoftSpeech -> {
+        is ProviderExecution.MicrosoftSpeech -> {
             check(!speakerDiarizationEnabled) { "Speaker diarization is not supported by Microsoft MAI Transcribe." }
             val microsoftSpeechInput = checkNotNull(preparedInput as? PreparedAudioInput.MicrosoftSpeech) {
                 "Internal error: Microsoft Speech audio data missing."
@@ -671,12 +671,13 @@ class TranscriptionExecutionRunner @Inject constructor(
             }
             var keyOwnershipTransferred = false
             try {
-                val region = MicrosoftSpeechRegion.parse(settings.microsoftSpeechRegionFlow.first())
+                val endpoint = MicrosoftSpeechEndpoint.parse(settings.microsoftSpeechRegionFlow.first())
                 val transcriber = MicrosoftSpeechTranscriber(
                     apiKey = keyChars,
                     audioFile = microsoftSpeechInput.file,
                     mimeType = microsoftSpeechInput.mimeType,
-                    region = region,
+                    endpoint = endpoint,
+                    modelName = providerExecution.modelName,
                     audioInspection = microsoftSpeechInput.inspection,
                     okHttpClient = okHttpClient,
                     ioDispatcher = ioDispatcher,
@@ -719,7 +720,7 @@ class TranscriptionExecutionRunner @Inject constructor(
     private fun resolveProviderExecution(providerName: String?, requestedModel: String?): ProviderExecution =
         when (val provider = decodeTranscriptionProvider(providerName)) {
             TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
-            -> ProviderExecution.MicrosoftSpeech
+            -> ProviderExecution.MicrosoftSpeech(resolveMicrosoftSpeechExecutionModel(requestedModel))
             TranscriptionProvider.GEMINI_FLASH_LITE,
             TranscriptionProvider.GEMINI_FLASH,
             TranscriptionProvider.GEMINI_PRO,
@@ -730,12 +731,13 @@ class TranscriptionExecutionRunner @Inject constructor(
             )
         }
 
-    private suspend fun validatePersistedMicrosoftSpeechRegion(): MicrosoftSpeechRegion {
-        val persistedRegion = settings.microsoftSpeechRegionFlow.first()
-        return MicrosoftSpeechRegion.parseOrNull(persistedRegion) ?: run {
+    private suspend fun validatePersistedMicrosoftSpeechEndpoint(): MicrosoftSpeechEndpoint {
+        val persistedEndpoint = settings.microsoftSpeechRegionFlow.first()
+        return MicrosoftSpeechEndpoint.parseOrNull(persistedEndpoint) ?: run {
             settings.clearInvalidMicrosoftSpeechConfiguration()
             error(
-                "The saved Azure Speech region was invalid. Reconfigure Microsoft Speech and rotate its API key.",
+                "The saved Azure Speech region or endpoint was invalid. " +
+                    "Reconfigure Microsoft Speech and rotate its API key.",
             )
         }
     }
@@ -747,7 +749,7 @@ class TranscriptionExecutionRunner @Inject constructor(
     }
 
     private fun providerDisplayName(providerExecution: ProviderExecution): String = when (providerExecution) {
-        ProviderExecution.MicrosoftSpeech -> applicationContext.getString(R.string.provider_option_microsoft_speech)
+        is ProviderExecution.MicrosoftSpeech -> applicationContext.getString(R.string.provider_option_microsoft_speech)
         is ProviderExecution.Gemini -> applicationContext.getString(R.string.transcription_provider_gemini)
     }
 
@@ -821,6 +823,9 @@ class TranscriptionExecutionRunner @Inject constructor(
         if (!updated) throw SupersededExecutionException()
     }
 }
+
+internal fun resolveMicrosoftSpeechExecutionModel(requestedModel: String?): String =
+    requestedModel?.takeIf(String::isNotBlank) ?: MICROSOFT_MAI_TRANSCRIBE_MODEL
 
 internal object QueuedAudioInputResolver {
     fun resolve(job: TranscriptionJob): QueuedAudioInputResolution {

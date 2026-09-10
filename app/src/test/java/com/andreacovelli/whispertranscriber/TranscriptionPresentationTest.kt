@@ -241,7 +241,10 @@ class TranscriptionPresentationTest {
 
     @Test
     fun providerFamilyLabel_returnsMicrosoftLabelForMicrosoftProvider() {
-        assertEquals("Microsoft MAI Transcribe", providerFamilyLabel(TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE))
+        assertEquals(
+            "Microsoft MAI Transcribe 2",
+            providerFamilyLabel(TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE),
+        )
     }
 
     @Test
@@ -399,9 +402,9 @@ class TranscriptionPresentationTest {
     }
 
     @Test
-    fun resolveMicrosoftSpeechErrorMessage_mentionsRegionForMissingEndpoint() {
+    fun resolveMicrosoftSpeechErrorMessage_mentionsConfigurationForMissingEndpoint() {
         assertEquals(
-            "Microsoft MAI Transcribe endpoint not found. Check the configured Speech region.",
+            "Microsoft MAI Transcribe endpoint not found. Check the configured Speech region or custom endpoint.",
             resolveMicrosoftSpeechErrorMessage(404, """{"error":{"message":"Resource not found"}}"""),
         )
     }

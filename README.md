@@ -7,7 +7,7 @@ An Android app that transcribes audio files using AI — powered by [Microsoft A
 
 ## Features
 
-- **Multi-provider transcription** — choose between Microsoft MAI Transcribe or Gemini (Flash Lite, Flash, Pro, or a custom model)
+- **Multi-provider transcription** — choose between Microsoft MAI Transcribe 2 or Gemini (Flash Lite, Flash, Pro, or a custom model)
 - **Batch processing** — share multiple audio files at once; jobs are staged locally, queued, and processed sequentially
 - **AI summarization** — generate a concise summary of any transcript (requires a Gemini API key)
 - **Transcription history** — all transcripts are saved locally in a searchable Room database
@@ -140,12 +140,16 @@ All configuration is done inside the app — no config files or build secrets ne
 
 ### Getting API keys
 
-- **Microsoft Speech**: Create an Azure Speech resource, then copy its key and region from the Azure portal.
+- **Microsoft Speech**: Create an Azure Speech resource, then copy its key and either its region or HTTPS base endpoint from the Azure portal.
 - **Gemini**: Generate a key at [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
 
 ### Custom Gemini model
 
 Select **Custom Model** in Settings and type any valid Gemini model identifier (e.g. `gemini-3-flash`). The app validates the name against the Google API in real time and shows the model's display name on success.
+
+### Custom Microsoft Speech endpoint
+
+The Microsoft endpoint setting accepts either an Azure Speech region such as `eastus` or a custom HTTPS resource base endpoint such as `https://my-resource.cognitiveservices.azure.com`. Enter only the base endpoint; the app appends the supported transcription path and API version.
 
 ---
 
@@ -153,8 +157,8 @@ Select **Custom Model** in Settings and type any valid Gemini model identifier (
 
 ### Microsoft MAI Transcribe flow
 
-1. The audio file is sent in a single request to the Azure Speech `transcriptions:transcribe` endpoint.
-2. The request enables enhanced mode with model `mai-transcribe-1.5`.
+1. The audio file is sent in a single request to the Azure Speech `transcriptions:transcribe` endpoint using API version `2025-10-15`.
+2. The request enables enhanced mode with model `MAI-Transcribe-2`.
 3. The API processes the audio and returns the full transcript in the response.
 4. The finished transcript is saved to local history.
 
@@ -196,7 +200,7 @@ A searchable list of all past transcriptions. Each item can be expanded to revea
 
 ### Settings
 
-Configure the transcription provider, manage API keys, enter the Microsoft Speech region, and enter a custom Gemini model name. Keys can be forgotten (deleted from encrypted storage) at any time.
+Configure the transcription provider, manage API keys, enter a Microsoft Speech region or custom endpoint, and enter a custom Gemini model name. Keys can be forgotten (deleted from encrypted storage) at any time.
 
 ---
 

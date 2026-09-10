@@ -93,6 +93,18 @@ class ApiKeyManagerInstrumentedTest {
         assertEquals("westus", apiKeyManager.microsoftSpeechRegionFlow.first())
     }
 
+    @Test
+    fun microsoftSpeechRegionFlow_returnsNormalizedCustomEndpoint() = runBlocking {
+        apiKeyManager.saveMicrosoftSpeechRegion(
+            " https://My-Speech-Resource.cognitiveservices.azure.com/ ",
+        )
+
+        assertEquals(
+            "https://my-speech-resource.cognitiveservices.azure.com",
+            apiKeyManager.microsoftSpeechRegionFlow.first(),
+        )
+    }
+
     private suspend fun resetTranscriptionSettings() {
         apiKeyManager.saveProvider(TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE)
         apiKeyManager.saveMicrosoftSpeechRegion("")

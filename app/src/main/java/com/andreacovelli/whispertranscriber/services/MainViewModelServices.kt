@@ -41,7 +41,7 @@ import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.summary.TranscriptionSummarizationRepository
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
-import com.andreacovelli.whispertranscriber.transcription.MicrosoftSpeechRegion
+import com.andreacovelli.whispertranscriber.transcription.MicrosoftSpeechEndpoint
 import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_SUMMARIZING
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
 import com.google.genai.errors.ApiException
@@ -512,7 +512,9 @@ internal fun resolveMicrosoftSpeechKeyValidationResult(code: Int): KeyValidation
     401, 403 -> KeyValidationResult(
         "Invalid key for Microsoft MAI Transcribe. Use the Speech resource key from your Foundry resource, not a project API key.",
     )
-    404 -> KeyValidationResult("Microsoft MAI Transcribe endpoint not found. Check the configured Speech region.")
+    404 -> KeyValidationResult(
+        "Microsoft MAI Transcribe endpoint not found. Check the configured Speech region or custom endpoint.",
+    )
     else -> KeyValidationResult("Validation failed: HTTP $code")
 }
 
@@ -528,10 +530,31 @@ internal fun resolveMicrosoftSpeechKeyValidationResults(codes: List<Int>): KeyVa
     return KeyValidationResult("Validation failed: HTTP $reportedCode")
 }
 
+internal fun resolveMicrosoftSpeechRegionValidationResults(
+    codes: List<Int>,
+    normalizedEndpoint: String,
+): RegionValidationResult {
+    if (codes.any { it in 200..299 || it == 401 || it == 403 }) {
+        return RegionValidationResult(normalizedRegion = normalizedEndpoint)
+    }
+
+    val reportedCode = codes.firstOrNull { it == 404 || it == 405 || it == 400 || it == 429 || it in 500..599 }
+        ?: codes.firstOrNull()
+        ?: return RegionValidationResult(errorMessage = "Validation failed")
+    return RegionValidationResult(
+        errorMessage = "Could not validate Azure Speech region or endpoint: HTTP $reportedCode",
+    )
+}
+
 internal fun resolveMicrosoftSpeechRegionIOExceptionMessage(normalizedRegion: String, error: IOException): String {
     val message = error.message.orEmpty()
     return if (error is UnknownHostException || message.contains("Unable to resolve host", ignoreCase = true)) {
-        "Could not reach Azure Speech for region \"$normalizedRegion\". Check that the region name is correct, for example eastus or westus."
+        if (normalizedRegion.startsWith("https://")) {
+            "Could not reach Azure Speech endpoint \"$normalizedRegion\". Check the endpoint URL."
+        } else {
+            "Could not reach Azure Speech for region \"$normalizedRegion\". " +
+                "Check that the region name is correct, for example eastus or westus."
+        }
     } else {
         error.message ?: "Validation failed"
     }
@@ -627,59 +650,61 @@ class ValidationService @Inject constructor(
     }
 
     suspend fun validateMicrosoftSpeechKey(rawKey: String, region: String): KeyValidationResult {
-        val validatedRegion = MicrosoftSpeechRegion.parseOrNull(region)
-            ?: return KeyValidationResult("Enter a valid lowercase Azure Speech region first")
+        val validatedEndpoint = MicrosoftSpeechEndpoint.parseOrNull(region)
+            ?: return KeyValidationResult("Enter a valid Azure Speech region or HTTPS endpoint first")
 
         return try {
-            val codes = probeMicrosoftSpeechKey(validatedRegion, rawKey)
+            val codes = probeMicrosoftSpeechKey(validatedEndpoint, rawKey)
             resolveMicrosoftSpeechKeyValidationResults(codes)
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
-            KeyValidationResult(resolveMicrosoftSpeechRegionIOExceptionMessage(validatedRegion.value, e))
+            KeyValidationResult(resolveMicrosoftSpeechRegionIOExceptionMessage(validatedEndpoint.value, e))
         }
     }
 
     suspend fun validateMicrosoftSpeechRegion(region: String): RegionValidationResult {
-        val validatedRegion = try {
-            MicrosoftSpeechRegion.parse(region)
+        val validatedEndpoint = try {
+            MicrosoftSpeechEndpoint.parse(region)
         } catch (error: IllegalArgumentException) {
-            return RegionValidationResult(errorMessage = error.message ?: "Enter a valid Azure Speech region")
+            return RegionValidationResult(
+                errorMessage = error.message ?: "Enter a valid Azure Speech region or HTTPS endpoint",
+            )
         }
 
         return try {
-            probeMicrosoftSpeechRegion(validatedRegion)
-            RegionValidationResult(normalizedRegion = validatedRegion.value)
+            val codes = probeMicrosoftSpeechRegion(validatedEndpoint)
+            resolveMicrosoftSpeechRegionValidationResults(codes, validatedEndpoint.value)
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
             RegionValidationResult(
-                errorMessage = resolveMicrosoftSpeechRegionIOExceptionMessage(validatedRegion.value, e),
+                errorMessage = resolveMicrosoftSpeechRegionIOExceptionMessage(validatedEndpoint.value, e),
             )
         }
     }
 
-    private fun buildMicrosoftSpeechValidationUrls(region: MicrosoftSpeechRegion) = listOf(
-        region.buildEndpoint(
+    private fun buildMicrosoftSpeechValidationUrls(endpoint: MicrosoftSpeechEndpoint) = listOf(
+        endpoint.buildEndpoint(
             encodedPath = "speechtotext/transcriptions/locales",
             apiVersion = MICROSOFT_SPEECH_LOCALES_API_VERSION,
         ),
-        region.buildEndpoint(
+        endpoint.buildEndpoint(
             encodedPath = "speechtotext/transcriptions/locales",
             apiVersion = MICROSOFT_SPEECH_LOCALES_FALLBACK_API_VERSION,
         ),
     )
 
-    private suspend fun probeMicrosoftSpeechRegion(region: MicrosoftSpeechRegion): List<Int> =
-        probeMicrosoftSpeech(region = region, rawKey = null)
+    private suspend fun probeMicrosoftSpeechRegion(endpoint: MicrosoftSpeechEndpoint): List<Int> =
+        probeMicrosoftSpeech(endpoint = endpoint, rawKey = null)
 
-    private suspend fun probeMicrosoftSpeechKey(region: MicrosoftSpeechRegion, rawKey: String): List<Int> =
-        probeMicrosoftSpeech(region = region, rawKey = rawKey)
+    private suspend fun probeMicrosoftSpeechKey(endpoint: MicrosoftSpeechEndpoint, rawKey: String): List<Int> =
+        probeMicrosoftSpeech(endpoint = endpoint, rawKey = rawKey)
 
-    private suspend fun probeMicrosoftSpeech(region: MicrosoftSpeechRegion, rawKey: String?): List<Int> =
+    private suspend fun probeMicrosoftSpeech(endpoint: MicrosoftSpeechEndpoint, rawKey: String?): List<Int> =
         withContext(ioDispatcher) {
             coroutineScope {
-                buildMicrosoftSpeechValidationUrls(region).map { url ->
+                buildMicrosoftSpeechValidationUrls(endpoint).map { url ->
                     async {
                         val requestBuilder = Request.Builder()
                             .url(url)
