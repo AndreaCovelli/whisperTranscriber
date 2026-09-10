@@ -11,6 +11,7 @@ plugins {
 }
 
 val ktlintVersion = "1.7.1"
+val instrumentationBuildType = providers.gradleProperty("instrumentationBuildType").orElse("debug").get()
 
 android {
     val roomSchemaDir = "$projectDir/schemas"
@@ -57,7 +58,15 @@ android {
     }
 
     sourceSets {
-        getByName("androidTest").assets.directories.add(roomSchemaDir)
+        getByName("androidTest") {
+            assets.directories.add(roomSchemaDir)
+            // Both variants exercise exports; the minified APK only needs this small test suite.
+            if (instrumentationBuildType == "minifiedSmoke") {
+                java.directories.clear()
+                kotlin.directories.clear()
+            }
+            kotlin.directories.add("src/androidTest/export/java")
+        }
     }
 
     signingConfigs {
@@ -88,7 +97,7 @@ android {
             matchingFallbacks += "release"
         }
     }
-    testBuildType = providers.gradleProperty("instrumentationBuildType").orElse("debug").get()
+    testBuildType = instrumentationBuildType
 
     buildFeatures {
         compose = true
@@ -186,6 +195,7 @@ tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
             "src/main/java",
             "src/test/java",
             "src/androidTest/java",
+            "src/androidTest/export/java",
         ),
     )
     include("**/*.kt")
@@ -243,10 +253,13 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.org.json)
     androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
-    androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation(libs.androidx.room.testing)
-    androidTestImplementation(libs.androidx.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.runner)
+    if (instrumentationBuildType != "minifiedSmoke") {
+        androidTestImplementation(libs.androidx.espresso.core)
+        androidTestImplementation(platform(libs.androidx.compose.bom))
+        androidTestImplementation(libs.androidx.room.testing)
+        androidTestImplementation(libs.androidx.ui.test.junit4)
+    }
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 

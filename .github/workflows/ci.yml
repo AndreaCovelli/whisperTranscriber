@@ -133,7 +133,7 @@ jobs:
         run: ./gradlew assembleDebug testDebugUnitTest --console=plain
 
   instrumentation:
-    name: Instrumentation
+    name: Instrumentation (${{ matrix.suite }})
     needs: changes
     if: >-
       ${{
@@ -142,7 +142,16 @@ jobs:
         needs.changes.outputs.instrumentation == 'true'
       }}
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [debug, minifiedSmoke]
+    env:
+      # Leave room for the Android emulator and runner on private-repository VMs.
+      GRADLE_OPTS: >-
+        -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8 -Dkotlin.daemon.jvm.options=-Xmx1g"
+        -Dorg.gradle.workers.max=2
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -189,12 +198,14 @@ jobs:
 
       - name: Prepare managed device
         id: prepare_managed_device
+        timeout-minutes: 5
         run: >-
           ./gradlew pixel6Api34Setup
           -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
           --console=plain
 
       - name: Diagnose managed-device setup failure
+        timeout-minutes: 5
         if: >-
           ${{
             failure() &&
@@ -209,18 +220,24 @@ jobs:
           --console=plain
 
       - name: Verify notification permission recreation
+        if: ${{ matrix.suite == 'debug' }}
+        timeout-minutes: 15
         run: >-
           ./gradlew pixel6Api34DebugAndroidTest --console=plain
           -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
           -Pandroid.testInstrumentationRunnerArguments.class=com.andreacovelli.whispertranscriber.NotificationPermissionRecreationInstrumentedTest
 
       - name: Run managed-device tests
+        if: ${{ matrix.suite == 'debug' }}
+        timeout-minutes: 10
         run: >-
           ./gradlew pixel6Api34DebugAndroidTest
           -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
           --console=plain
 
       - name: Verify minified JSON exports
+        if: ${{ matrix.suite == 'minifiedSmoke' }}
+        timeout-minutes: 20
         run: >-
           ./gradlew pixel6Api34MinifiedSmokeAndroidTest --console=plain
           -PinstrumentationBuildType=minifiedSmoke
@@ -228,6 +245,7 @@ jobs:
           -Pandroid.testInstrumentationRunnerArguments.class=com.andreacovelli.whispertranscriber.HistoryExportInstrumentedTest
 
       - name: Require minified export test results
+        if: ${{ matrix.suite == 'minifiedSmoke' }}
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -246,6 +264,7 @@ jobs:
         if: >-
           ${{
             success() &&
+            matrix.suite == 'debug' &&
             github.event_name == 'push' &&
             steps.atd_cache.outputs.cache-hit != 'true'
           }}
@@ -255,10 +274,10 @@ jobs:
           key: ${{ steps.atd_cache.outputs.cache-primary-key }}
 
       - name: Upload instrumentation reports on failure
-        if: ${{ failure() }}
+        if: ${{ failure() || cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: instrumentation-reports
+          name: instrumentation-reports-${{ matrix.suite }}
           path: |
             app/build/reports/androidTests/managedDevice/
             app/build/outputs/androidTest-results/managedDevice/

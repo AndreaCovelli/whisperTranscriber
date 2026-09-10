@@ -29,7 +29,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Also run against the debug-signed minifiedSmoke build, with R8 enabled. */
+/** Shared by debug instrumentation and the debug-signed minifiedSmoke build, with R8 enabled. */
 @RunWith(AndroidJUnit4::class)
 class HistoryExportInstrumentedTest {
     private lateinit var db: AppDatabase
