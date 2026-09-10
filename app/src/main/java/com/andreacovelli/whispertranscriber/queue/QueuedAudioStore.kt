@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
+import com.andreacovelli.whispertranscriber.ui.cleanupSharedTextFiles
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.IOException
@@ -13,6 +14,9 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 data class PreparedSharedAudio(
@@ -36,40 +40,25 @@ class QueuedAudioStore @Inject constructor(
         private const val STAGED_AUDIO_DIR = "queued_audio"
     }
 
-    suspend fun prepareSharedAudio(uris: List<Uri>): List<PreparedSharedAudio> {
-        if (uris.isEmpty()) return emptyList()
+    suspend fun <T> withPreparedAudio(uris: List<Uri>, block: suspend (SharedAudioIntake) -> T): T {
         requireShareCount(uris.size)
-
-        val preparedAudio = mutableListOf<PreparedSharedAudio>()
-        var batchBytes = 0L
+        val intake = SharedAudioIntake()
         try {
-            uris.forEachIndexed { index, uri ->
-                val displayName = resolveDisplayName(uri).ifBlank { uri.lastPathSegment ?: "Audio ${index + 1}" }
-                val staged = stageSharedAudio(uri, index, displayName, batchBytes)
-                batchBytes += staged.bytesCopied
-                preparedAudio += PreparedSharedAudio(
-                    originalUri = uri,
-                    displayName = displayName,
-                    stagedFile = staged.file,
-                    mimeType = staged.mimeType,
-                )
+            withContext(ioDispatcher) {
+                var batchBytes = 0L
+                uris.forEachIndexed { index, uri ->
+                    currentCoroutineContext().ensureActive()
+                    val displayName = resolveDisplayName(uri).ifBlank { "Audio ${index + 1}" }
+                    val staged = stageSharedAudio(uri, index, displayName, batchBytes, intake)
+                    batchBytes += staged.bytesCopied
+                    intake.preparedAudio += PreparedSharedAudio(uri, displayName, staged.file, staged.mimeType)
+                }
             }
-            return preparedAudio
-        } catch (e: IOException) {
-            deletePreparedAudio(preparedAudio)
-            throw e
-        } catch (e: SecurityException) {
-            deletePreparedAudio(preparedAudio)
-            throw e
-        } catch (e: SQLException) {
-            deletePreparedAudio(preparedAudio)
-            throw e
-        } catch (e: IllegalArgumentException) {
-            deletePreparedAudio(preparedAudio)
-            throw e
-        } catch (e: IllegalStateException) {
-            deletePreparedAudio(preparedAudio)
-            throw e
+            return block(intake)
+        } finally {
+            withContext(NonCancellable + ioDispatcher) {
+                intake.cleanup()
+            }
         }
     }
 
@@ -79,6 +68,7 @@ class QueuedAudioStore @Inject constructor(
         tempFileMaxAgeMs: Long = TimeUnit.DAYS.toMillis(3),
         orphanFileMaxAgeMs: Long = TimeUnit.HOURS.toMillis(24),
     ): QueuedAudioCleanupResult = withContext(ioDispatcher) {
+        cleanupSharedTextFiles(context.cacheDir, nowMillis)
         val normalizedReferences = referencedStagedPaths.mapTo(mutableSetOf()) { path -> File(path).absolutePath }
         val tempCutoff = nowMillis - tempFileMaxAgeMs
         val tempFilesDeleted = context.cacheDir
@@ -124,6 +114,7 @@ class QueuedAudioStore @Inject constructor(
         index: Int,
         displayName: String,
         batchBytesBeforeCopy: Long,
+        intake: SharedAudioIntake,
     ): StagedCopy = withContext(ioDispatcher) {
         val contentResolver = context.contentResolver
         val mimeType = contentResolver.getType(uri)?.lowercase()
@@ -133,6 +124,8 @@ class QueuedAudioStore @Inject constructor(
             ?: MimeTypeMap.getFileExtensionFromUrl(uri.toString()).takeIf(String::isNotBlank)
             ?: "bin"
         val stagedFile = File.createTempFile("${STAGED_FILE_PREFIX}${index}_", ".$extension", stagedAudioDir())
+        intake.ownedFiles += stagedFile
+        val copyContext = currentCoroutineContext()
         var succeeded = false
         try {
             val bytesCopied = contentResolver.openInputStream(uri)?.use { input ->
@@ -142,9 +135,10 @@ class QueuedAudioStore @Inject constructor(
                         output = output,
                         batchBytesBeforeCopy = batchBytesBeforeCopy,
                         availableBytes = { stagedFile.parentFile?.usableSpace ?: 0L },
+                        checkCancellation = { copyContext.ensureActive() },
                     )
                 }
-            } ?: throw IOException("Failed to read shared audio: $uri")
+            } ?: throw IOException("Failed to read shared audio. Share it again.")
             succeeded = true
             StagedCopy(stagedFile, mimeType, bytesCopied)
         } finally {
@@ -186,5 +180,25 @@ class QueuedAudioStore @Inject constructor(
         val name = file.name
         return (name.startsWith(CONVERTED_FILE_PREFIX) && name.endsWith(".wav")) ||
             (name.startsWith(DIRECT_FILE_PREFIX) && name.endsWith(".tmp"))
+    }
+}
+
+/** Files remain intake-owned until the database insertion has committed. */
+class SharedAudioIntake internal constructor() {
+    internal val ownedFiles = mutableListOf<File>()
+    internal val preparedAudio = mutableListOf<PreparedSharedAudio>()
+
+    fun transferOwnership() {
+        ownedFiles.clear()
+    }
+
+    internal fun cleanup() {
+        ownedFiles.forEach { file ->
+            try {
+                file.delete()
+            } catch (_: SecurityException) {
+                // Maintenance will retry removal of abandoned files.
+            }
+        }
     }
 }

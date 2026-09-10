@@ -2,6 +2,7 @@ package com.andreacovelli.whispertranscriber.transcription
 
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import com.andreacovelli.whispertranscriber.R
 import java.io.File
 
 data class AudioInspection(val sizeBytes: Long, val durationUs: Long)
@@ -38,4 +39,19 @@ internal fun inspectAudioFile(file: File): AudioInspection {
     } finally {
         extractor.release()
     }
+}
+
+internal fun validateMeasurableGeminiAudio(file: File) {
+    val inspection = try {
+        inspectAudioFile(file)
+    } catch (_: java.io.IOException) {
+        return
+    } catch (_: IllegalArgumentException) {
+        return
+    }
+    validateGeminiAudioDuration(inspection.durationUs)
+}
+
+internal fun validateGeminiAudioDuration(durationUs: Long) {
+    if (durationUs > GEMINI_MAX_AUDIO_DURATION_US) throw ProviderResponseException(R.string.gemini_audio_too_long)
 }

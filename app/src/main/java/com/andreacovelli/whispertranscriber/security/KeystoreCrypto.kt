@@ -14,6 +14,7 @@ object KeystoreCrypto {
     private const val KEY_ALIAS = "api_key_aes_gcm_256"
     private const val TRANSFORMATION = "AES/GCM/NoPadding"
 
+    @Synchronized
     private fun getOrCreateKey(): SecretKey {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
         (keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.secretKey?.let { return it }
@@ -46,12 +47,13 @@ object KeystoreCrypto {
     }
 
     @Throws(java.security.GeneralSecurityException::class)
-    fun decryptFromBase64(data: String): ByteArray? {
-        if (data.isBlank()) return null
+    fun decryptFromBase64(data: String): ByteArray {
+        require(data.isNotBlank()) { "Malformed encrypted key" }
         val parts = data.split(":")
-        if (parts.size != 2) return null
+        require(parts.size == 2) { "Malformed encrypted key" }
         val iv = Base64.decode(parts[0], Base64.NO_WRAP)
         val ciphertext = Base64.decode(parts[1], Base64.NO_WRAP)
+        require(iv.size == 12 && ciphertext.size > 16) { "Malformed encrypted key" }
         val cipher = Cipher.getInstance(TRANSFORMATION)
         val spec = GCMParameterSpec(128, iv)
         cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), spec)

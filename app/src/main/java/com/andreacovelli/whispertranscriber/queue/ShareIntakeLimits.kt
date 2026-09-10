@@ -57,11 +57,13 @@ internal fun copySharedAudioWithLimits(
     maxFileBytes: Long = MAX_SHARED_FILE_BYTES,
     maxBatchBytes: Long = MAX_SHARED_BATCH_BYTES,
     minFreeBytes: Long = MIN_FREE_BYTES_AFTER_COPY,
+    checkCancellation: () -> Unit = {},
 ): Long {
     require(batchBytesBeforeCopy in 0..maxBatchBytes)
     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
     var fileBytes = 0L
     while (true) {
+        checkCancellation()
         val count = input.read(buffer)
         if (count < 0) break
         if (count > 0) {
@@ -72,6 +74,7 @@ internal fun copySharedAudioWithLimits(
             if (batchBytesBeforeCopy + fileBytes > maxBatchBytes) {
                 throw IOException("A shared audio batch must be 500 MB or smaller.")
             }
+            checkCancellation()
             output.write(buffer, 0, count)
             if (availableBytes() < minFreeBytes) {
                 throw IOException("Not enough storage. Keep at least 64 MiB free after queuing audio.")

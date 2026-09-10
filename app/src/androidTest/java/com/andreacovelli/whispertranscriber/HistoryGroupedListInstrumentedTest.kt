@@ -103,7 +103,7 @@ class HistoryGroupedListInstrumentedTest {
         var previousBucket: HistoryDateBucket? = null
         items.forEach { history ->
             val item = historyListItem(history, currentDate, zoneId)
-            historyDateHeader(previousBucket, item.bucket)?.let(::add)
+            historyDateHeader(previousBucket, item.bucket, item.history.id)?.let(::add)
             add(item)
             previousBucket = item.bucket
         }

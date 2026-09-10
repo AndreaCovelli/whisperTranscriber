@@ -41,13 +41,13 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private fun buildPrefixMatchRegex(tokens: List<String>): Regex? {
+internal fun buildPrefixMatchRegex(tokens: List<String>): Regex? {
     if (tokens.isEmpty()) return null
     val pattern = tokens
         .distinct()
         .sortedByDescending { it.length }
         .joinToString("|") { Regex.escape(it) }
-    return Regex("""\b$pattern""", RegexOption.IGNORE_CASE)
+    return Regex("""\b(?:$pattern)""", RegexOption.IGNORE_CASE)
 }
 
 private fun buildHighlightedText(
@@ -223,7 +223,7 @@ private fun HistoryItemBody(
     val summaryOverflow = rememberOverflowState(item.id, "summary", highlightedSummary)
     val hasTranscript = item.text.isNotBlank()
     val hasSummary = item.summary.isNotBlank()
-    val showExpandControl = transcriptOverflow.value || summaryOverflow.value
+    val showExpandControl = expanded || transcriptOverflow.value || summaryOverflow.value
 
     if (hasTranscript) {
         CardSectionHeader(

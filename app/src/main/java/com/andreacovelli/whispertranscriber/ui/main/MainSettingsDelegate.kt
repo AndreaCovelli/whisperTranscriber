@@ -1,10 +1,14 @@
 package com.andreacovelli.whispertranscriber.ui.main
 
+import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.security.CredentialOperations
 import com.andreacovelli.whispertranscriber.services.ValidationService
 import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -16,7 +20,9 @@ internal class MainSettingsDelegate(
     private val validationService: ValidationService,
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher,
+    private val notify: (Int) -> Unit,
 ) {
+    private val credentials = CredentialOperations()
     private var microsoftValidationJob: Job? = null
     private var geminiValidationJob: Job? = null
     private var microsoftRegionValidationJob: Job? = null
@@ -31,10 +37,10 @@ internal class MainSettingsDelegate(
         setSpeakerDiarization = ::updateSpeakerDiarization,
         setMicrosoftSpeechRegion = ::updateMicrosoftSpeechRegion,
         resetMicrosoftSpeechRegionValidation = ::resetMicrosoftSpeechRegionValidation,
-        loadMicrosoftSpeechKey = { loadKeyForDisplay(settings::getMicrosoftSpeechApiKey) },
-        loadGeminiKey = { loadKeyForDisplay(settings::getGeminiApiKey) },
-        saveMicrosoftSpeechKey = ::validateAndSaveMicrosoftSpeechKey,
-        saveGeminiKey = ::validateAndSaveGeminiKey,
+        loadMicrosoftSpeechKey = { loadKeyForDisplay(false, settings::getMicrosoftSpeechApiKey) },
+        loadGeminiKey = { loadKeyForDisplay(true, settings::getGeminiApiKey) },
+        saveMicrosoftSpeechKey = { validateAndSaveKey(it, isGemini = false) },
+        saveGeminiKey = { validateAndSaveKey(it, isGemini = true) },
         validateTranscriptionModel = { validateCustomGeminiModel(it, isSummarizer = false) },
         validateSummarizerModel = { validateCustomGeminiModel(it, isSummarizer = true) },
         resetTranscriptionModelValidation = ::resetTranscriptionModelValidation,
@@ -45,51 +51,42 @@ internal class MainSettingsDelegate(
         forgetGeminiKey = ::forgetGeminiKey,
     )
 
-    private fun validateAndSaveGeminiKey(key: String) {
+    private fun validateAndSaveKey(key: String, isGemini: Boolean) {
         val trimmed = key.trim()
         if (trimmed.isBlank()) return
-
-        geminiValidationJob?.cancel()
-        updateApiKeyValidationState(isGemini = true, validation = KeyValidationState.Validating)
-        geminiValidationJob = scope.launch {
-            val result = validationService.validateGeminiKey(trimmed)
-            if (result.isValid) {
-                settings.saveGeminiApiKey(trimmed)
-                updateApiKeyValidationState(isGemini = true, validation = KeyValidationState.Idle)
-            } else {
-                updateApiKeyValidationState(
-                    isGemini = true,
-                    validation = KeyValidationState.Error(result.errorMessage ?: "Validation failed"),
-                )
+        val token = credentials.supersede(isGemini)
+        updateApiKeyValidationState(isGemini, KeyValidationState.Validating)
+        val job = launchSafely(onFailure = {
+            if (credentials.isCurrent(token)) updateApiKeyValidationState(isGemini, KeyValidationState.Idle)
+        }) {
+            credentials.run(token) {
+                val result = if (isGemini) {
+                    validationService.validateGeminiKey(trimmed)
+                } else {
+                    validationService.validateMicrosoftSpeechKey(trimmed, getState().microsoftSpeechRegion)
+                }
+                if (!credentials.isCurrent(token)) return@run
+                if (result.isValid) {
+                    val persisted = credentials.persist(token) {
+                        if (isGemini) {
+                            settings.saveGeminiApiKey(
+                                trimmed,
+                            )
+                        } else {
+                            settings.saveMicrosoftSpeechApiKey(trimmed)
+                        }
+                    }
+                    if (persisted) updateApiKeyValidationState(isGemini, KeyValidationState.Idle)
+                } else {
+                    updateApiKeyValidationState(isGemini, KeyValidationState.Error(result.errorMessage.orEmpty()))
+                }
             }
         }
-    }
-
-    private fun validateAndSaveMicrosoftSpeechKey(key: String) {
-        val trimmed = key.trim()
-        if (trimmed.isBlank()) return
-
-        microsoftValidationJob?.cancel()
-        updateApiKeyValidationState(isGemini = false, validation = KeyValidationState.Validating)
-        microsoftValidationJob = scope.launch {
-            val result = validationService.validateMicrosoftSpeechKey(
-                rawKey = trimmed,
-                region = getState().microsoftSpeechRegion,
-            )
-            if (result.isValid) {
-                settings.saveMicrosoftSpeechApiKey(trimmed)
-                updateApiKeyValidationState(isGemini = false, validation = KeyValidationState.Idle)
-            } else {
-                updateApiKeyValidationState(
-                    isGemini = false,
-                    validation = KeyValidationState.Error(result.errorMessage ?: "Validation failed"),
-                )
-            }
-        }
+        if (isGemini) geminiValidationJob = job else microsoftValidationJob = job
     }
 
     private fun updateProviderSelection(provider: TranscriptionProvider) {
-        scope.launch {
+        launchSafely {
             settings.saveProvider(provider)
             if (!provider.isGemini()) {
                 settings.saveSpeakerDiarization(false)
@@ -98,26 +95,26 @@ internal class MainSettingsDelegate(
     }
 
     private fun updateSummarizerProviderSelection(provider: TranscriptionProvider) {
-        scope.launch {
+        launchSafely {
             settings.saveSummarizerProvider(provider)
         }
     }
 
     private fun updateAutomaticSummarization(enabled: Boolean) {
-        scope.launch {
+        launchSafely {
             settings.saveAutomaticSummarization(enabled)
         }
     }
 
     private fun updateBackgroundShareSummaryNotificationsEnabled(enabled: Boolean) {
-        scope.launch {
+        launchSafely {
             settings.saveBackgroundShareSummaryNotificationsEnabled(enabled)
         }
     }
 
     private fun updateSpeakerDiarization(enabled: Boolean) {
         val normalized = getState().provider.isGemini() && enabled
-        scope.launch {
+        launchSafely {
             settings.saveSpeakerDiarization(normalized)
         }
     }
@@ -129,14 +126,14 @@ internal class MainSettingsDelegate(
 
         if (trimmed.isBlank()) {
             updateRegionValidationState(RegionValidationState.Idle)
-            scope.launch {
+            launchSafely {
                 settings.saveMicrosoftSpeechRegion("")
             }
             return
         }
 
         updateRegionValidationState(RegionValidationState.Validating)
-        microsoftRegionValidationJob = scope.launch {
+        microsoftRegionValidationJob = launchSafely {
             val result = validationService.validateMicrosoftSpeechRegion(trimmed)
             if (result.isValid) {
                 val normalizedRegion = result.normalizedRegion.orEmpty()
@@ -161,6 +158,7 @@ internal class MainSettingsDelegate(
     }
 
     private fun resetMicrosoftSpeechKeyValidation() {
+        credentials.supersede(false)
         microsoftValidationJob?.cancel()
         updateApiKeyValidationState(isGemini = false, validation = KeyValidationState.Idle)
     }
@@ -171,6 +169,7 @@ internal class MainSettingsDelegate(
     }
 
     private fun resetGeminiKeyValidation() {
+        credentials.supersede(true)
         geminiValidationJob?.cancel()
         updateApiKeyValidationState(isGemini = true, validation = KeyValidationState.Idle)
     }
@@ -184,13 +183,17 @@ internal class MainSettingsDelegate(
     }
 
     private fun forgetApiKey(isGemini: Boolean) {
-        scope.launch {
-            if (isGemini) {
-                settings.forgetGeminiApiKey()
-            } else {
-                settings.forgetMicrosoftSpeechApiKey()
+        val token = credentials.supersede(isGemini)
+        launchSafely {
+            credentials.run(token) {
+                val forgotten = credentials.delete(token) {
+                    if (isGemini) settings.forgetGeminiApiKey() else settings.forgetMicrosoftSpeechApiKey()
+                }
+                if (forgotten) {
+                    updateApiKeyValidationState(isGemini, KeyValidationState.Idle)
+                    notify(R.string.api_key_forgotten)
+                }
             }
-            updateApiKeyValidationState(isGemini = isGemini, validation = KeyValidationState.Idle)
         }
     }
 
@@ -210,7 +213,7 @@ internal class MainSettingsDelegate(
             validation = CustomModelValidation.Validating,
         )
         modelValidationJob(isSummarizer)?.cancel()
-        val job = scope.launch {
+        val job = launchSafely {
             val result = validationService.validateCustomModel(trimmed)
             if (result.isValid) {
                 persistValidatedModel(trimmed, isSummarizer, result.displayName.orEmpty())
@@ -260,12 +263,38 @@ internal class MainSettingsDelegate(
         }
     }
 
-    private suspend fun loadKeyForDisplay(keyProvider: suspend () -> CharArray?): String? = withContext(ioDispatcher) {
-        val keyChars = keyProvider() ?: return@withContext null
+    @Suppress("TooGenericExceptionCaught") // Do not surface credential storage details in the UI.
+    private suspend fun loadKeyForDisplay(isGemini: Boolean, keyProvider: suspend () -> CharArray?): String? = try {
+        val token = credentials.current(isGemini)
+        credentials.run(token) {
+            withContext(ioDispatcher) {
+                val keyChars = keyProvider() ?: return@withContext null
+                try {
+                    if (credentials.isCurrent(token)) String(keyChars) else null
+                } finally {
+                    keyChars.fill('\u0000')
+                }
+            }
+        }
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        notify(R.string.settings_persistence_failed)
+        null
+    }
+
+    @Suppress("TooGenericExceptionCaught") // Keystore and DataStore failures are reported as a sanitized UI event.
+    private fun launchSafely(
+        onFailure: () -> Unit = {},
+        block: suspend () -> Unit,
+    ): Job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
         try {
-            String(keyChars)
-        } finally {
-            keyChars.fill('\u0000')
+            block()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            onFailure()
+            notify(R.string.settings_persistence_failed)
         }
     }
 }

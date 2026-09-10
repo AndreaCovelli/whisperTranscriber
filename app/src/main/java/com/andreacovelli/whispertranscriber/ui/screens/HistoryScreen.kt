@@ -1,7 +1,5 @@
 package com.andreacovelli.whispertranscriber.ui.screens
 
-import android.content.ClipData
-import android.content.Intent
 import android.text.format.DateUtils
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -46,7 +44,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -71,6 +68,7 @@ import com.andreacovelli.whispertranscriber.history.extractHistorySearchTokens
 import com.andreacovelli.whispertranscriber.history.suggestedHistoryExportFileName
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCard
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCardActions
+import com.andreacovelli.whispertranscriber.ui.copyTextWithFeedback
 import com.andreacovelli.whispertranscriber.ui.history.HistoryMsg
 import com.andreacovelli.whispertranscriber.ui.history.HistoryUiEvent
 import com.andreacovelli.whispertranscriber.ui.history.HistoryViewModel
@@ -170,11 +168,9 @@ private fun ObserveHistoryEvents(historyViewModel: HistoryViewModel, onLaunchExp
                 when (event) {
                     is HistoryUiEvent.LaunchExport -> onLaunchExport(event.format)
                     is HistoryUiEvent.Share -> {
-                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, event.content)
+                        if (!historyViewModel.shareText(event.content, event.title, context::startActivity)) {
+                            Toast.makeText(context, R.string.text_share_failed, Toast.LENGTH_SHORT).show()
                         }
-                        context.startActivity(Intent.createChooser(sendIntent, event.title))
                     }
                     is HistoryUiEvent.Toast -> {
                         Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
@@ -356,26 +352,12 @@ private fun ColumnScope.HistoryContent(
             HistoryItemCardActions(
                 copyTranscript = {
                     scope.launch {
-                        clipboardManager.setClipEntry(
-                            ClipEntry(ClipData.newPlainText(transcriptLabel, item.text)),
-                        )
-                        Toast.makeText(
-                            context,
-                            context.getString(R.string.main_copied_transcript),
-                            Toast.LENGTH_SHORT,
-                        ).show()
+                        copyTextWithFeedback(context, clipboardManager, item.text, R.string.main_copied_transcript)
                     }
                 },
                 copySummary = {
                     scope.launch {
-                        clipboardManager.setClipEntry(
-                            ClipEntry(ClipData.newPlainText(summaryLabel, item.summary)),
-                        )
-                        Toast.makeText(
-                            context,
-                            context.getString(R.string.main_copied_summary),
-                            Toast.LENGTH_SHORT,
-                        ).show()
+                        copyTextWithFeedback(context, clipboardManager, item.summary, R.string.main_copied_summary)
                     }
                 },
                 clearTranscript = { historyViewModel.dispatch(HistoryMsg.ClearTranscript(item)) },
@@ -388,6 +370,8 @@ private fun ColumnScope.HistoryContent(
     }
     when {
         pagedItems.isInitialLoad() -> LoadingHistoryState()
+        pagedItems.loadState.refresh is LoadState.Error && pagedItems.itemCount == 0 ->
+            HistoryLoadError(onRetry = pagedItems::retry)
         pagedItems.itemCount == 0 -> EmptyHistoryState(searchQuery)
         else -> HistoryRowList(
             pagedItems = pagedItems,
@@ -442,6 +426,9 @@ internal fun ColumnScope.HistoryRowList(
         modifier = Modifier.weight(1f),
         contentPadding = PaddingValues(vertical = 8.dp),
     ) {
+        if (pagedItems.loadState.refresh is LoadState.Error) {
+            item(key = "refresh-error") { HistoryLoadError(onRetry = pagedItems::retry) }
+        }
         items(count = pagedItems.itemCount, key = pagedItems.itemKey { it.stableKey }) { index ->
             when (val row = pagedItems[index]) {
                 null -> HistoryItemPlaceholderCard()
@@ -458,6 +445,11 @@ internal fun ColumnScope.HistoryRowList(
                     )
                 }
             }
+        }
+        when (pagedItems.loadState.append) {
+            is LoadState.Error -> item(key = "append-error") { HistoryLoadError(onRetry = pagedItems::retry) }
+            is LoadState.Loading -> item(key = "append-loading") { CircularProgressIndicator() }
+            else -> Unit
         }
     }
 }
@@ -530,3 +522,11 @@ private fun Set<Int>.toggle(id: Int): Set<Int> = if (contains(id)) this - id els
 
 private fun <T : Any> LazyPagingItems<T>.isInitialLoad(): Boolean =
     loadState.refresh is LoadState.Loading && itemCount == 0
+
+@Composable
+internal fun HistoryLoadError(onRetry: () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(stringResource(R.string.history_load_failed))
+        androidx.compose.material3.TextButton(onClick = onRetry) { Text(stringResource(R.string.retry)) }
+    }
+}

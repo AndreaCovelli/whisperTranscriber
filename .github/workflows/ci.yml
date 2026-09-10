@@ -44,6 +44,7 @@ jobs:
         with:
           filters: |
             android:
+              - ".editorconfig"
               - ".github/workflows/**"
               - "app/**"
               - "build.gradle.kts"
@@ -56,6 +57,7 @@ jobs:
             instrumentation:
               - ".github/workflows/ci.yml"
               - "app/build.gradle.kts"
+              - "app/*.pro"
               - "app/schemas/**"
               - "app/src/androidTest/**"
               - "app/src/main/**"
@@ -131,7 +133,7 @@ jobs:
         run: ./gradlew assembleDebug testDebugUnitTest --console=plain
 
   instrumentation:
-    name: Instrumentation
+    name: Instrumentation (${{ matrix.suite }})
     needs: changes
     if: >-
       ${{
@@ -140,7 +142,16 @@ jobs:
         needs.changes.outputs.instrumentation == 'true'
       }}
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [debug, minifiedSmoke]
+    env:
+      # Leave room for the Android emulator and runner on private-repository VMs.
+      GRADLE_OPTS: >-
+        -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8 -Dkotlin.daemon.jvm.options=-Xmx1g"
+        -Dorg.gradle.workers.max=2
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -187,12 +198,14 @@ jobs:
 
       - name: Prepare managed device
         id: prepare_managed_device
+        timeout-minutes: 5
         run: >-
           ./gradlew pixel6Api34Setup
           -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
           --console=plain
 
       - name: Diagnose managed-device setup failure
+        timeout-minutes: 5
         if: >-
           ${{
             failure() &&
@@ -206,16 +219,52 @@ jobs:
           --stacktrace
           --console=plain
 
+      - name: Verify notification permission recreation
+        if: ${{ matrix.suite == 'debug' }}
+        timeout-minutes: 15
+        run: >-
+          ./gradlew pixel6Api34DebugAndroidTest --console=plain
+          -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
+          -Pandroid.testInstrumentationRunnerArguments.class=com.andreacovelli.whispertranscriber.NotificationPermissionRecreationInstrumentedTest
+
       - name: Run managed-device tests
+        if: ${{ matrix.suite == 'debug' }}
+        timeout-minutes: 10
         run: >-
           ./gradlew pixel6Api34DebugAndroidTest
           -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
           --console=plain
 
+      - name: Verify minified JSON exports
+        if: ${{ matrix.suite == 'minifiedSmoke' }}
+        timeout-minutes: 20
+        run: >-
+          ./gradlew pixel6Api34MinifiedSmokeAndroidTest --console=plain
+          -PinstrumentationBuildType=minifiedSmoke
+          -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
+          -Pandroid.testInstrumentationRunnerArguments.class=com.andreacovelli.whispertranscriber.HistoryExportInstrumentedTest
+
+      - name: Require minified export test results
+        if: ${{ matrix.suite == 'minifiedSmoke' }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          reports = Path("app/build/outputs/androidTest-results/managedDevice/minifiedsmoke/pixel6Api34")
+          cases = [case for report in reports.glob("TEST-*.xml")
+                   for case in ET.parse(report).iter("testcase")
+                   if case.get("classname", "").endswith(".HistoryExportInstrumentedTest")]
+          if len(cases) < 4 or any(case.find(tag) is not None
+                                   for case in cases for tag in ("failure", "error", "skipped")):
+              raise SystemExit("All four minified export scenarios must execute and pass.")
+          PY
+
       - name: Save API 34 ATD system image
         if: >-
           ${{
             success() &&
+            matrix.suite == 'debug' &&
             github.event_name == 'push' &&
             steps.atd_cache.outputs.cache-hit != 'true'
           }}
@@ -225,10 +274,10 @@ jobs:
           key: ${{ steps.atd_cache.outputs.cache-primary-key }}
 
       - name: Upload instrumentation reports on failure
-        if: ${{ failure() }}
+        if: ${{ failure() || cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: instrumentation-reports
+          name: instrumentation-reports-${{ matrix.suite }}
           path: |
             app/build/reports/androidTests/managedDevice/
             app/build/outputs/androidTest-results/managedDevice/

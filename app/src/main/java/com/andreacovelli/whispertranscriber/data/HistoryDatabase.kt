@@ -101,11 +101,18 @@ interface TranscriptionHistoryDao {
     @Query("DELETE FROM transcription_history")
     suspend fun deleteAllHistory()
 
-    @Query("SELECT * FROM transcription_history ORDER BY timestamp DESC")
+    @Query("SELECT * FROM transcription_history ORDER BY timestamp DESC, id DESC")
     fun getAllHistoryPaged(): PagingSource<Int, TranscriptionHistory>
 
-    @Query("SELECT * FROM transcription_history ORDER BY timestamp DESC LIMIT :limit OFFSET :offset")
-    suspend fun getHistoryExportPage(limit: Int, offset: Int): List<TranscriptionHistory>
+    @Query(
+        """
+        SELECT * FROM transcription_history
+        WHERE :beforeTimestamp IS NULL OR timestamp < :beforeTimestamp
+           OR (timestamp = :beforeTimestamp AND id < :beforeId)
+        ORDER BY timestamp DESC, id DESC LIMIT :limit
+        """,
+    )
+    suspend fun getHistoryExportPage(limit: Int, beforeTimestamp: Long?, beforeId: Int?): List<TranscriptionHistory>
 
     @Query("SELECT EXISTS(SELECT 1 FROM transcription_history)")
     suspend fun hasHistory(): Boolean
@@ -116,7 +123,7 @@ interface TranscriptionHistoryDao {
         FROM transcription_history AS h
         INNER JOIN transcription_history_fts AS fts ON h.id = fts.rowid
         WHERE transcription_history_fts MATCH :query
-        ORDER BY h.timestamp DESC
+        ORDER BY h.timestamp DESC, h.id DESC
         """,
     )
     fun searchHistoryPaged(query: String): PagingSource<Int, TranscriptionHistory>
@@ -247,6 +254,16 @@ interface TranscriptionJobDao {
 
     @Query(
         """
+        UPDATE active_jobs SET status = '$JOB_STATUS_ERROR', error = :message,
+            finishedAt = :finishedAt, executionOwnerId = ''
+        WHERE id = :id AND isRunning = 0
+          AND status IN ('$JOB_STATUS_QUEUED', '$JOB_STATUS_RETRY_SCHEDULED')
+        """,
+    )
+    suspend fun failUnstartedJob(id: Int, message: String, finishedAt: Long): Int
+
+    @Query(
+        """
         UPDATE active_jobs
         SET stagedFilePath = NULL
         WHERE id = :id
@@ -321,12 +338,6 @@ interface TranscriptionJobDao {
         """
         UPDATE active_jobs
         SET transcript = '',
-            language = '',
-            model = '',
-            summary = '',
-            summaryProviderName = '',
-            summaryModel = '',
-            summaryStatus = '',
             error = NULL,
             summaryError = NULL,
             progress = 0,
@@ -335,14 +346,28 @@ interface TranscriptionJobDao {
             summaryAttemptId = '',
             isRunning = 0,
             isSummarizing = 0,
-            historyId = NULL,
+            autoSummaryAttempted = 1,
+            notifyResult = 0,
+            summaryStatus = CASE WHEN summaryStatus = '$SUMMARY_STATUS_SUMMARIZING'
+                THEN '$SUMMARY_STATUS_CANCELLED' ELSE summaryStatus END,
             finishedAt = :finishedAt
         WHERE id = :id
-          AND isRunning = 0
-          AND isSummarizing = 0
         """,
     )
     suspend fun clearTranscriptionResult(id: Int, finishedAt: Long): Int
+
+    @Query(
+        """
+        UPDATE active_jobs SET summary = '', summaryProviderName = '', summaryModel = '',
+            summaryStatus = '', summaryError = NULL, summaryAttemptId = '',
+            autoSummaryAttempted = 1, isSummarizing = 0, isRunning = 0, executionOwnerId = '',
+            notifyResult = 0,
+            status = CASE WHEN status = '$JOB_STATUS_CLEARED' THEN status ELSE '$JOB_STATUS_COMPLETED' END,
+            finishedAt = :finishedAt
+        WHERE id = :id
+        """,
+    )
+    suspend fun clearSummaryResult(id: Int, finishedAt: Long): Int
 
     @Query(
         """
@@ -482,6 +507,7 @@ interface TranscriptionJobDao {
         WHERE id = :jobId
           AND isRunning = 0
           AND status IN ('$JOB_STATUS_QUEUED', '$JOB_STATUS_RETRY_SCHEDULED')
+          AND NOT EXISTS (SELECT 1 FROM active_jobs WHERE id != :jobId AND isRunning = 1)
         """,
     )
     suspend fun claimJobForExecution(jobId: Int, ownerId: String, status: String): Int
@@ -514,8 +540,11 @@ interface TranscriptionJobDao {
             summarizeAfterTranscription = :summarizeAfterTranscription,
             notifyResult = :notifyResult,
             queuedSummarizerProviderName = :queuedSummarizerProviderName,
-            queuedSummarizerCustomModelName = :queuedSummarizerCustomModelName
+            queuedSummarizerCustomModelName = :queuedSummarizerCustomModelName,
+            speakerDiarizationEnabled = :speakerDiarizationEnabled
         WHERE id = :jobId
+          AND status IN ('$JOB_STATUS_ERROR', '$JOB_STATUS_CANCELLED')
+          AND isRunning = 0 AND isSummarizing = 0
         """,
     )
     suspend fun retryById(
@@ -527,6 +556,7 @@ interface TranscriptionJobDao {
         notifyResult: Boolean,
         queuedSummarizerProviderName: String,
         queuedSummarizerCustomModelName: String,
+        speakerDiarizationEnabled: Boolean,
     ): Int
 
     @Query(
@@ -661,9 +691,10 @@ interface TranscriptionJobDao {
         WHERE isSummarizing = 1
           AND isRunning = 0
           AND summaryAttemptId != ''
+          AND summaryAttemptId NOT LIKE :sessionPrefix || '%'
         """,
     )
-    suspend fun cancelOrphanedUiSummaries(): Int
+    suspend fun cancelOrphanedUiSummaries(sessionPrefix: String): Int
 
     @Query(
         """

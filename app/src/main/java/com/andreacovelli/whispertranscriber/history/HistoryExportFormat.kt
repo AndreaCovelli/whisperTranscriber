@@ -1,7 +1,8 @@
 package com.andreacovelli.whispertranscriber.history
 
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
-import com.google.gson.GsonBuilder
+import com.google.gson.stream.JsonWriter
+import java.io.StringWriter
 import java.io.Writer
 import java.time.Clock
 import java.time.Instant
@@ -9,26 +10,10 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 enum class HistoryExportFormat(val extension: String, val mimeType: String) {
-    TXT(extension = "txt", mimeType = "text/plain"),
-    CSV(extension = "csv", mimeType = "text/csv"),
-    JSON(extension = "json", mimeType = "application/json"),
+    TXT("txt", "text/plain"),
+    CSV("csv", "text/csv"),
+    JSON("json", "application/json"),
 }
-
-private data class HistoryExportRecord(
-    val id: Int,
-    val timestamp: String,
-    val displayName: String,
-    val language: String,
-    val model: String,
-    val summaryModel: String,
-    val text: String,
-    val summary: String,
-)
-
-private val gson = GsonBuilder()
-    .disableHtmlEscaping()
-    .setPrettyPrinting()
-    .create()
 
 private val csvHeaderRow = listOf(
     "id",
@@ -41,125 +26,57 @@ private val csvHeaderRow = listOf(
     "summary",
 )
 
-fun buildHistoryExport(items: List<TranscriptionHistory>, format: HistoryExportFormat): String {
-    require(items.isNotEmpty()) { "No history to export." }
-    return when (format) {
-        HistoryExportFormat.TXT -> buildTxtHistoryExport(items)
-        HistoryExportFormat.CSV -> buildCsvHistoryExport(items)
-        HistoryExportFormat.JSON -> buildJsonHistoryExport(items)
-    }
-}
+fun buildHistoryExport(items: List<TranscriptionHistory>, format: HistoryExportFormat): String =
+    StringWriter().also { writeHistoryExport(it, format, items) }.toString()
 
 fun suggestedHistoryExportFileName(format: HistoryExportFormat, clock: Clock = Clock.systemDefaultZone()): String =
     "whispertranscriber-history-${LocalDate.now(clock)}.${format.extension}"
 
-suspend fun writeHistoryExport(
-    writer: Writer,
-    format: HistoryExportFormat,
-    pageSize: Int = 100,
-    loadPage: suspend (limit: Int, offset: Int) -> List<TranscriptionHistory>,
-) {
-    require(pageSize > 0) { "Page size must be positive." }
-
-    when (format) {
-        HistoryExportFormat.TXT -> writeTxtHistoryExport(writer, pageSize, loadPage)
-        HistoryExportFormat.CSV -> writeCsvHistoryExport(writer, pageSize, loadPage)
-        HistoryExportFormat.JSON -> writeJsonHistoryExport(writer, pageSize, loadPage)
-    }
+fun writeHistoryExport(writer: Writer, format: HistoryExportFormat, items: Iterable<TranscriptionHistory>) {
+    val export = HistoryExportWriter(writer, format)
+    items.forEach(export::append)
+    export.finish()
 }
 
-private fun buildTxtHistoryExport(items: List<TranscriptionHistory>): String =
-    items.joinToString("\n\n---\n\n") { item ->
-        buildTxtHistoryItem(item)
-    }
+/** Explicit field names survive shrinking and are shared by both export entry points. */
+internal class HistoryExportWriter(private val writer: Writer, private val format: HistoryExportFormat) {
+    private var wroteAny = false
+    private val json = if (format == HistoryExportFormat.JSON) JsonWriter(writer).apply { setIndent("  ") } else null
 
-private fun buildCsvHistoryExport(items: List<TranscriptionHistory>): String {
-    val rows = buildList {
-        add(csvHeaderRow)
-        items.forEach { item -> add(csvRowFor(item)) }
-    }
-    return rows.joinToString("\r\n") { row ->
-        row.joinToString(",", transform = ::escapeCsvValue)
-    }
-}
-
-private fun buildJsonHistoryExport(items: List<TranscriptionHistory>): String = gson.toJson(
-    items.map(::toHistoryExportRecord),
-)
-
-private suspend fun writeTxtHistoryExport(
-    writer: Writer,
-    pageSize: Int,
-    loadPage: suspend (limit: Int, offset: Int) -> List<TranscriptionHistory>,
-) {
-    var offset = 0
-    var wroteAny = false
-    while (true) {
-        val page = loadPage(pageSize, offset)
-        if (page.isEmpty()) break
-        page.forEach { item ->
-            if (wroteAny) {
-                writer.writeBlocking("\n\n---\n\n")
+    fun append(item: TranscriptionHistory) {
+        when (format) {
+            HistoryExportFormat.TXT -> {
+                if (wroteAny) writer.write("\n\n---\n\n")
+                writer.write(buildTxtHistoryItem(item))
             }
-            writer.writeBlocking(buildTxtHistoryItem(item))
-            wroteAny = true
-        }
-        offset += page.size
-    }
-    require(wroteAny) { "No history to export." }
-}
-
-private suspend fun writeCsvHistoryExport(
-    writer: Writer,
-    pageSize: Int,
-    loadPage: suspend (limit: Int, offset: Int) -> List<TranscriptionHistory>,
-) {
-    val firstPage = loadPage(pageSize, 0)
-    require(firstPage.isNotEmpty()) { "No history to export." }
-
-    writer.writeBlocking(csvHeaderRow.joinToString(",", transform = ::escapeCsvValue))
-    var offset = 0
-    while (true) {
-        val page = if (offset == 0) firstPage else loadPage(pageSize, offset)
-        if (page.isEmpty()) {
-            break
-        }
-        page.forEach { item ->
-            writer.writeBlocking("\r\n")
-            writer.writeBlocking(csvRowFor(item).joinToString(",", transform = ::escapeCsvValue))
-        }
-        offset += page.size
-    }
-}
-
-private suspend fun writeJsonHistoryExport(
-    writer: Writer,
-    pageSize: Int,
-    loadPage: suspend (limit: Int, offset: Int) -> List<TranscriptionHistory>,
-) {
-    val firstPage = loadPage(pageSize, 0)
-    require(firstPage.isNotEmpty()) { "No history to export." }
-
-    writer.writeBlocking("[")
-    var offset = 0
-    var wroteAny = false
-    while (true) {
-        val page = if (offset == 0) firstPage else loadPage(pageSize, offset)
-        if (page.isEmpty()) {
-            break
-        }
-        page.forEach { item ->
-            if (!wroteAny) {
-                writer.writeBlocking("\n")
-            } else {
-                writer.writeBlocking(",\n")
+            HistoryExportFormat.CSV -> {
+                if (!wroteAny) writer.write(csvHeaderRow.joinToString(",", transform = ::escapeCsvValue))
+                writer.write("\r\n")
+                writer.write(csvRowFor(item).joinToString(",", transform = ::escapeCsvValue))
             }
-            writer.writeBlocking(gson.toJson(toHistoryExportRecord(item)))
-            wroteAny = true
+            HistoryExportFormat.JSON -> {
+                val output = requireNotNull(json)
+                if (!wroteAny) output.beginArray()
+                output.beginObject()
+                output.name("id").value(item.id)
+                output.name("timestamp").value(formatHistoryTimestamp(item.timestamp))
+                output.name("displayName").value(item.displayName)
+                output.name("language").value(item.language)
+                output.name("model").value(item.model)
+                output.name("summaryModel").value(item.summaryModel)
+                output.name("text").value(item.text)
+                output.name("summary").value(item.summary)
+                output.endObject()
+            }
         }
-        offset += page.size
+        wroteAny = true
     }
-    writer.writeBlocking("\n]")
+
+    fun finish() {
+        require(wroteAny) { "No history to export." }
+        json?.endArray()
+        writer.flush()
+    }
 }
 
 private fun buildTxtHistoryItem(item: TranscriptionHistory): String = buildString {
@@ -190,17 +107,6 @@ private fun csvRowFor(item: TranscriptionHistory): List<String> = listOf(
     item.summary,
 )
 
-private fun toHistoryExportRecord(item: TranscriptionHistory): HistoryExportRecord = HistoryExportRecord(
-    id = item.id,
-    timestamp = formatHistoryTimestamp(item.timestamp),
-    displayName = item.displayName,
-    language = item.language,
-    model = item.model,
-    summaryModel = item.summaryModel,
-    text = item.text,
-    summary = item.summary,
-)
-
 private fun formatHistoryTimestamp(timestamp: Long): String =
     DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(timestamp))
 
@@ -216,5 +122,3 @@ private fun escapeCsvValue(value: String): String {
     }
     return "\"${neutralized.replace("\"", "\"\"")}\""
 }
-
-private fun Writer.writeBlocking(value: String) = write(value)

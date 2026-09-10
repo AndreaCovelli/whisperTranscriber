@@ -9,6 +9,8 @@ import com.andreacovelli.whispertranscriber.data.RoomHistoryRepository
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.queue.JobExecutionBackend
+import com.andreacovelli.whispertranscriber.queue.QueueExecutionCoordinator
+import com.andreacovelli.whispertranscriber.queue.RetryResult
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.summary.TranscriptionSummarizationRepository
 import com.andreacovelli.whispertranscriber.transcription.CompletedJobCleanup
@@ -23,6 +25,7 @@ import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_GENERAT
 import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_SUMMARIZING
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionData
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
+import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -314,6 +317,8 @@ class TranscriptionRepositoryInstrumentedTest {
         assertFalse(untouchedQueuedJob?.isRunning ?: true)
         assertEquals(0, repository.countBlockingJobs())
         assertNotNull(repository.claimJobForExecution(staleJobId, "new-owner-1", "Starting..."))
+        assertNull(repository.claimJobForExecution(retryScheduledJobId, "new-owner-2", "Starting..."))
+        repository.resetRunningToQueued(staleJobId, "new-owner-1")
         assertNotNull(repository.claimJobForExecution(retryScheduledJobId, "new-owner-2", "Starting..."))
     }
 
@@ -346,70 +351,114 @@ class TranscriptionRepositoryInstrumentedTest {
     }
 
     @Test
-    fun retryJob_resetsRetryCountToZero() = runBlocking {
-        val jobId = repository.addJob(
-            TranscriptionJob(
-                uri = "content://test/retry-reset.wav",
-                displayName = "retry-reset.wav",
-                status = JOB_STATUS_RETRY_SCHEDULED,
-                retryCount = 2,
-                error = "timeout",
-            ),
-        ).toInt()
-
-        val retried = repository.retryJob(
-            jobId = jobId,
-            providerName = TranscriptionProvider.GEMINI_FLASH.name,
-            requestedModel = TranscriptionProvider.GEMINI_FLASH.modelName,
-            executionBackend = JobExecutionBackend.WORK_MANAGER.name,
-            summarizeAfterTranscription = false,
-            notifyResult = false,
-            queuedSummarizerProviderName = "",
-            queuedSummarizerCustomModelName = "",
-        )
-
-        val updatedJob = repository.getJob(jobId)
-
-        assertTrue(retried)
-        assertEquals(JOB_STATUS_QUEUED, updatedJob?.status)
-        assertEquals(0, updatedJob?.retryCount)
+    fun retry_requiresTerminalFailureAndAudio_andNormalizesProviderSettings() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val audio = File.createTempFile("retry-test", ".wav", context.cacheDir).apply { writeText("audio") }
+        try {
+            val jobId = repository.addJob(
+                TranscriptionJob(
+                    uri = "content://test/audio",
+                    displayName = "audio.wav",
+                    stagedFilePath = audio.path,
+                    status = JOB_STATUS_ERROR,
+                    retryCount = 3,
+                    speakerDiarizationEnabled = true,
+                ),
+            ).toInt()
+            assertEquals(RetryResult.ACCEPTED, retryWithMicrosoft(jobId))
+            val retried = requireNotNull(repository.getJob(jobId))
+            assertEquals(JOB_STATUS_QUEUED, retried.status)
+            assertEquals(0, retried.retryCount)
+            assertFalse(retried.speakerDiarizationEnabled)
+            assertEquals(RetryResult.INELIGIBLE_STATUS, retryWithMicrosoft(jobId))
+            repository.cancelJob(jobId)
+            audio.delete()
+            assertEquals(RetryResult.UNAVAILABLE_AUDIO, retryWithMicrosoft(jobId))
+        } finally {
+            audio.delete()
+        }
     }
 
     @Test
-    fun retryJob_unlinksOldHistorySoProviderExecutionRunsAgain() = runBlocking {
-        val historyId = historyRepository.insert(
-            TranscriptionHistory(
-                text = "Old transcript",
-                language = "en",
-                displayName = "retry-history.wav",
-            ),
-        )
+    fun retry_atCapacity_keepsFailedJobUnchanged() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val audio = File.createTempFile("retry-capacity", ".wav", context.cacheDir).apply { writeText("audio") }
+        try {
+            val jobId = repository.addJob(
+                TranscriptionJob(
+                    uri = "unused",
+                    displayName = "retry.wav",
+                    stagedFilePath = audio.path,
+                    status = JOB_STATUS_CANCELLED,
+                    speakerDiarizationEnabled = true,
+                ),
+            ).toInt()
+            repository.addJobsWithinCapacity((1..50).map { TranscriptionJob(uri = "unused", displayName = "$it.wav") })
+            val before = repository.getJob(jobId)
+            assertEquals(RetryResult.QUEUE_FULL, retryWithMicrosoft(jobId))
+            assertEquals(before, repository.getJob(jobId))
+        } finally {
+            audio.delete()
+        }
+    }
+
+    @Test
+    fun retry_completedJob_preservesTranscriptAndHistoryLink() = runBlocking {
+        val historyId = historyRepository.insert(TranscriptionHistory(text = "Keep transcript", language = "en"))
         val jobId = repository.addJob(
             TranscriptionJob(
-                uri = "content://test/retry-history.wav",
-                displayName = "retry-history.wav",
+                uri = "unused",
+                displayName = "completed.wav",
                 status = JOB_STATUS_COMPLETED,
                 historyId = historyId,
             ),
         ).toInt()
-
-        repository.retryJob(
-            jobId = jobId,
-            providerName = TranscriptionProvider.GEMINI_FLASH.name,
-            requestedModel = TranscriptionProvider.GEMINI_FLASH.modelName,
-            executionBackend = JobExecutionBackend.WORK_MANAGER.name,
-            summarizeAfterTranscription = false,
-            notifyResult = false,
-            queuedSummarizerProviderName = "",
-            queuedSummarizerCustomModelName = "",
-        )
-
-        assertNull(repository.getJob(jobId)?.historyId)
-        assertNotNull(db.transcriptionHistoryDao().getById(historyId))
+        assertEquals(RetryResult.INELIGIBLE_STATUS, retryWithMicrosoft(jobId))
+        assertEquals(historyId, repository.getJob(jobId)?.historyId)
+        assertEquals("Keep transcript", repository.getTranscriptForJob(jobId))
     }
 
     @Test
-    fun clearJobTranscription_resetsJobStateFields() = runBlocking {
+    fun processRecovery_doesNotDependOnSchedulerEntries_andPreservesCompletedTranscript() = runBlocking {
+        val historyId = historyRepository.insert(TranscriptionHistory(text = "Durable transcript", language = "en"))
+        val jobId = repository.addJob(
+            TranscriptionJob(
+                uri = "unused", displayName = "interrupted.wav",
+                status = JOB_STATUS_COMPLETED, isRunning = true, executionOwnerId = "previous-process:worker-id",
+                historyId = historyId, isSummarizing = true, summaryAttemptId = "previous-process:summary",
+                autoSummaryAttempted = true,
+            ),
+        ).toInt()
+        val coordinator = QueueExecutionCoordinator(repository)
+        coordinator.awaitRecovery()
+        val recovered = requireNotNull(repository.getJob(jobId))
+        assertEquals(JOB_STATUS_QUEUED, recovered.status)
+        assertEquals("Durable transcript", repository.getTranscriptForJob(jobId))
+        assertEquals("", recovered.summaryAttemptId)
+        assertFalse(recovered.autoSummaryAttempted)
+        val owner = coordinator.ownerId("surviving-worker-id")
+        assertNotNull(repository.claimJobForExecution(jobId, owner, "Starting"))
+        coordinator.awaitRecovery()
+        assertEquals(owner, repository.getJob(jobId)?.executionOwnerId)
+        assertFalse(
+            summarizationRepository.succeedSummarization(
+                jobId,
+                "previous-process:summary",
+                "Late",
+                "GEMINI_FLASH",
+                "model",
+            ),
+        )
+    }
+
+    private suspend fun retryWithMicrosoft(jobId: Int): RetryResult = repository.retryJob(
+        jobId, TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE.name,
+        TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE.modelName, JobExecutionBackend.WORK_MANAGER.name,
+        false, false, "", "", speakerDiarizationEnabled = true,
+    )
+
+    @Test
+    fun clearJobTranscription_preservesSummaryAndMetadata() = runBlocking {
         val jobId = repository.addJob(
             TranscriptionJob(
                 uri = "content://test/clear.wav",
@@ -435,12 +484,12 @@ class TranscriptionRepositoryInstrumentedTest {
         assertEquals(JOB_STATUS_CLEARED, updatedJob?.status)
         assertEquals(0f, updatedJob?.progress)
         assertEquals("", updatedJob?.transcript)
-        assertEquals("", updatedJob?.language)
-        assertEquals("", updatedJob?.model)
-        assertEquals("", updatedJob?.summary)
-        assertEquals("", updatedJob?.summaryProviderName)
-        assertEquals("", updatedJob?.summaryModel)
-        assertEquals("", updatedJob?.summaryStatus)
+        assertEquals("en", updatedJob?.language)
+        assertEquals("gemini-2.5-flash", updatedJob?.model)
+        assertEquals("Summary text", updatedJob?.summary)
+        assertEquals("GEMINI_FLASH", updatedJob?.summaryProviderName)
+        assertEquals("gemini-2.5-flash", updatedJob?.summaryModel)
+        assertEquals(SUMMARY_STATUS_GENERATED, updatedJob?.summaryStatus)
         assertNull(updatedJob?.error)
         assertNull(updatedJob?.summaryError)
     }

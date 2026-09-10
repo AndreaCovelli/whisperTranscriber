@@ -2,12 +2,16 @@ package com.andreacovelli.whispertranscriber.transcription
 
 import androidx.room.withTransaction
 import com.andreacovelli.whispertranscriber.data.AppDatabase
+import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.data.HistoryRepository
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistoryDao
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.data.TranscriptionJobDao
 import com.andreacovelli.whispertranscriber.queue.MAX_NONTERMINAL_JOBS
+import com.andreacovelli.whispertranscriber.queue.RetryResult
+import com.andreacovelli.whispertranscriber.settings.decodeTranscriptionProvider
+import java.io.File
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -85,6 +89,9 @@ class TranscriptionRepository @Inject constructor(
         jobDao.updateExecutionBackend(id, executionBackend)
     }
 
+    suspend fun failUnstartedJob(id: Int, message: String): Boolean =
+        jobDao.failUnstartedJob(id, message, System.currentTimeMillis()) > 0
+
     suspend fun clearStagedFilePath(id: Int, ownerId: String): Boolean = jobDao.clearStagedFilePath(id, ownerId) > 0
 
     suspend fun resetRunningToQueued(id: Int, ownerId: String): Boolean = jobDao.resetRunningToQueued(id, ownerId) > 0
@@ -94,17 +101,31 @@ class TranscriptionRepository @Inject constructor(
 
     suspend fun getRecoverableJobs(): List<TranscriptionJob> = jobDao.getRecoverableJobs()
 
+    suspend fun recoverPreviousSession(sessionPrefix: String) = db.withTransaction {
+        jobDao.getRecoverableJobs().forEach { job ->
+            if (!job.executionOwnerId.startsWith(sessionPrefix)) {
+                jobDao.requeueOrphanedExecution(job.id, job.executionOwnerId)
+            }
+        }
+        jobDao.cancelOrphanedUiSummaries(sessionPrefix)
+    }
+
     suspend fun requeueOrphanedExecution(id: Int, ownerId: String): Boolean =
         jobDao.requeueOrphanedExecution(id, ownerId) > 0
 
-    suspend fun clearJobTranscription(jobId: Int): Boolean = db.withTransaction {
-        val historyId = jobDao.getHistoryIdByJobId(jobId)
-        jobDao.invalidateOwners(jobId)
-        val cleared = jobDao.clearTranscriptionResult(jobId, System.currentTimeMillis()) > 0
-        if (cleared && historyId != null) {
-            historyDao.deleteById(historyId)
+    suspend fun clearJobTranscription(jobId: Int): Boolean = clearJobContent(jobId, HistoryContentField.TRANSCRIPT)
+
+    suspend fun clearJobContent(jobId: Int, field: HistoryContentField): Boolean = db.withTransaction {
+        val job = jobDao.getJobById(jobId) ?: return@withTransaction false
+        if (job.historyId != null) {
+            historyRepository.clearContent(job.historyId, field)
+        } else {
+            when (field) {
+                HistoryContentField.TRANSCRIPT -> jobDao.clearTranscriptionResult(jobId, System.currentTimeMillis())
+                HistoryContentField.SUMMARY -> jobDao.clearSummaryResult(jobId, System.currentTimeMillis())
+            }
         }
-        cleared
+        true
     }
 
     suspend fun getJob(jobId: Int): TranscriptionJob? = jobDao.getJobById(jobId)
@@ -135,22 +156,37 @@ class TranscriptionRepository @Inject constructor(
         notifyResult: Boolean,
         queuedSummarizerProviderName: String,
         queuedSummarizerCustomModelName: String,
-    ): Boolean = jobDao.retryById(
-        jobId = jobId,
-        providerName = providerName,
-        requestedModel = requestedModel,
-        executionBackend = executionBackend,
-        summarizeAfterTranscription = summarizeAfterTranscription,
-        notifyResult = notifyResult,
-        queuedSummarizerProviderName = queuedSummarizerProviderName,
-        queuedSummarizerCustomModelName = queuedSummarizerCustomModelName,
-    ) > 0
+        speakerDiarizationEnabled: Boolean = false,
+    ): RetryResult = db.withTransaction {
+        val job = jobDao.getJobById(jobId) ?: return@withTransaction RetryResult.INELIGIBLE_STATUS
+        if (job.status !in setOf(JOB_STATUS_ERROR, JOB_STATUS_CANCELLED) || job.isRunning || job.isSummarizing) {
+            return@withTransaction RetryResult.INELIGIBLE_STATUS
+        }
+        val audio = job.stagedFilePath?.takeIf(String::isNotBlank)?.let(::File)
+        if (audio == null || !audio.isFile || !audio.canRead() || audio.length() == 0L) {
+            return@withTransaction RetryResult.UNAVAILABLE_AUDIO
+        }
+        if (jobDao.countNonterminalJobs() >= MAX_NONTERMINAL_JOBS) {
+            return@withTransaction RetryResult.QUEUE_FULL
+        }
+        jobDao.retryById(
+            jobId = jobId,
+            providerName = providerName,
+            requestedModel = requestedModel,
+            executionBackend = executionBackend,
+            summarizeAfterTranscription = summarizeAfterTranscription,
+            notifyResult = notifyResult,
+            queuedSummarizerProviderName = queuedSummarizerProviderName,
+            queuedSummarizerCustomModelName = queuedSummarizerCustomModelName,
+            speakerDiarizationEnabled =
+            decodeTranscriptionProvider(providerName).isGemini() && speakerDiarizationEnabled,
+        )
+        RetryResult.ACCEPTED
+    }
 
     suspend fun cancelJob(jobId: Int): Boolean = jobDao.cancelJob(jobId, "Cancelled", System.currentTimeMillis()) > 0
 
     suspend fun invalidateOwners(jobId: Int): Boolean = jobDao.invalidateOwners(jobId) > 0
-
-    suspend fun cancelOrphanedUiSummaries(): Int = jobDao.cancelOrphanedUiSummaries()
 
     suspend fun clearCompletedJobs(): List<CompletedJobCleanup> = db.withTransaction {
         val completedJobs = jobDao.getCompletedJobs()

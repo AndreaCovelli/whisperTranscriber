@@ -40,6 +40,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -108,8 +110,6 @@ fun SettingsScreen(
                 onSave = { viewModel.dispatch(MainMsg.SaveMicrosoftSpeechKey(it)) },
                 onForget = { viewModel.dispatch(MainMsg.ForgetMicrosoftSpeechKey) },
                 onResetValidation = { viewModel.dispatch(MainMsg.ResetMicrosoftSpeechKeyValidation) },
-                forgetMessage = stringResource(R.string.settings_microsoft_speech_key_forgotten),
-                snackbarHostState = snackbarHostState,
             )
             MicrosoftSpeechRegionCard(uiState = uiState, dispatch = viewModel::dispatch)
 
@@ -123,8 +123,6 @@ fun SettingsScreen(
                 onSave = { viewModel.dispatch(MainMsg.SaveGeminiKey(it)) },
                 onForget = { viewModel.dispatch(MainMsg.ForgetGeminiKey) },
                 onResetValidation = { viewModel.dispatch(MainMsg.ResetGeminiKeyValidation) },
-                forgetMessage = stringResource(R.string.settings_gemini_key_forgotten),
-                snackbarHostState = snackbarHostState,
             )
 
             SettingsSectionHeader(stringResource(R.string.settings_section_about))
@@ -335,6 +333,7 @@ private fun SettingsToggleCard(
                     modifier = Modifier.weight(1f),
                 )
                 Switch(
+                    modifier = Modifier.semantics { contentDescription = title },
                     checked = checked,
                     onCheckedChange = onCheckedChange,
                     enabled = enabled,

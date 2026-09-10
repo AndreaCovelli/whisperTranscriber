@@ -53,16 +53,28 @@ class BackgroundShareJobService : JobService() {
         val speakerLabelPrefix = params.extras.getString(TranscriptionQueueService.SPEAKER_LABEL_PREFIX_INPUT)
             .orEmpty()
         runningParams[jobId] = params
-        setNotification(
-            params,
-            notificationId(jobId),
-            backgroundShareNotifier.buildProcessingNotification(
-                jobId = jobId,
-                displayName = displayName,
-                message = getString(R.string.background_share_waiting_to_start_notification_body),
-            ),
-            JOB_END_NOTIFICATION_POLICY_REMOVE,
-        )
+        try {
+            setNotification(
+                params,
+                notificationId(jobId),
+                backgroundShareNotifier.buildProcessingNotification(
+                    jobId = jobId,
+                    displayName = displayName,
+                    message = getString(R.string.background_share_waiting_to_start_notification_body),
+                ),
+                JOB_END_NOTIFICATION_POLICY_REMOVE,
+            )
+        } catch (_: RuntimeException) {
+            serviceScope.launch {
+                try {
+                    queueService.failBackgroundStart(jobId)
+                } finally {
+                    runningParams.remove(jobId, params)
+                    jobFinished(params, false)
+                }
+            }
+            return true
+        }
 
         val executionOwnerId = runCoordinator.nextExecutionOwnerId(params.jobId)
         val runningJob = serviceScope.launch(start = CoroutineStart.LAZY) {

@@ -1,26 +1,16 @@
 package com.andreacovelli.whispertranscriber.security
 
-import com.google.genai.Client
-import com.google.genai.types.HttpOptions
 import javax.inject.Inject
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.withContext
 
 interface GenAiClientFactory {
-    fun create(apiKey: String, timeoutMillis: Int? = null): Client
+    fun create(apiKey: String, timeoutMillis: Int? = null): GenAiOperation
 }
 
-class DefaultGenAiClientFactory @Inject constructor() : GenAiClientFactory {
-    override fun create(apiKey: String, timeoutMillis: Int?): Client {
-        val builder = Client.builder().apiKey(apiKey)
-        if (timeoutMillis != null) {
-            val httpOptions = HttpOptions.builder()
-                .timeout(timeoutMillis)
-                .build()
-            builder.httpOptions(httpOptions)
-        }
-        return builder.build()
-    }
+class DefaultGenAiClientFactory @Inject constructor(private val httpClient: okhttp3.OkHttpClient) : GenAiClientFactory {
+    override fun create(apiKey: String, timeoutMillis: Int?): GenAiOperation =
+        GenAiOperation(apiKey, httpClient, timeoutMillis ?: 600_000)
 }
 
 /**
@@ -48,34 +38,12 @@ internal suspend inline fun <R : AutoCloseable, T> useClosing(
     }
 }
 
-/**
- * Builds and closes a short-lived Gemini [Client] from a [CharArray] API key. The transient [String]
- * created for the SDK must not escape this callback or be stored in longer-lived fields.
- */
-internal inline fun <T> CharArray.useGenAiClient(
-    clientFactory: GenAiClientFactory,
-    timeoutMillis: Int? = null,
-    block: (Client) -> T,
-): T = useAsString { apiKeyString ->
-    val client = clientFactory.create(apiKeyString, timeoutMillis)
-    useClosing(client) {
-        block(client)
-    }
-}
-
-/**
- * Builds, uses, and closes a short-lived Gemini [Client] on [context]. Use this overload when the
- * SDK lifecycle can perform blocking I/O.
- */
+/** Each operation owns its transport and cancellation; API key strings remain scoped to this call. */
 internal suspend inline fun <T> CharArray.useGenAiClient(
     clientFactory: GenAiClientFactory,
     context: CoroutineContext,
     timeoutMillis: Int? = null,
-    crossinline block: suspend (Client) -> T,
+    crossinline block: suspend (GenAiOperation) -> T,
 ): T = useAsString { apiKeyString ->
-    useClosing(
-        context = context,
-        resourceFactory = { clientFactory.create(apiKeyString, timeoutMillis) },
-        block = block,
-    )
+    useClosing(context, { clientFactory.create(apiKeyString, timeoutMillis) }, block)
 }

@@ -31,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.andreacovelli.whispertranscriber.R
-import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_CLEARED
 import com.andreacovelli.whispertranscriber.ui.main.TranscriptionJobState
 
 @Composable
@@ -54,7 +53,7 @@ fun TranscriptionJobCard(job: TranscriptionJobState, canSummarize: Boolean, acti
             JobErrorSection(job = job, onRetry = actions.retryTranscription)
             JobProgressSection(job = job)
             TranscriptSection(job = job, actions = actions)
-            RetranscribeSection(job = job, actions = actions)
+            StopTranscriptionSection(job = job, actions = actions)
             JobPrimaryActions(job = job, canSummarize = canSummarize, actions = actions)
             SummaryErrorSection(job = job)
             SummarySection(job = job, actions = actions)
@@ -128,7 +127,7 @@ private fun JobErrorSection(job: TranscriptionJobState, onRetry: () -> Unit) {
             modifier = Modifier.weight(1f),
         )
         Spacer(Modifier.width(8.dp))
-        OutlinedButton(onClick = onRetry) {
+        OutlinedButton(onClick = onRetry, enabled = job.canRetry) {
             Icon(
                 Icons.Default.Refresh,
                 contentDescription = stringResource(R.string.retry_description),
@@ -174,46 +173,14 @@ private fun TranscriptSection(job: TranscriptionJobState, actions: Transcription
 }
 
 @Composable
-private fun RetranscribeSection(job: TranscriptionJobState, actions: TranscriptionJobCardActions) {
-    if (!job.shouldShowRetranscribeAction()) return
-    Spacer(Modifier.height(8.dp))
-    val isRunning = job.isRunning
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End,
-    ) {
-        Button(
-            onClick = if (isRunning) actions.cancelTranscription else actions.retryTranscription,
-            colors = ButtonDefaults.buttonColors(
-                containerColor =
-                if (isRunning) {
-                    MaterialTheme.colorScheme.errorContainer
-                } else {
-                    MaterialTheme.colorScheme.primaryContainer
-                },
-                contentColor =
-                if (isRunning) {
-                    MaterialTheme.colorScheme.onErrorContainer
-                } else {
-                    MaterialTheme.colorScheme.onPrimaryContainer
-                },
-            ),
-        ) {
-            if (!isRunning) {
-                Icon(
-                    Icons.Default.Refresh,
-                    contentDescription = stringResource(R.string.retranscribe_description),
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(Modifier.width(4.dp))
-            }
-            Text(if (isRunning) stringResource(R.string.stop_transcription) else stringResource(R.string.retranscribe))
-        }
+private fun StopTranscriptionSection(job: TranscriptionJobState, actions: TranscriptionJobCardActions) {
+    if (!job.shouldShowStopAction()) return
+    Button(onClick = actions.cancelTranscription) {
+        Text(stringResource(R.string.stop_transcription))
     }
 }
 
-internal fun TranscriptionJobState.shouldShowRetranscribeAction(): Boolean =
-    error == null && (isRunning || transcript.isNotBlank() || status == DISPLAY_JOB_STATUS_CLEARED)
+internal fun TranscriptionJobState.shouldShowStopAction(): Boolean = isRunning
 
 @Composable
 private fun JobPrimaryActions(

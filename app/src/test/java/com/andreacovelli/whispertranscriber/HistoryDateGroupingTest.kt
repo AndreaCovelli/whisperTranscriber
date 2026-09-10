@@ -65,7 +65,7 @@ class HistoryDateGroupingTest {
         val afterBucket =
             historyDateBucket(timestamp = millisAt(2026, 4, 15, 8, 0), currentDate = currentDate, zoneId = zoneId)
 
-        val header = historyDateHeader(previousBucket = beforeBucket, currentBucket = afterBucket)
+        val header = historyDateHeader(previousBucket = beforeBucket, currentBucket = afterBucket, firstItemId = 2)
 
         assertNull(header)
     }
@@ -79,7 +79,7 @@ class HistoryDateGroupingTest {
         val afterBucket =
             historyDateBucket(timestamp = millisAt(2026, 3, 31, 21, 0), currentDate = currentDate, zoneId = zoneId)
 
-        val header = historyDateHeader(previousBucket = beforeBucket, currentBucket = afterBucket)
+        val header = historyDateHeader(previousBucket = beforeBucket, currentBucket = afterBucket, firstItemId = 2)
 
         assertEquals(
             HistoryListRow.Header(
@@ -88,6 +88,7 @@ class HistoryDateGroupingTest {
                     label = HistoryDateLabel.Month(YearMonth.of(2026, 3)),
                     zoneId = zoneId,
                 ),
+                firstItemId = 2,
             ),
             header,
         )
@@ -111,13 +112,14 @@ class HistoryDateGroupingTest {
 
         assertEquals(
             listOf(
-                HistoryListRow.Header(HistoryDateBucket("day:2026-04-15", HistoryDateLabel.Today, zoneId)),
+                HistoryListRow.Header(HistoryDateBucket("day:2026-04-15", HistoryDateLabel.Today, zoneId), 1),
                 historyListItem(historyItem(id = 1, year = 2026, month = 4, day = 15, hour = 9), currentDate, zoneId),
                 historyListItem(historyItem(id = 2, year = 2026, month = 4, day = 15, hour = 7), currentDate, zoneId),
-                HistoryListRow.Header(HistoryDateBucket("day:2026-04-14", HistoryDateLabel.Yesterday, zoneId)),
+                HistoryListRow.Header(HistoryDateBucket("day:2026-04-14", HistoryDateLabel.Yesterday, zoneId), 3),
                 historyListItem(historyItem(id = 3, year = 2026, month = 4, day = 14, hour = 20), currentDate, zoneId),
                 HistoryListRow.Header(
                     HistoryDateBucket("month:2026-04", HistoryDateLabel.Month(YearMonth.of(2026, 4)), zoneId),
+                    firstItemId = 4,
                 ),
                 historyListItem(historyItem(id = 4, year = 2026, month = 4, day = 10, hour = 12), currentDate, zoneId),
                 historyListItem(historyItem(id = 5, year = 2026, month = 4, day = 2, hour = 8), currentDate, zoneId),
@@ -158,7 +160,7 @@ class HistoryDateGroupingTest {
         var previousBucket: HistoryDateBucket? = null
         items.forEach { history ->
             val item = historyListItem(history, currentDate, zoneId)
-            historyDateHeader(previousBucket, item.bucket)?.let(::add)
+            historyDateHeader(previousBucket, item.bucket, item.history.id)?.let(::add)
             add(item)
             previousBucket = item.bucket
         }

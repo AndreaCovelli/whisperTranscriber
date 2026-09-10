@@ -1,12 +1,8 @@
 package com.andreacovelli.whispertranscriber
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.ServiceInfo
 import android.os.Build
-import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
@@ -27,29 +23,19 @@ class TranscriptionWorker @AssistedInject constructor(
     private val backgroundShareNotifier: BackgroundShareNotifier,
 ) : CoroutineWorker(appContext, workerParams) {
 
-    private val notificationManager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
     companion object {
         const val NOTIFICATION_ID = 1001
         const val CHANNEL_ID = "transcription_channel"
     }
 
-    override suspend fun getForegroundInfo(): ForegroundInfo = createForegroundInfo("Starting transcription...")
+    override suspend fun getForegroundInfo(): ForegroundInfo =
+        createForegroundInfo(applicationContext.getString(R.string.transcription_status_starting))
 
     private fun createForegroundInfo(progressText: String): ForegroundInfo {
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "Transcription Service",
-            NotificationManager.IMPORTANCE_LOW,
-        )
-        notificationManager.createNotificationChannel(channel)
-
-        val notification: Notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-            .setContentTitle("Transcribing Audio")
-            .setContentText(progressText)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setOngoing(true)
-            .build()
+        val jobId = inputData.getInt(TranscriptionQueueService.QUEUED_JOB_ID_INPUT, -1)
+        val displayName = inputData.getString(TranscriptionQueueService.QUEUED_JOB_DISPLAY_NAME_INPUT)
+            ?: applicationContext.getString(R.string.background_share_generic_audio_label)
+        val notification = backgroundShareNotifier.buildProcessingNotification(jobId, displayName, progressText)
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
@@ -58,34 +44,34 @@ class TranscriptionWorker @AssistedInject constructor(
         }
     }
 
-    private suspend fun updateNotification(jobId: Int, progressText: String) {
-        try {
-            setForeground(createForegroundInfo(progressText))
-            backgroundShareNotifier.cancelBackgroundProcessing(jobId)
-        } catch (e: IllegalStateException) {
-            if (!isForegroundStartDenied(e)) throw e
+    private suspend fun promoteToForeground(progressText: String): Boolean = try {
+        setForeground(createForegroundInfo(progressText))
+        true
+    } catch (error: IllegalStateException) {
+        if (!isForegroundStartDenied(error)) throw error
+        false
+    } catch (_: SecurityException) {
+        false
+    }
 
-            android.util.Log.w(
-                "TranscriptionWorker",
-                "Foreground service start denied after execution began.",
-                e,
+    private suspend fun updateNotification(jobId: Int, progressText: String) {
+        if (!promoteToForeground(progressText)) {
+            throw com.andreacovelli.whispertranscriber.transcription.ProviderResponseException(
+                R.string.transcription_foreground_denied_reopen,
             )
-            throw e
         }
+        backgroundShareNotifier.cancelBackgroundProcessing(jobId)
     }
 
     override suspend fun doWork(): Result {
         val jobId = inputData.getInt(TranscriptionQueueService.QUEUED_JOB_ID_INPUT, -1)
         if (jobId == -1) return Result.failure()
         val speakerLabelPrefix = inputData.getString(TranscriptionQueueService.SPEAKER_LABEL_PREFIX_INPUT).orEmpty()
-        try {
-            setForeground(createForegroundInfo("Starting transcription..."))
-        } catch (e: IllegalStateException) {
-            if (!isForegroundStartDenied(e)) throw e
+        if (!promoteToForeground(applicationContext.getString(R.string.transcription_status_starting))) {
             return if (queueService.onForegroundPromotionDenied(jobId)) {
                 Result.success()
             } else {
-                Result.retry()
+                Result.failure()
             }
         }
 
