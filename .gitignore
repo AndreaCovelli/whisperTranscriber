@@ -21,6 +21,7 @@ local.properties
 # AI tool outputs
 repomix-output.xml
 .agents/
+.claude/
 
 # Kotlin artifacts
 .kotlin/
