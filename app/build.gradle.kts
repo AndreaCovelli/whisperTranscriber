@@ -60,12 +60,12 @@ android {
     sourceSets {
         getByName("androidTest") {
             assets.directories.add(roomSchemaDir)
-            // Both variants exercise exports; the minified APK only needs this small test suite.
+            // Export coverage belongs to the minified APK; debug runs the remaining device tests.
             if (instrumentationBuildType == "minifiedSmoke") {
                 java.directories.clear()
                 kotlin.directories.clear()
+                kotlin.directories.add("src/androidTest/export/java")
             }
-            kotlin.directories.add("src/androidTest/export/java")
         }
     }
 
