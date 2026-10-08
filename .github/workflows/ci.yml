@@ -424,14 +424,3 @@ jobs:
           for result in "$QUALITY_RESULT" "$BUILD_UNIT_RESULT" "$INSTRUMENTATION_RESULT"; do
             test "$result" = "success" || test "$result" = "skipped"
           done
-
-  legacy-gate:
-    name: Build, Test and Auto-merge
-    if: always()
-    needs: [ci-gate]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Preserve the existing required check during ruleset migration
-        env:
-          CI_GATE_RESULT: ${{ needs.ci-gate.result }}
-        run: test "$CI_GATE_RESULT" = "success"
