@@ -9,10 +9,12 @@ Share one or more audio files from a file manager or audio player to queue them 
 
 - **Multi-provider transcription** — choose between Microsoft MAI Transcribe 2 or Gemini (Flash Lite, Flash, Pro, or a custom model)
 - **Batch processing** — share multiple audio files at once; jobs are staged locally, queued, and processed sequentially
-- **AI summarization** — generate a concise summary of any transcript (requires a Gemini API key)
+- **AI summarization** — generate summaries manually or automatically after transcription, with a separately selected Gemini model (requires a Gemini API key)
+- **Speaker labels** — optionally ask Gemini to label distinguishable speakers in transcripts
+- **Background sharing** — stay in the sharing app while audio is queued, and receive the transcript or summary in a result notification
 - **Transcription history** — all transcripts are saved locally in a searchable Room database
 - **Secure key storage** — API keys are encrypted with AES-256-GCM via Android Keystore and never stored in plaintext
-- **Automatic audio conversion** — formats not natively accepted by the selected provider are transparently converted to 16 kHz mono WAV using hardware-accelerated MediaCodec
+- **Automatic audio conversion** — unsupported formats and Microsoft WAV inputs are converted to 16 kHz mono WAV using Android MediaCodec decoders
 - **Copy & share** — copy or share any transcript or summary to any app installed on the device
 
 ---
@@ -39,11 +41,15 @@ cd WhisperTranscriber
 
 ### 2. Build
 
-```bat
-# Windows
-gradlew.bat assembleDebug
+Windows:
 
-# macOS / Linux
+```bat
+gradlew.bat assembleDebug
+```
+
+macOS / Linux:
+
+```bash
 ./gradlew assembleDebug
 ```
 
@@ -56,9 +62,14 @@ The APK will be written to `app/build/outputs/apk/debug/`.
 ### 3. Run tests
 
 ```bat
+gradlew.bat spotlessCheck detekt lintDebug --console=plain
 gradlew.bat testDebugUnitTest --console=plain
 gradlew.bat connectedDebugAndroidTest --console=plain
 ```
+
+For macOS / Linux, replace `gradlew.bat` with `./gradlew`. Connected tests need an
+attached device or emulator and cover the debug instrumentation suite. JSON export
+coverage runs separately against the `minifiedSmoke` build below.
 
 On Linux with KVM, the reproducible managed-device suite is:
 
@@ -72,6 +83,11 @@ On Linux with KVM, the reproducible managed-device suite is:
 ./gradlew pixel6Api34MinifiedSmokeAndroidTest -PinstrumentationBuildType=minifiedSmoke \
   -Pandroid.testInstrumentationRunnerArguments.class=com.andreacovelli.whispertranscriber.HistoryExportInstrumentedTest
 ```
+
+The `minifiedSmoke` build uses release optimization with debug signing and includes
+only the export instrumentation sources in `app/src/androidTest/export/java/`.
+Run these Gradle commands sequentially. On a headless host, add
+`-Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect`, as CI does.
 
 ### ADB on a headless server
 
@@ -144,7 +160,8 @@ All configuration is done inside the app — no config files or build secrets ne
 
 1. Open **Settings** (gear icon on the main screen)
 2. Select your **transcription provider**
-3. Paste the corresponding **API key** into the appropriate field — it is encrypted and saved automatically
+3. For Microsoft Speech, enter your **region or HTTPS base endpoint**
+4. Paste the corresponding **API key** and leave the field — the app validates it, then encrypts and saves it on success
 
 ### Getting API keys
 
@@ -153,7 +170,18 @@ All configuration is done inside the app — no config files or build secrets ne
 
 ### Custom Gemini model
 
-Select **Custom Model** in Settings and type any valid Gemini model identifier from your Google AI Studio project. The app validates the name against the Google API in real time and shows the model's display name on success.
+Select **Custom Model** in either the transcription or summarizer selector in Settings and enter a Gemini model identifier. When you leave the field, the app validates the name against the Google API, saves it on success, and shows the model's display name.
+
+### Summaries, speaker labels, and background sharing
+
+Choose the **Summarizer** model separately from the transcription provider. Enable
+**Automatic Summarization** to summarize completed transcripts. **Speaker Diarization**
+is available for Gemini transcription and labels speakers when they can be
+distinguished.
+
+Enable **Stay in current app when sharing** to queue audio without opening the main
+screen. Allow notifications to receive the transcript, or the summary when automatic
+summarization is enabled. These options are off by default.
 
 ### Custom Microsoft Speech endpoint
 
@@ -176,7 +204,7 @@ Microsoft MAI inputs must be strictly smaller than **250,000,000 bytes** and sho
 
 1. Audio is uploaded through the Gemini Files API and polled until it is active.
 2. The model returns a structured JSON response containing the detected language code and transcript text.
-3. Complete, valid results are saved to local history; uploaded files are deleted on completion or cancellation.
+3. Complete, valid results are saved to local history; the app attempts to delete uploaded files after success, failure, or cancellation.
 
 Measurable native and converted audio is limited to 9.5 hours. Blocked, truncated,
 or malformed responses preserve staged audio for retry. Transient failures allow
@@ -186,7 +214,7 @@ up to three automatic retries.
 
 When audio is shared into the app, it is first copied into no-backup app storage so queued jobs and retries do not depend on the original share URI staying alive. A share is limited to **10 files**, **250 MB per file**, **500 MB per batch**, and a maximum of **50 unfinished jobs**. Copies stop if less than **64 MiB** would remain free.
 
-If the selected provider does not natively support the file's MIME type, `HardwareAudioConverter` uses Android's `MediaExtractor` and `MediaCodec` to decode the audio and resample it to **16 kHz mono WAV** before sending. Startup maintenance preserves files referenced by active or retryable work and removes unreferenced staged files after 24 hours. Successful inputs are deleted as soon as their transcript is durable.
+If the selected provider does not natively support the file's MIME type, `HardwareAudioConverter` uses Android's `MediaExtractor` and `MediaCodec` to decode the audio and resample it to **16 kHz mono WAV** before sending. Microsoft WAV inputs are also re-encoded to this format. Startup maintenance preserves files referenced by active or retryable work and removes unreferenced staged files after 24 hours. Successful inputs are deleted as soon as their transcript is durable.
 
 ---
 
@@ -195,8 +223,13 @@ If the selected provider does not natively support the file's MIME type, `Hardwa
 | Provider           | Accepted MIME types                                                                               |
 |--------------------|---------------------------------------------------------------------------------------------------|
 | **Microsoft MAI**  | `audio/wav`, `audio/x-wav`, `audio/wave`, `audio/mp3`, `audio/mpeg`, `audio/flac`, `audio/x-flac` |
-| **Gemini**         | `audio/wav`, `audio/mp3`, `audio/aiff`, `audio/aac`, `audio/ogg`, `audio/flac`                    |
-| **Auto-converted** | Any format not in the list above is converted to 16 kHz mono WAV automatically                    |
+| **Gemini**         | `audio/wav`, `audio/x-wav`, `audio/wave`, `audio/mp3`, `audio/mpeg`, `audio/aiff`, `audio/x-aiff`, `audio/aac`, `audio/ogg`, `audio/vorbis`, `audio/flac`, `audio/x-flac` |
+| **Auto-converted** | Other accepted audio shares are converted to 16 kHz mono WAV when Android can decode them |
+
+Microsoft accepts the WAV MIME types above, but the app re-encodes them before
+upload. Share intake accepts supported audio extensions (`aac`, `aif`, `aiff`, `amr`,
+`flac`, `m4a`, `mp3`, `mp4`, `oga`, `ogg`, `opus`, `wav`, `wave`, `webm`); conversion
+still depends on the device's decoder support.
 
 ---
 
@@ -214,7 +247,7 @@ Text sharing uses inline text below 128 KiB UTF-8 and a temporary text file for 
 
 ### Settings
 
-Configure the transcription provider, manage API keys, enter a Microsoft Speech region or custom endpoint, and enter a custom Gemini model name. Keys can be forgotten (deleted from encrypted storage) at any time.
+Configure the transcription and summarizer models, manage API keys, enter a Microsoft Speech region or custom endpoint, and control automatic summarization, Gemini speaker labels, and background sharing. Keys can be forgotten (deleted from encrypted storage) at any time.
 
 ---
 
@@ -241,19 +274,21 @@ UI state is collected with `collectAsStateWithLifecycle()`. Persistence, network
 
 ## Tech Stack
 
+Versions below match the checked-in [version catalog](gradle/libs.versions.toml).
+
 | Library                    | Version    | Purpose                      |
 |----------------------------|------------|------------------------------|
-| Jetpack Compose BOM        | 2026.08.00 | Declarative UI               |
+| Jetpack Compose BOM        | 2026.09.00 | Declarative UI               |
 | Material3                  | (via BOM)  | Material Design 3 components |
-| Navigation Compose         | 2.10.0      | In-app navigation            |
+| Navigation Compose         | 2.10.2     | In-app navigation            |
 | Lifecycle / ViewModel      | 2.11.0     | MVVM lifecycle management    |
-| Room                       | 2.8.4      | Local SQLite database        |
+| Room                       | 2.8.5      | Local SQLite database        |
 | DataStore Preferences      | 1.2.1      | Persistent key-value storage |
 | OkHttp                     | 5.5.0      | Microsoft Speech HTTP client |
-| OkHttp Logging Interceptor | 5.5.0      | HTTP logging (bodies off)     |
-| Google Generative AI SDK   | 1.70.0     | Gemini API client            |
-| KSP                        | 2.3.11     | Room annotation processing   |
-| Kotlin                     | 2.4.10     | Language                     |
+| OkHttp Logging Interceptor | 5.5.0      | HTTP logging (disabled)      |
+| Google Gen AI SDK          | 1.75.0     | Gemini API client            |
+| KSP                        | 2.3.12     | Room and Hilt code generation |
+| Kotlin                     | 2.4.20     | Language / Compose plugin    |
 
 ---
 
@@ -282,7 +317,14 @@ gitleaks dir --config .gitleaks.toml --redact .
 grype sbom:app/build/reports/cyclonedx-release/bom.json --only-fixed --fail-on high
 ```
 
-The build intentionally remains on Gradle 9.7.1 and Detekt 1.23.8 until Detekt 2.0 is stable. The accepted tooling-only Gradle 10 deprecation is tracked in [issue #159](https://github.com/AndreaCovelli/whisperTranscriber/issues/159) for review by 2026-10-26.
+The checked-in wrapper uses Gradle 9.8.0 with Detekt 1.23.8. The tooling-only Gradle 10 deprecation follow-up is tracked in [issue #159](https://github.com/AndreaCovelli/whisperTranscriber/issues/159) for review by 2026-10-26.
+
+Dependency updates are configured through [Renovate](renovate.json), which extends
+the shared `AndreaCovelli/renovate-config` preset. CI runs quality checks, the debug
+build and unit tests, separate `debug` and `minifiedSmoke` device suites, and security
+scans. Path filters select applicable checks; manual CI runs execute all checks.
+`CI Gate` aggregates the results. See [the release guide](release-guide.txt) for
+signing setup and tag-triggered releases.
 
 ---
 

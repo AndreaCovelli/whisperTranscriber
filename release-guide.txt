@@ -1,8 +1,9 @@
  Step 1 — Create a release keystore
 
-  Run this in PowerShell (pick your own values for the -dname fields):
+  Set JAVA_HOME to a JDK 21 installation, then run this in PowerShell
+  (pick your own values for the -dname fields):
 
-   $keytool = "C:\Program Files\Android\Android Studio\jbr\bin\keytool.exe"
+   $keytool = Join-Path $env:JAVA_HOME "bin\keytool.exe"
 
    & $keytool -genkeypair `
      -keystore "$env:USERPROFILE\.android\whispertranscriber-release.jks" `
@@ -50,6 +51,10 @@
   ----------------------------------------------------------------------------------------------------------------------
 
   Step 4 — Tag and release
+
+   Use a tag beginning with v followed by a valid SemVer version, for example
+   v1.0.0 or v1.1.0-rc.1. The workflow derives versionName from the tag without v
+   and versionCode from the number of commits reachable from the tagged commit.
 
    The tag commit must already be contained in main. The release workflow reuses
    successful CI checks from a push to main for that exact commit. It waits up to

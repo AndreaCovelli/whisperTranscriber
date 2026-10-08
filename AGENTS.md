@@ -53,10 +53,13 @@ The app uses:
   - `ui/main/` and `ui/history/`: ViewModels, messages, reducers, and UI models.
   - `ui/screens/`: screen composition and navigation-level callbacks.
   - `ui/theme/`: Material 3 theme definitions.
-- `app/src/main/res/`: manifests, strings, themes, icons, and backup rules.
+- `app/src/main/AndroidManifest.xml`: components, share-intent filters, and permissions.
+- `app/src/main/res/`: strings, themes, icons, and backup rules.
 - `app/src/test/`: JVM unit tests for pure Kotlin behavior.
 - `app/src/androidTest/`: device tests for Room, Android storage, MediaCodec,
   Keystore, share intents, and Compose UI.
+  - `java/`: the debug instrumentation suite.
+  - `export/java/`: JSON export coverage for the `minifiedSmoke` build only.
 - `app/schemas/`: committed Room schema snapshots. These are required migration
   artifacts, not disposable generated output.
 - `config/detekt/detekt.yml`: Detekt rules.
@@ -96,6 +99,20 @@ Use `./gradlew` on macOS/Linux and `gradlew.bat` on Windows.
 ./gradlew pixel6Api34DebugAndroidTest
 ./gradlew connectedDebugAndroidTest
 ```
+
+The debug suite excludes notification permission recreation by default. Run it
+separately on a fresh install before the general suite, and run export coverage
+against the minified build:
+
+```bash
+./gradlew pixel6Api34DebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.andreacovelli.whispertranscriber.NotificationPermissionRecreationInstrumentedTest
+./gradlew pixel6Api34MinifiedSmokeAndroidTest -PinstrumentationBuildType=minifiedSmoke \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.andreacovelli.whispertranscriber.HistoryExportInstrumentedTest
+```
+
+`minifiedSmoke` uses release optimization with debug signing and includes only
+the export instrumentation sources. Run each invocation sequentially.
 
 Additional focused commands:
 
@@ -257,7 +274,11 @@ checks and report exactly what was not run and why.
   visible UI changes.
 - CI runs the quality gate (`spotlessCheck detekt lintDebug`) separately from the
   debug build and JVM tests (`assembleDebug testDebugUnitTest`), managed-device
-  instrumentation, and security scans. `CI Gate` is the required aggregate check.
+  instrumentation (`debug` and `minifiedSmoke` suites), and security scans.
+  Path filters select applicable checks; manual CI runs execute all checks.
+  `CI Gate` is the required aggregate check.
+- Dependency updates use `renovate.json`, which extends the shared
+  `AndreaCovelli/renovate-config` preset.
 - Use the checked-in `.gitleaks.toml` for Gitleaks filesystem scans so generated
   Gradle, build, and local-tool directories are skipped; keep Git-history scans
   enabled for committed content.
