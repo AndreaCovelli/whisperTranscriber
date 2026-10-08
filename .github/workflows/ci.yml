@@ -43,7 +43,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-          persist-credentials: false
+          # paths-filter may need to fetch the pre-push commit after a history rewrite.
+          persist-credentials: true
 
       - name: Test release CI selection
         run: python3 -B -m unittest discover --start-directory .github/scripts --pattern 'test_*.py' --verbose
