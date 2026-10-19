@@ -11,7 +11,9 @@
      -keyalg RSA -keysize 2048 -validity 10000 `
      -dname "CN=Your Name, O=Your Org, C=IT"
 
-  It will prompt for a store password and a key password — pick strong ones and save them in a password manager.
+  It will prompt for a store password — pick a strong one and save it in a password manager.
+  JDK 9+ keytool creates PKCS12 keystores, whatever the file extension, and PKCS12 uses the
+  store password for the key too, so the key password is the same value.
 
   ----------------------------------------------------------------------------------------------------------------------
 
@@ -26,7 +28,10 @@
    # The other three come from what you chose above:
    # KEYSTORE_PASSWORD  → the store password you entered
    # KEY_ALIAS          → whispertranscriber   (or whatever alias you used)
-   # KEY_PASSWORD       → the key password you entered
+   # KEY_PASSWORD       → the same store password (PKCS12)
+
+   # Before reusing an existing keystore, confirm it signed the published APKs.
+   # The SHA256 from keytool -list -v must match apksigner verify --print-certs on a release APK.
 
   ----------------------------------------------------------------------------------------------------------------------
 
@@ -52,7 +57,7 @@
   ├───────────────────────────┼──────────────────────────────────────────────────────────────┤
   │ KEY_ALIAS                 │ whispertranscriber                                           │
   ├───────────────────────────┼──────────────────────────────────────────────────────────────┤
-  │ KEY_PASSWORD              │ key password from Step 1                                     │
+  │ KEY_PASSWORD              │ store password from Step 1 (same value for PKCS12)           │
   └───────────────────────────┴──────────────────────────────────────────────────────────────┘
 
   ----------------------------------------------------------------------------------------------------------------------
