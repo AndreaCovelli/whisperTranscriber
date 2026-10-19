@@ -32,7 +32,7 @@ class GeminiUploadLifecycleTest {
             val results = transcriber(source, key, transport).transcribe().toList()
             val failure = results.filterIsInstance<TranscriptionResult.Error>().single()
             assertTrue(failure.exception.stackTraceToString(), failure.exception is ProviderResponseException)
-            assertEquals("Invalid provider response", failure.exception.message)
+            assertEquals(R.string.provider_response_invalid, (failure.exception as ProviderResponseException).messageId)
             assertTrue(transport.deleted.isCompleted)
             assertTrue(source.exists())
             assertTrue(key.all { it == '\u0000' })

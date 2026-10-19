@@ -1,6 +1,9 @@
 package com.andreacovelli.whispertranscriber.media
 
 import android.os.storage.StorageManager
+import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.UserFacingIOException
+import com.andreacovelli.whispertranscriber.UserMessage
 import java.io.File
 import java.io.FileDescriptor
 import java.io.IOException
@@ -35,7 +38,7 @@ internal object ConversionOutputStorage {
         if (storageUuid != null) {
             val allocatableBytes = storageManager.getAllocatableBytes(storageUuid)
             if (allocatableBytes < estimatedBytes) {
-                throw insufficientStorageException(estimatedBytes, allocatableBytes, "allocatable")
+                throw insufficientStorageException(estimatedBytes, allocatableBytes)
             }
             storageManager.allocateBytes(fileDescriptor, estimatedBytes)
             return
@@ -81,19 +84,17 @@ internal object ConversionOutputStorage {
     private fun ensureUsableSpace(parentDir: File?, estimatedBytes: Long) {
         val usableSpace = parentDir?.usableSpace ?: 0L
         if (usableSpace < estimatedBytes) {
-            throw insufficientStorageException(estimatedBytes, usableSpace, "available")
+            throw insufficientStorageException(estimatedBytes, usableSpace)
         }
     }
 
-    private fun insufficientStorageException(
-        estimatedBytes: Long,
-        availableBytes: Long,
-        availableDescription: String,
-    ): IOException = IOException(
-        "Insufficient disk space for conversion. Needed at least " +
-            "${estimatedBytes / BYTES_PER_MEBIBYTE} MiB, but only " +
-            "${availableBytes / BYTES_PER_MEBIBYTE} MiB is $availableDescription.",
-    )
+    private fun insufficientStorageException(estimatedBytes: Long, availableBytes: Long): IOException =
+        UserFacingIOException(
+            UserMessage(
+                R.string.conversion_insufficient_storage,
+                listOf(estimatedBytes / BYTES_PER_MEBIBYTE, availableBytes / BYTES_PER_MEBIBYTE),
+            ),
+        )
 
     private fun ceilDiv(dividend: Long, divisor: Long): Long =
         if (dividend == 0L) 0L else 1L + (dividend - 1L) / divisor

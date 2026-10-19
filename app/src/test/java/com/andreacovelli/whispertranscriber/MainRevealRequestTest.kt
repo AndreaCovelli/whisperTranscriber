@@ -1,8 +1,8 @@
 package com.andreacovelli.whispertranscriber
 
 import android.net.Uri
-import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_COMPLETED
-import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_QUEUED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_COMPLETED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.ui.main.JobRevealRequest
 import com.andreacovelli.whispertranscriber.ui.main.MainMsg
 import com.andreacovelli.whispertranscriber.ui.main.MainReducer
@@ -131,7 +131,7 @@ class MainRevealRequestTest {
             testJob(id = 2),
         )
         val jobsWithCompleted = listOf(
-            testJob(id = 9, status = DISPLAY_JOB_STATUS_COMPLETED),
+            testJob(id = 9, status = JOB_STATUS_COMPLETED),
             testJob(id = 1),
             testJob(id = 2),
         )
@@ -156,10 +156,9 @@ class MainRevealRequestTest {
         assertNull(resolveMainJobItemIndex(UiState(jobs = queuedJobs), jobId = 404))
     }
 
-    private fun testJob(id: Int, status: String = DISPLAY_JOB_STATUS_QUEUED): TranscriptionJobState =
-        TranscriptionJobState(
-            id = id,
-            displayName = "audio-$id.wav",
-            status = status,
-        )
+    private fun testJob(id: Int, status: String = JOB_STATUS_QUEUED): TranscriptionJobState = TranscriptionJobState(
+        id = id,
+        displayName = "audio-$id.wav",
+        status = status,
+    )
 }

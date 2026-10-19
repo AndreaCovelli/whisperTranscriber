@@ -5,11 +5,13 @@ import android.database.SQLException
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
+import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.UserFacingIOException
+import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
 import com.andreacovelli.whispertranscriber.ui.cleanupSharedTextFiles
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
-import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -48,7 +50,9 @@ class QueuedAudioStore @Inject constructor(
                 var batchBytes = 0L
                 uris.forEachIndexed { index, uri ->
                     currentCoroutineContext().ensureActive()
-                    val displayName = resolveDisplayName(uri).ifBlank { "Audio ${index + 1}" }
+                    val displayName = resolveDisplayName(uri).ifBlank {
+                        context.getString(R.string.shared_audio_fallback_name, index + 1)
+                    }
                     val staged = stageSharedAudio(uri, index, displayName, batchBytes, intake)
                     batchBytes += staged.bytesCopied
                     intake.preparedAudio += PreparedSharedAudio(uri, displayName, staged.file, staged.mimeType)
@@ -138,7 +142,7 @@ class QueuedAudioStore @Inject constructor(
                         checkCancellation = { copyContext.ensureActive() },
                     )
                 }
-            } ?: throw IOException("Failed to read shared audio. Share it again.")
+            } ?: throw UserFacingIOException(UserMessage(R.string.share_read_failed))
             succeeded = true
             StagedCopy(stagedFile, mimeType, bytesCopied)
         } finally {

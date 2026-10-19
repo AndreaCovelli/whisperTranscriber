@@ -1,6 +1,10 @@
 package com.andreacovelli.whispertranscriber.transcription
 
 import androidx.room.withTransaction
+import com.andreacovelli.whispertranscriber.QuantityText
+import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.UserFacingIllegalStateException
+import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.data.AppDatabase
 import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.data.HistoryRepository
@@ -20,6 +24,17 @@ data class CompletedJobCleanup(val jobId: Int, val stagedFilePath: String?)
 
 private const val TERMINAL_CARD_RETENTION_DAYS = 30L
 
+private fun checkQueueCapacity(requestedNonterminalJobs: Int, maximumNonterminalJobs: Int) {
+    if (requestedNonterminalJobs > maximumNonterminalJobs) {
+        throw UserFacingIllegalStateException(
+            UserMessage(
+                R.string.queue_capacity_exceeded,
+                listOf(QuantityText(R.plurals.unfinished_job_count, maximumNonterminalJobs)),
+            ),
+        )
+    }
+}
+
 @Singleton
 // This transactional facade intentionally centralizes queue, ownership, and linked-history invariants.
 @Suppress("TooManyFunctions")
@@ -35,9 +50,7 @@ class TranscriptionRepository @Inject constructor(
 
     suspend fun requireQueueCapacity(additionalJobs: Int, maximumNonterminalJobs: Int = MAX_NONTERMINAL_JOBS) {
         require(additionalJobs >= 0)
-        check(jobDao.countNonterminalJobs() + additionalJobs <= maximumNonterminalJobs) {
-            "The transcription queue can contain at most $maximumNonterminalJobs unfinished jobs."
-        }
+        checkQueueCapacity(jobDao.countNonterminalJobs() + additionalJobs, maximumNonterminalJobs)
     }
 
     suspend fun addJobsWithinCapacity(
@@ -45,10 +58,12 @@ class TranscriptionRepository @Inject constructor(
         maximumNonterminalJobs: Int = MAX_NONTERMINAL_JOBS,
     ): List<Long> = db.withTransaction {
         val currentCount = jobDao.countNonterminalJobs()
-        check(currentCount + jobs.size <= maximumNonterminalJobs) {
-            "The transcription queue can contain at most $maximumNonterminalJobs unfinished jobs."
-        }
+        checkQueueCapacity(currentCount + jobs.size, maximumNonterminalJobs)
         jobDao.insertAll(jobs)
+    }
+
+    suspend fun markFinishedJobsAutoSummaryAttempted() {
+        jobDao.markFinishedJobsAutoSummaryAttempted()
     }
 
     suspend fun updateStatusAndProgress(id: Int, ownerId: String, status: String, progress: Float): Boolean =
@@ -182,7 +197,8 @@ class TranscriptionRepository @Inject constructor(
         RetryResult.ACCEPTED
     }
 
-    suspend fun cancelJob(jobId: Int): Boolean = jobDao.cancelJob(jobId, "Cancelled", System.currentTimeMillis()) > 0
+    suspend fun cancelJob(jobId: Int, message: String): Boolean =
+        jobDao.cancelJob(jobId, message, System.currentTimeMillis()) > 0
 
     suspend fun invalidateOwners(jobId: Int): Boolean = jobDao.invalidateOwners(jobId) > 0
 

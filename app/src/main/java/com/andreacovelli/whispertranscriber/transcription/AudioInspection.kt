@@ -3,6 +3,8 @@ package com.andreacovelli.whispertranscriber.transcription
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.UserMessage
+import com.andreacovelli.whispertranscriber.requireUserFacing
 import java.io.File
 
 data class AudioInspection(val sizeBytes: Long, val durationUs: Long)
@@ -13,11 +15,11 @@ internal const val GEMINI_MAX_AUDIO_DURATION_US = (9L * 60L + 30L) * 60L * 1_000
 internal const val GEMINI_CONVERSION_DURATION_LIMIT_US_EXCLUSIVE = GEMINI_MAX_AUDIO_DURATION_US + 1L
 
 internal fun validateMicrosoftSpeechAudio(inspection: AudioInspection) {
-    require(inspection.sizeBytes in 1 until MICROSOFT_SPEECH_MAX_UPLOAD_BYTES) {
-        "Microsoft MAI Transcribe audio must be smaller than 250 MB."
+    requireUserFacing(inspection.sizeBytes in 1 until MICROSOFT_SPEECH_MAX_UPLOAD_BYTES) {
+        UserMessage(R.string.microsoft_speech_audio_too_large)
     }
-    require(inspection.durationUs in 1 until MICROSOFT_SPEECH_MAX_DURATION_US) {
-        "Microsoft MAI Transcribe audio must be shorter than two hours."
+    requireUserFacing(inspection.durationUs in 1 until MICROSOFT_SPEECH_MAX_DURATION_US) {
+        UserMessage(R.string.microsoft_speech_audio_too_long)
     }
 }
 

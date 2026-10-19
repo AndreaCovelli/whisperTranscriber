@@ -1,11 +1,14 @@
 package com.andreacovelli.whispertranscriber.transcription
 
-import androidx.annotation.StringRes
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.UserFacingException
+import com.andreacovelli.whispertranscriber.UserFacingIllegalStateException
+import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.security.GeminiApiFailure
 import com.andreacovelli.whispertranscriber.security.GenAiClientFactory
 import com.andreacovelli.whispertranscriber.security.useAsString
 import com.andreacovelli.whispertranscriber.security.useGenAiClient
+import com.andreacovelli.whispertranscriber.userMessageOr
 import com.google.genai.errors.ApiException
 import com.google.genai.errors.GenAiIOException
 import com.google.genai.types.Content
@@ -35,13 +38,14 @@ import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 
-internal class TransientWorkException(message: String, cause: Throwable? = null) : IOException(message, cause)
+internal class TransientWorkException(override val userMessage: UserMessage, cause: Throwable? = null) :
+    IOException("Transient provider failure", cause),
+    UserFacingException
 
 data class TranscriptionData(val text: String, val language: String, val model: String)
 
 sealed interface TranscriptionResult {
-    data class Loading(val message: String) : TranscriptionResult
-    data class LocalizedLoading(@param:StringRes val messageId: Int) : TranscriptionResult
+    data class Loading(val message: UserMessage) : TranscriptionResult
     data class Success(val data: TranscriptionData) : TranscriptionResult
     data class Error(val exception: Exception) : TranscriptionResult
 }
@@ -49,8 +53,6 @@ sealed interface TranscriptionResult {
 internal interface ProviderTranscriber {
     fun transcribe(): Flow<TranscriptionResult>
 }
-
-private const val NO_TEXT_FOUND = "No text found."
 
 // Microsoft documents this as the latest generally available Speech-to-Text REST API version.
 internal const val MICROSOFT_SPEECH_API_VERSION = "2025-10-15"
@@ -76,7 +78,11 @@ internal class MicrosoftSpeechTranscriber(
         try {
             validateMicrosoftSpeechAudio(audioInspection)
 
-            emit(TranscriptionResult.Loading("Uploading audio ($mimeType) to Microsoft Speech..."))
+            emit(
+                TranscriptionResult.Loading(
+                    UserMessage(R.string.transcription_status_uploading_microsoft, listOf(mimeType)),
+                ),
+            )
             var diarized = speakerDiarizationEnabled
             val responseBody = try {
                 requestTranscription(diarized)
@@ -85,7 +91,7 @@ internal class MicrosoftSpeechTranscriber(
                     throw e
                 }
                 diarized = false
-                emit(TranscriptionResult.LocalizedLoading(R.string.transcription_status_diarization_fallback))
+                emit(TranscriptionResult.Loading(UserMessage(R.string.transcription_status_diarization_fallback)))
                 requestTranscription(diarized)
             }
 
@@ -113,15 +119,19 @@ internal class MicrosoftSpeechTranscriber(
             emit(TranscriptionResult.Error(e))
         } catch (e: MicrosoftSpeechHttpException) {
             val error = if (shouldRetryHttp(e.code)) {
-                TransientWorkException(e.message, e)
+                TransientWorkException(e.userMessage, e)
             } else {
-                IllegalStateException(e.message, e)
+                UserFacingIllegalStateException(e.userMessage, e)
             }
             emit(TranscriptionResult.Error(error))
         } catch (e: IOException) {
-            emit(TranscriptionResult.Error(TransientWorkException("Microsoft Speech request failed.", e)))
+            emit(TranscriptionResult.Error(TransientWorkException(UserMessage(R.string.provider_request_failed), e)))
         } catch (e: IllegalArgumentException) {
-            emit(TranscriptionResult.Error(IllegalStateException(e.message ?: "Microsoft Speech request failed.", e)))
+            emit(
+                TranscriptionResult.Error(
+                    UserFacingIllegalStateException(e.userMessageOr(R.string.provider_request_failed), e),
+                ),
+            )
         } finally {
             apiKey.fill('\u0000')
         }
@@ -155,7 +165,7 @@ internal class MicrosoftSpeechTranscriber(
                     if (!response.isSuccessful) {
                         throw MicrosoftSpeechHttpException(
                             code = response.code,
-                            message = resolveMicrosoftSpeechErrorMessage(response.code, bodyText),
+                            userMessage = resolveMicrosoftSpeechErrorMessage(response.code, bodyText),
                         )
                     }
                     bodyText
@@ -165,7 +175,7 @@ internal class MicrosoftSpeechTranscriber(
     }
 }
 
-private class MicrosoftSpeechHttpException(val code: Int, override val message: String) : IOException(message)
+private class MicrosoftSpeechHttpException(val code: Int, val userMessage: UserMessage) : IOException("HTTP $code")
 
 internal class GeminiTranscriber(
     private val audioFile: File,
@@ -187,7 +197,11 @@ internal class GeminiTranscriber(
         var uploadedFile: GenAiFile? = null
 
         try {
-            emit(TranscriptionResult.Loading("Uploading audio ($mimeType) via File API..."))
+            emit(
+                TranscriptionResult.Loading(
+                    UserMessage(R.string.transcription_status_uploading_gemini, listOf(mimeType)),
+                ),
+            )
             withTimeout(GEMINI_TRANSCRIPTION_TIMEOUT_MILLIS.toLong()) {
                 apiKey.useGenAiClient(clientFactory, ioDispatcher, GEMINI_TRANSCRIPTION_TIMEOUT_MILLIS) { operation ->
                     val initial = operation.call { client ->
@@ -213,7 +227,7 @@ internal class GeminiTranscriber(
             }.let { emit(TranscriptionResult.Success(it)) }
         } catch (_: TimeoutCancellationException) {
             currentCoroutineContext().ensureActive()
-            emit(TranscriptionResult.Error(TransientWorkException("Gemini request timed out.")))
+            emit(TranscriptionResult.Error(TransientWorkException(UserMessage(R.string.gemini_request_timed_out))))
         } catch (e: ProviderResponseException) {
             emit(TranscriptionResult.Error(e))
         } catch (e: CancellationException) {
@@ -227,13 +241,13 @@ internal class GeminiTranscriber(
             val error = if (shouldRetryGeminiApiError(e)) {
                 TransientWorkException(message, e)
             } else {
-                IllegalStateException(message, e)
+                UserFacingIllegalStateException(message, e)
             }
             emit(TranscriptionResult.Error(error))
         } catch (e: IllegalStateException) {
-            emit(TranscriptionResult.Error(IllegalStateException(resolveGeminiErrorMessage(e), e)))
+            emit(TranscriptionResult.Error(UserFacingIllegalStateException(resolveGeminiErrorMessage(e), e)))
         } catch (e: IllegalArgumentException) {
-            emit(TranscriptionResult.Error(IllegalStateException(resolveGeminiErrorMessage(e), e)))
+            emit(TranscriptionResult.Error(UserFacingIllegalStateException(resolveGeminiErrorMessage(e), e)))
         } finally {
             uploadedFile?.let { remoteFile -> deleteUploadedFileBestEffort(remoteFile) }
             apiKey.fill('\u0000')
@@ -280,29 +294,29 @@ internal class GeminiTranscriber(
     private fun resolveGeminiErrorMessage(
         error: Throwable,
         httpCode: Int? = extractHttpStatusFromMessage(error),
-    ): String = httpCode?.let { code ->
+    ): UserMessage = httpCode?.let { code ->
         if (code == 429 && isQuotaExhaustedMessage(error.message)) {
-            "Quota exhausted for Gemini. Check your billing or wait for quota reset."
+            UserMessage(R.string.gemini_quota_exhausted)
         } else {
-            friendlyHttpError(code, "Gemini")
+            friendlyHttpError(code, UserMessage(R.string.transcription_provider_gemini))
         }
     }
-        ?: "Gemini request failed."
+        ?: UserMessage(R.string.provider_request_failed)
 }
 
-internal fun friendlyHttpError(code: Int, provider: String): String = when (code) {
-    401 -> "Unauthorized. Check your $provider API key."
-    429 -> "Rate limit exceeded. Please wait a moment and try again."
-    in 500..599 -> "Server error (HTTP $code). $provider's servers are experiencing issues."
-    else -> "HTTP $code: unexpected error from $provider."
+internal fun friendlyHttpError(code: Int, provider: UserMessage): UserMessage = when (code) {
+    401 -> UserMessage(R.string.http_error_unauthorized, listOf(provider))
+    429 -> UserMessage(R.string.http_error_rate_limited)
+    in 500..599 -> UserMessage(R.string.http_error_server, listOf(code, provider))
+    else -> UserMessage(R.string.http_error_unexpected, listOf(code, provider))
 }
 
-internal fun resolveMicrosoftSpeechErrorMessage(code: Int, bodyText: String): String = when {
-    code == 401 -> "Unauthorized. Check your Azure Speech key for Microsoft MAI Transcribe."
-    code == 404 -> "Microsoft MAI Transcribe endpoint not found. Check the configured Speech region or custom endpoint."
+internal fun resolveMicrosoftSpeechErrorMessage(code: Int, bodyText: String): UserMessage = when {
+    code == 401 -> UserMessage(R.string.microsoft_speech_unauthorized)
+    code == 404 -> UserMessage(R.string.microsoft_speech_endpoint_not_found)
     code == 429 && isMicrosoftSpeechResourceExhaustedMessage(extractMicrosoftSpeechServiceMessage(bodyText)) ->
-        "Microsoft Speech resource exhausted. The app will retry automatically."
-    else -> friendlyHttpError(code, "Microsoft Speech")
+        UserMessage(R.string.microsoft_speech_resource_exhausted)
+    else -> friendlyHttpError(code, UserMessage(R.string.provider_name_microsoft_speech))
 }
 
 internal fun parseMicrosoftSpeechTranscriptText(response: JSONObject): String {
@@ -328,7 +342,6 @@ internal fun parseMicrosoftSpeechTranscriptText(response: JSONObject): String {
         ?.joinTexts()
         .orEmpty()
         .trim()
-        .ifBlank { NO_TEXT_FOUND }
 }
 
 // MAI-Transcribe-2 diarization supports shorter recordings than plain transcription. Microsoft
@@ -488,14 +501,13 @@ private fun selectDominantMicrosoftSpeechLocale(phrases: JSONArray): String? {
 
 internal fun parseTranscriptTextValue(transcriptText: String, speakerDiarizationEnabled: Boolean): String {
     if (!speakerDiarizationEnabled) {
-        return transcriptText.trim().ifBlank { NO_TEXT_FOUND }
+        return transcriptText.trim()
     }
 
     return transcriptText.lineSequence()
         .map(String::trim)
         .filter(String::isNotEmpty)
         .joinToString(separator = "\n")
-        .ifBlank { NO_TEXT_FOUND }
 }
 
 internal fun buildGeminiSpeakerDiarizationPrompt(speakerLabelPrefix: String): String {

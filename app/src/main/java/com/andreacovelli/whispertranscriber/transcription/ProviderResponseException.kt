@@ -2,6 +2,8 @@ package com.andreacovelli.whispertranscriber.transcription
 
 import androidx.annotation.StringRes
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.UserFacingIllegalStateException
+import com.andreacovelli.whispertranscriber.UserMessage
 import com.google.genai.types.File as GenAiFile
 import com.google.genai.types.GenerateContentResponse
 import kotlinx.coroutines.delay
@@ -9,7 +11,7 @@ import org.json.JSONException
 import org.json.JSONObject
 
 internal class ProviderResponseException(@param:StringRes val messageId: Int) :
-    IllegalStateException("Invalid provider response")
+    UserFacingIllegalStateException(UserMessage(messageId))
 
 internal fun validatedGeminiText(response: GenerateContentResponse): String {
     val blocked = response.promptFeedback().orElse(null)?.blockReason()?.orElse(null)?.toString()

@@ -1,6 +1,7 @@
 package com.andreacovelli.whispertranscriber.ui.main
 
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.security.CredentialOperations
 import com.andreacovelli.whispertranscriber.services.ValidationService
 import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
@@ -13,6 +14,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+private fun validationError(message: UserMessage?): UserMessage = message ?: UserMessage(R.string.validation_failed)
+
 internal class MainSettingsDelegate(
     private val getState: () -> UiState,
     private val dispatch: (MainMsg) -> Unit,
@@ -20,6 +23,8 @@ internal class MainSettingsDelegate(
     private val validationService: ValidationService,
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher,
+    private val markFinishedJobsAutoSummaryAttempted: suspend () -> Unit,
+    private val resolveMessage: (UserMessage) -> String,
     private val notify: (Int) -> Unit,
 ) {
     private val credentials = CredentialOperations()
@@ -67,6 +72,8 @@ internal class MainSettingsDelegate(
                 }
                 if (!credentials.isCurrent(token)) return@run
                 if (result.isValid) {
+                    // A newly usable summarizer must not summarize the existing backlog all at once.
+                    if (isGemini && getState().automaticSummarizationEnabled) markFinishedJobsAutoSummaryAttempted()
                     val persisted = credentials.persist(token) {
                         if (isGemini) {
                             settings.saveGeminiApiKey(
@@ -78,7 +85,10 @@ internal class MainSettingsDelegate(
                     }
                     if (persisted) updateApiKeyValidationState(isGemini, KeyValidationState.Idle)
                 } else {
-                    updateApiKeyValidationState(isGemini, KeyValidationState.Error(result.errorMessage.orEmpty()))
+                    updateApiKeyValidationState(
+                        isGemini,
+                        KeyValidationState.Error(resolveMessage(validationError(result.errorMessage))),
+                    )
                 }
             }
         }
@@ -99,6 +109,8 @@ internal class MainSettingsDelegate(
 
     private fun updateAutomaticSummarization(enabled: Boolean) {
         launchSafely {
+            // Only jobs finishing after this point are summarized automatically, never the existing backlog.
+            if (enabled) markFinishedJobsAutoSummaryAttempted()
             settings.saveAutomaticSummarization(enabled)
         }
     }
@@ -137,7 +149,7 @@ internal class MainSettingsDelegate(
                 dispatch(MainMsg.PersistedMicrosoftSpeechRegion(normalizedRegion))
             } else {
                 updateRegionValidationState(
-                    RegionValidationState.Error(result.errorMessage ?: "Validation failed"),
+                    RegionValidationState.Error(resolveMessage(validationError(result.errorMessage))),
                 )
             }
         }
@@ -199,7 +211,9 @@ internal class MainSettingsDelegate(
             modelValidationJob(isSummarizer)?.cancel()
             updateModelValidationState(
                 isSummarizer = isSummarizer,
-                validation = CustomModelValidation.Error("Enter a model name"),
+                validation = CustomModelValidation.Error(
+                    resolveMessage(UserMessage(R.string.custom_model_name_required)),
+                ),
             )
             return
         }
@@ -212,11 +226,11 @@ internal class MainSettingsDelegate(
         val job = launchSafely {
             val result = validationService.validateCustomModel(trimmed)
             if (result.isValid) {
-                persistValidatedModel(trimmed, isSummarizer, result.displayName.orEmpty())
+                persistValidatedModel(result.normalizedModelName ?: trimmed, isSummarizer, result.displayName.orEmpty())
             } else {
                 updateModelValidationState(
                     isSummarizer = isSummarizer,
-                    validation = CustomModelValidation.Error(result.errorMessage ?: "Validation failed"),
+                    validation = CustomModelValidation.Error(resolveMessage(validationError(result.errorMessage))),
                 )
             }
         }

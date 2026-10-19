@@ -85,17 +85,25 @@ class RoomHistoryRepository @Inject constructor(
         val temporaryFile = File.createTempFile("history-export-", ".tmp", temporaryDirectory)
         try {
             temporaryFile.bufferedWriter(Charsets.UTF_8).use { writer ->
-                db.withTransaction {
+                // A deferred read-only transaction reads one consistent WAL snapshot without taking the
+                // write lock, so queue and history writes are not blocked for the whole export. It is
+                // bound to this thread, so nothing in this block may suspend.
+                val database = db.openHelper.writableDatabase
+                database.beginTransactionReadOnly()
+                try {
                     val export = HistoryExportWriter(writer, format)
                     var previous: TranscriptionHistory? = null
                     while (true) {
-                        currentCoroutineContext().ensureActive()
+                        ensureActive()
                         val page = historyDao.getHistoryExportPage(100, previous?.timestamp, previous?.id)
                         if (page.isEmpty()) break
                         page.forEach(export::append)
                         previous = page.last()
                     }
                     export.finish()
+                    database.setTransactionSuccessful()
+                } finally {
+                    database.endTransaction()
                 }
             }
             currentCoroutineContext().ensureActive()

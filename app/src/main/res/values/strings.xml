@@ -167,4 +167,120 @@
     <string name="history_load_failed">History could not be loaded.</string>
     <string name="clipboard_copy_failed">This text could not be copied. Use Share to send it as a file.</string>
     <string name="text_share_failed">The text could not be shared. Please try again.</string>
+
+    <!-- Job and summary status labels; the stored status codes are database data. -->
+    <string name="job_status_queued">Queued</string>
+    <string name="job_status_retry_scheduled">Retry scheduled</string>
+    <string name="job_status_completed">Completed</string>
+    <string name="job_status_cleared">Cleared</string>
+    <string name="job_status_error">Error</string>
+    <string name="job_status_cancelled">Cancelled</string>
+    <string name="job_cancelled_error">Cancelled</string>
+    <string name="summary_status_summarizing">Summarizing…</string>
+    <string name="summary_status_generated">Summary generated</string>
+    <string name="summary_status_error">Error</string>
+    <string name="summary_status_cancelled">Cancelled</string>
+
+    <!-- Provider labels -->
+    <string name="provider_name_microsoft_speech">Microsoft Speech</string>
+    <string name="provider_label_microsoft">Microsoft MAI Transcribe 2</string>
+    <string name="provider_label_gemini_custom">Gemini Custom</string>
+    <string name="provider_custom_model_not_set">Custom Gemini model (not set)</string>
+
+    <!-- Transcription progress and errors -->
+    <string name="transcription_status_uploading_microsoft">Uploading audio (%1$s) to Microsoft Speech…</string>
+    <string name="transcription_status_uploading_gemini">Uploading audio (%1$s) via File API…</string>
+    <string name="transcription_status_unknown_format_suffix">(Unknown format)</string>
+    <string name="transcription_no_text_found">No text found.</string>
+    <string name="transcription_retries_exhausted">Automatic retries exhausted after %1$s. %2$s</string>
+    <plurals name="transcription_attempt_count">
+        <item quantity="one">%d attempt</item>
+        <item quantity="other">%d attempts</item>
+    </plurals>
+    <string name="transcription_audio_processing_failed">The audio could not be processed. Please share it again.</string>
+    <string name="transcription_audio_access_denied">The audio could no longer be read. Please share it again.</string>
+    <string name="transcription_storage_failed">The transcription could not be saved. Please try again.</string>
+    <string name="transcription_failed_unexpected">Transcription failed unexpectedly. Please try again.</string>
+    <string name="queue_capacity_exceeded">The transcription queue can contain at most %1$s.</string>
+    <plurals name="unfinished_job_count">
+        <item quantity="one">%d unfinished job</item>
+        <item quantity="other">%d unfinished jobs</item>
+    </plurals>
+    <string name="gemini_request_timed_out">Gemini request timed out.</string>
+    <string name="gemini_quota_exhausted">Quota exhausted for Gemini. Check your billing or wait for quota reset.</string>
+    <string name="gemini_api_key_missing">Gemini API key missing or corrupted. Re-enter it in Settings.</string>
+    <string name="gemini_model_not_specified">Gemini model not specified.</string>
+    <string name="summarizer_model_not_specified">No custom Gemini model set for summarization.</string>
+    <string name="summarization_status_error">Summarization error: %1$s</string>
+    <string name="http_error_unauthorized">Unauthorized. Check your %1$s API key.</string>
+    <string name="http_error_rate_limited">Rate limit exceeded. Please wait a moment and try again.</string>
+    <string name="http_error_server">Server error (HTTP %1$d). %2$s\'s servers are experiencing issues.</string>
+    <string name="http_error_unexpected">HTTP %1$d: unexpected error from %2$s.</string>
+
+    <!-- Microsoft Speech configuration -->
+    <string name="microsoft_speech_unauthorized">Unauthorized. Check your Azure Speech key for Microsoft MAI Transcribe.</string>
+    <string name="microsoft_speech_endpoint_not_found">Microsoft MAI Transcribe endpoint not found. Check the configured Speech region or custom endpoint.</string>
+    <string name="microsoft_speech_resource_exhausted">Microsoft Speech resource exhausted. The app will retry automatically.</string>
+    <string name="microsoft_speech_key_missing">Azure Speech key for Microsoft MAI Transcribe missing or corrupted.</string>
+    <string name="microsoft_speech_key_invalid">Invalid key for Microsoft MAI Transcribe. Use the Speech resource key from your Foundry resource, not a project API key.</string>
+    <string name="microsoft_speech_configuration_cleared">The saved Azure Speech region or endpoint was invalid. Reconfigure Microsoft Speech and rotate its API key.</string>
+    <string name="microsoft_speech_endpoint_required">Enter an Azure Speech region or HTTPS endpoint.</string>
+    <string name="microsoft_speech_endpoint_required_first">Enter a valid Azure Speech region or HTTPS endpoint first</string>
+    <string name="microsoft_speech_endpoint_invalid">Enter a valid Azure Speech HTTPS endpoint.</string>
+    <string name="microsoft_speech_endpoint_https">The Azure Speech endpoint must use HTTPS.</string>
+    <string name="microsoft_speech_endpoint_credentials">The Azure Speech endpoint must not include credentials.</string>
+    <string name="microsoft_speech_endpoint_not_azure">Enter an Azure Speech resource endpoint.</string>
+    <string name="microsoft_speech_endpoint_base_only">Enter only the Azure Speech base endpoint, without a path, query, or fragment.</string>
+    <string name="microsoft_speech_region_invalid">Enter a lowercase Azure Speech region such as eastus or westus.</string>
+    <string name="microsoft_speech_region_validation_failed_http">Could not validate Azure Speech region or endpoint: HTTP %1$d</string>
+    <string name="microsoft_speech_endpoint_unreachable">Could not reach Azure Speech endpoint \"%1$s\". Check the endpoint URL.</string>
+    <string name="microsoft_speech_region_unreachable">Could not reach Azure Speech for region \"%1$s\". Check that the region name is correct, for example eastus or westus.</string>
+    <string name="microsoft_speech_audio_too_large">Microsoft MAI Transcribe audio must be smaller than 250 MB.</string>
+    <string name="microsoft_speech_audio_too_long">Microsoft MAI Transcribe audio must be shorter than two hours.</string>
+
+    <!-- Credential and model validation -->
+    <string name="validation_failed">Validation failed</string>
+    <string name="validation_failed_http">Validation failed: HTTP %1$d</string>
+    <string name="validation_network_failed">Validation failed. Check your connection and try again.</string>
+    <string name="gemini_key_invalid">Invalid API key</string>
+    <string name="gemini_key_required">Enter your Gemini API key first</string>
+    <string name="custom_model_name_required">Enter a model name</string>
+    <string name="gemini_model_name_invalid">\"%1$s\" is not a valid Gemini model ID.</string>
+    <string name="gemini_model_not_found">Model \"%1$s\" not found</string>
+    <string name="gemini_model_validation_failed_http">HTTP %1$d: could not verify model</string>
+
+    <!-- Shared audio intake -->
+    <string name="shared_audio_fallback_name">Audio %1$d</string>
+    <string name="share_unsupported_audio">\"%1$s\" is not a supported audio share.</string>
+    <string name="share_too_many_files">Share at most %1$s at a time.</string>
+    <plurals name="share_audio_file_count">
+        <item quantity="one">%d audio file</item>
+        <item quantity="other">%d audio files</item>
+    </plurals>
+    <string name="share_file_too_large">Each shared audio file must be 250 MB or smaller.</string>
+    <string name="share_batch_too_large">A shared audio batch must be 500 MB or smaller.</string>
+    <string name="share_insufficient_storage">Not enough storage. Keep at least 64 MiB free after queuing audio.</string>
+    <string name="share_file_empty">The shared audio file is empty.</string>
+    <string name="share_read_failed">Failed to read shared audio. Share it again.</string>
+    <string name="background_share_interrupted_body">Sharing was interrupted before the audio was saved. Share it again.</string>
+
+    <!-- Audio conversion -->
+    <string name="conversion_no_decoder">No decoder supports the selected audio format.</string>
+    <string name="conversion_no_audio_track">No audio track found.</string>
+    <string name="conversion_audio_too_long">Audio must be shorter than %1$s.</string>
+    <plurals name="duration_seconds">
+        <item quantity="one">%d second</item>
+        <item quantity="other">%d seconds</item>
+    </plurals>
+    <string name="conversion_no_samples">Decoded audio did not contain any PCM samples.</string>
+    <string name="conversion_output_too_large">Converted WAV exceeds its duration or classic RIFF size limit.</string>
+    <string name="conversion_insufficient_storage">Insufficient disk space for conversion. Needed at least %1$d MiB, but only %2$d MiB is available.</string>
+
+    <!-- Notifications -->
+    <string name="notification_channel_results">Shared audio results</string>
+    <string name="notification_channel_transcription">Transcription Service</string>
+    <string name="notification_public_transcription_ready">Transcription ready</string>
+    <string name="notification_public_summary_ready">Summary ready</string>
+    <string name="notification_public_failed">Transcription needs attention</string>
+    <string name="notification_public_processing">Transcribing audio</string>
 </resources>

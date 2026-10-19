@@ -60,7 +60,7 @@ class ProviderResponsesTest {
     fun gemini_acceptsCompleteTextAndExplicitNoSpeech() {
         assertEquals("summary", validatedGeminiText(GenerateContentResponse.fromJson(candidate("STOP", "summary"))))
         val noSpeech = parseGeminiTranscription("""{"text":"","language_code":"und"}""", false, "model")
-        assertEquals("No text found.", noSpeech.text)
+        assertEquals("", noSpeech.text)
         assertEquals("und", noSpeech.language)
     }
 
@@ -77,12 +77,13 @@ class ProviderResponsesTest {
                     assertThrows(ProviderResponseException::class.java) {
                         parseGeminiTranscription(json, false, "model")
                     }
-                assertEquals("Invalid provider response", error.message)
+                assertEquals(R.string.provider_response_invalid, error.messageId)
+                assertFalse(error.message.orEmpty().contains("private transcript"))
             }
         listOf("{}", """{"combinedPhrases":false}""", """{"phrases":[{"text":5}]}""").forEach { json ->
             assertThrows(ProviderResponseException::class.java) { parseMicrosoftSpeechTranscriptText(JSONObject(json)) }
         }
-        assertEquals("No text found.", parseMicrosoftSpeechTranscriptText(JSONObject("""{"phrases":[]}""")))
+        assertEquals("", parseMicrosoftSpeechTranscriptText(JSONObject("""{"phrases":[]}""")))
     }
 
     @Test

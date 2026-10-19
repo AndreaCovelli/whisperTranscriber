@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.job.JobParameters
 import android.app.job.JobService
 import android.os.Build
+import android.util.Log
 import com.andreacovelli.whispertranscriber.background.BackgroundShareNotifier
 import com.andreacovelli.whispertranscriber.background.BackgroundShareRunCoordinator
 import com.andreacovelli.whispertranscriber.queue.backgroundShareSchedulerJobId
@@ -13,6 +14,8 @@ import com.andreacovelli.whispertranscriber.transcription.TranscriptionExecution
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -34,7 +37,12 @@ class BackgroundShareJobService : JobService() {
     @Inject
     lateinit var backgroundShareNotifier: BackgroundShareNotifier
 
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // Uncaught failures must not crash the process, which would also kill unrelated queued work.
+    private val serviceScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, error ->
+            Log.w(TAG, "Background share job failed with ${error::class.java.name}")
+        },
+    )
     private val runCoordinator = BackgroundShareRunCoordinator()
     private val runningJobs = ConcurrentHashMap<Int, Job>()
     private val runningParams = ConcurrentHashMap<Int, JobParameters>()
@@ -77,6 +85,8 @@ class BackgroundShareJobService : JobService() {
         }
 
         val executionOwnerId = runCoordinator.nextExecutionOwnerId(params.jobId)
+
+        @Suppress("TooGenericExceptionCaught") // Any escaped failure must still finish the JobScheduler job.
         val runningJob = serviceScope.launch(start = CoroutineStart.LAZY) {
             try {
                 runCoordinator.runSerialized {
@@ -103,6 +113,16 @@ class BackgroundShareJobService : JobService() {
                             jobFinished(params, false)
                         }
                     }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // The runner releases its own claim; this only keeps the queue and JobScheduler moving.
+                Log.w(TAG, "Background transcription failed with ${e::class.java.name}")
+                try {
+                    queueService.onExecutionFinished(jobId)
+                } finally {
+                    jobFinished(params, false)
                 }
             } finally {
                 runningJobs.remove(jobId, coroutineContext.job)
@@ -144,4 +164,8 @@ class BackgroundShareJobService : JobService() {
     }
 
     private fun notificationId(jobId: Int): Int = backgroundShareSchedulerJobId(jobId)
+
+    private companion object {
+        const val TAG = "BackgroundShareJobService"
+    }
 }

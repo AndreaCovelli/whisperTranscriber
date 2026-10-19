@@ -113,9 +113,7 @@ class ShareIntentAndQueuedAudioInstrumentedTest {
         )
 
         assertEquals(
-            QueuedAudioInputResolution.MissingStagedFile(
-                "Queued audio is no longer available. Please share it again.",
-            ),
+            QueuedAudioInputResolution.MissingStagedFile,
             resolution,
         )
     }
@@ -156,9 +154,7 @@ class ShareIntentAndQueuedAudioInstrumentedTest {
         )
 
         assertEquals(
-            QueuedAudioInputResolution.MissingStagedFile(
-                "Queued audio is no longer available. Please share it again.",
-            ),
+            QueuedAudioInputResolution.MissingStagedFile,
             resolution,
         )
     }

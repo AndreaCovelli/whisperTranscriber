@@ -104,6 +104,7 @@ interface TranscriptionHistoryDao {
     @Query("SELECT * FROM transcription_history ORDER BY timestamp DESC, id DESC")
     fun getAllHistoryPaged(): PagingSource<Int, TranscriptionHistory>
 
+    // Blocking on purpose: export pages must run on the thread that holds the read transaction.
     @Query(
         """
         SELECT * FROM transcription_history
@@ -112,7 +113,7 @@ interface TranscriptionHistoryDao {
         ORDER BY timestamp DESC, id DESC LIMIT :limit
         """,
     )
-    suspend fun getHistoryExportPage(limit: Int, beforeTimestamp: Long?, beforeId: Int?): List<TranscriptionHistory>
+    fun getHistoryExportPage(limit: Int, beforeTimestamp: Long?, beforeId: Int?): List<TranscriptionHistory>
 
     @Query("SELECT EXISTS(SELECT 1 FROM transcription_history)")
     suspend fun hasHistory(): Boolean
@@ -750,6 +751,19 @@ interface TranscriptionJobDao {
         """,
     )
     suspend fun getReferencedStagedFilePaths(): List<String>
+
+    /** Excludes already-finished jobs from automatic summarization; only later completions qualify. */
+    @Query(
+        """
+        UPDATE active_jobs
+        SET autoSummaryAttempted = 1
+        WHERE isRunning = 0
+          AND isSummarizing = 0
+          AND autoSummaryAttempted = 0
+          AND historyId IS NOT NULL
+        """,
+    )
+    suspend fun markFinishedJobsAutoSummaryAttempted(): Int
 }
 
 @Dao

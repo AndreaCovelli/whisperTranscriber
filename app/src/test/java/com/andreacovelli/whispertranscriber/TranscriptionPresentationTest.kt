@@ -12,15 +12,11 @@ import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.settings.TranscriptionQueueSettings
 import com.andreacovelli.whispertranscriber.settings.decodeHistoricalSummarizerProvider
 import com.andreacovelli.whispertranscriber.settings.decodeTranscriptionProvider
-import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_CANCELLED
-import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_CLEARED
-import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_COMPLETED
-import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_ERROR
-import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_QUEUED
-import com.andreacovelli.whispertranscriber.transcription.DISPLAY_SUMMARY_STATUS_SUMMARIZING
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_CANCELLED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_CLEARED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_COMPLETED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_ERROR
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_SUMMARIZING
 import com.andreacovelli.whispertranscriber.transcription.displayJobStatus
 import com.andreacovelli.whispertranscriber.transcription.displaySummaryStatus
@@ -30,7 +26,7 @@ import com.andreacovelli.whispertranscriber.transcription.parseMicrosoftSpeechLa
 import com.andreacovelli.whispertranscriber.transcription.parseMicrosoftSpeechTranscriptText
 import com.andreacovelli.whispertranscriber.transcription.parseTranscriptTextValue
 import com.andreacovelli.whispertranscriber.transcription.resolveMicrosoftSpeechErrorMessage
-import com.andreacovelli.whispertranscriber.ui.components.providerDisplayLabel
+import com.andreacovelli.whispertranscriber.ui.components.configuredCustomModelLabel
 import com.andreacovelli.whispertranscriber.ui.components.providerFamilyLabel
 import com.andreacovelli.whispertranscriber.ui.components.providerFamilyLabelForModel
 import com.andreacovelli.whispertranscriber.ui.components.shouldShowStopAction
@@ -237,59 +233,60 @@ class TranscriptionPresentationTest {
 
     @Test
     fun providerFamilyLabel_returnsGeminiCustomForCustomProvider() {
-        assertEquals("Gemini Custom", providerFamilyLabel(TranscriptionProvider.GEMINI_CUSTOM))
+        assertEquals(R.string.provider_label_gemini_custom, providerFamilyLabel(TranscriptionProvider.GEMINI_CUSTOM))
     }
 
     @Test
     fun providerFamilyLabel_returnsMicrosoftLabelForMicrosoftProvider() {
         assertEquals(
-            "Microsoft MAI Transcribe 2",
+            R.string.provider_label_microsoft,
             providerFamilyLabel(TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE),
         )
     }
 
     @Test
     fun providerFamilyLabelForModel_returnsKnownProviderLabelForBuiltInModel() {
-        assertEquals("Gemini Flash", providerFamilyLabelForModel("gemini-flash-latest"))
+        assertEquals(R.string.provider_option_flash, providerFamilyLabelForModel("gemini-flash-latest"))
     }
 
     @Test
     fun providerFamilyLabelForModel_classifiesVersionedFlashModelsAsGeminiFlash() {
-        assertEquals("Gemini Flash", providerFamilyLabelForModel("gemini-2.5-flash-preview-04-17"))
+        assertEquals(R.string.provider_option_flash, providerFamilyLabelForModel("gemini-2.5-flash-preview-04-17"))
     }
 
     @Test
     fun providerFamilyLabelForModel_classifiesVersionedFlashLiteModelsAsGeminiFlashLite() {
-        assertEquals("Gemini Flash Lite", providerFamilyLabelForModel("gemini-2.0-flash-lite-preview"))
+        assertEquals(
+            R.string.provider_option_flash_lite,
+            providerFamilyLabelForModel("gemini-2.0-flash-lite-preview"),
+        )
     }
 
     @Test
     fun providerFamilyLabelForModel_returnsGeminiCustomForUnknownModel() {
-        assertEquals("Gemini Custom", providerFamilyLabelForModel("gemini-experimental-foo"))
+        assertEquals(R.string.provider_label_gemini_custom, providerFamilyLabelForModel("gemini-experimental-foo"))
     }
 
     @Test
     fun providerFamilyLabel_prefersExplicitCustomSummaryProviderOverModelHeuristics() {
         assertEquals(
-            "Gemini Custom",
+            R.string.provider_label_gemini_custom,
             providerFamilyLabel(TranscriptionProvider.GEMINI_CUSTOM, "gemini-2.0-flash-lite-preview"),
         )
     }
 
     @Test
-    fun providerDisplayLabel_includesConfiguredCustomModelName() {
+    fun configuredCustomModelLabel_includesConfiguredCustomModelName() {
         assertEquals(
             "gemini-2.5-flash",
-            providerDisplayLabel(TranscriptionProvider.GEMINI_CUSTOM, "gemini-2.5-flash"),
+            configuredCustomModelLabel(TranscriptionProvider.GEMINI_CUSTOM, "gemini-2.5-flash"),
         )
     }
 
     @Test
-    fun providerDisplayLabel_usesNotSetFallbackForBlankCustomModelName() {
-        assertEquals(
-            "Custom Gemini model (not set)",
-            providerDisplayLabel(TranscriptionProvider.GEMINI_CUSTOM, ""),
-        )
+    fun configuredCustomModelLabel_isNullForBlankCustomModelNameOrBuiltInProvider() {
+        assertNull(configuredCustomModelLabel(TranscriptionProvider.GEMINI_CUSTOM, " "))
+        assertNull(configuredCustomModelLabel(TranscriptionProvider.GEMINI_FLASH, "gemini-2.5-flash"))
     }
 
     @Test
@@ -310,7 +307,7 @@ class TranscriptionPresentationTest {
     @Test
     fun buildBatchProgressState_returnsNullForSingleJob() {
         val jobs = listOf(
-            testUiJob(id = 1, batchId = "batch-a", status = DISPLAY_JOB_STATUS_QUEUED),
+            testUiJob(id = 1, batchId = "batch-a", status = JOB_STATUS_QUEUED),
         )
 
         assertNull(buildBatchProgressState(jobs))
@@ -319,11 +316,11 @@ class TranscriptionPresentationTest {
     @Test
     fun buildBatchProgressState_usesLatestActiveMultiFileBatch() {
         val jobs = listOf(
-            testUiJob(id = 1, timestamp = 1_000L, batchId = "batch-old", status = DISPLAY_JOB_STATUS_COMPLETED),
-            testUiJob(id = 2, timestamp = 2_000L, batchId = "batch-old", status = DISPLAY_JOB_STATUS_COMPLETED),
-            testUiJob(id = 3, timestamp = 3_000L, batchId = "batch-new", status = DISPLAY_JOB_STATUS_COMPLETED),
+            testUiJob(id = 1, timestamp = 1_000L, batchId = "batch-old", status = JOB_STATUS_COMPLETED),
+            testUiJob(id = 2, timestamp = 2_000L, batchId = "batch-old", status = JOB_STATUS_COMPLETED),
+            testUiJob(id = 3, timestamp = 3_000L, batchId = "batch-new", status = JOB_STATUS_COMPLETED),
             testUiJob(id = 4, timestamp = 4_000L, batchId = "batch-new", status = "Transcribing", isRunning = true),
-            testUiJob(id = 5, timestamp = 5_000L, batchId = "batch-new", status = DISPLAY_JOB_STATUS_QUEUED),
+            testUiJob(id = 5, timestamp = 5_000L, batchId = "batch-new", status = JOB_STATUS_QUEUED),
         )
 
         assertEquals(
@@ -342,9 +339,9 @@ class TranscriptionPresentationTest {
                 status = "Transcribing",
                 isRunning = true,
             ),
-            testUiJob(id = 51, timestamp = 1_000L, batchId = "batch-running", status = DISPLAY_JOB_STATUS_COMPLETED),
-            testUiJob(id = 10, timestamp = 2_000L, batchId = "batch-newer", status = DISPLAY_JOB_STATUS_QUEUED),
-            testUiJob(id = 11, timestamp = 2_000L, batchId = "batch-newer", status = DISPLAY_JOB_STATUS_QUEUED),
+            testUiJob(id = 51, timestamp = 1_000L, batchId = "batch-running", status = JOB_STATUS_COMPLETED),
+            testUiJob(id = 10, timestamp = 2_000L, batchId = "batch-newer", status = JOB_STATUS_QUEUED),
+            testUiJob(id = 11, timestamp = 2_000L, batchId = "batch-newer", status = JOB_STATUS_QUEUED),
         )
 
         assertEquals(
@@ -356,10 +353,10 @@ class TranscriptionPresentationTest {
     @Test
     fun buildBatchProgressState_prefersEarliestQueuedTimestampOverHigherId() {
         val jobs = listOf(
-            testUiJob(id = 50, timestamp = 1_000L, batchId = "batch-oldest", status = DISPLAY_JOB_STATUS_QUEUED),
-            testUiJob(id = 51, timestamp = 1_000L, batchId = "batch-oldest", status = DISPLAY_JOB_STATUS_COMPLETED),
-            testUiJob(id = 10, timestamp = 2_000L, batchId = "batch-newer", status = DISPLAY_JOB_STATUS_QUEUED),
-            testUiJob(id = 11, timestamp = 2_000L, batchId = "batch-newer", status = DISPLAY_JOB_STATUS_COMPLETED),
+            testUiJob(id = 50, timestamp = 1_000L, batchId = "batch-oldest", status = JOB_STATUS_QUEUED),
+            testUiJob(id = 51, timestamp = 1_000L, batchId = "batch-oldest", status = JOB_STATUS_COMPLETED),
+            testUiJob(id = 10, timestamp = 2_000L, batchId = "batch-newer", status = JOB_STATUS_QUEUED),
+            testUiJob(id = 11, timestamp = 2_000L, batchId = "batch-newer", status = JOB_STATUS_COMPLETED),
         )
 
         assertEquals(
@@ -375,7 +372,7 @@ class TranscriptionPresentationTest {
             testUiJob(
                 id = 1,
                 batchId = "",
-                status = DISPLAY_JOB_STATUS_CLEARED,
+                status = JOB_STATUS_CLEARED,
                 transcript = "",
             ).shouldShowStopAction(),
         )
@@ -388,7 +385,7 @@ class TranscriptionPresentationTest {
             testUiJob(
                 id = 1,
                 batchId = "",
-                status = DISPLAY_JOB_STATUS_COMPLETED,
+                status = JOB_STATUS_COMPLETED,
                 transcript = "",
             ).shouldShowStopAction(),
         )
@@ -396,16 +393,17 @@ class TranscriptionPresentationTest {
 
     @Test
     fun displayStatusHelpers_mapInternalStatusesToDisplayLabels() {
-        assertEquals(DISPLAY_JOB_STATUS_CLEARED, displayJobStatus(JOB_STATUS_CLEARED))
-        assertEquals(DISPLAY_JOB_STATUS_ERROR, displayJobStatus(JOB_STATUS_ERROR))
-        assertEquals(DISPLAY_JOB_STATUS_CANCELLED, displayJobStatus(JOB_STATUS_CANCELLED))
-        assertEquals(DISPLAY_SUMMARY_STATUS_SUMMARIZING, displaySummaryStatus(SUMMARY_STATUS_SUMMARIZING))
+        assertEquals(R.string.job_status_cleared, displayJobStatus(JOB_STATUS_CLEARED))
+        assertEquals(R.string.job_status_error, displayJobStatus(JOB_STATUS_ERROR))
+        assertEquals(R.string.job_status_cancelled, displayJobStatus(JOB_STATUS_CANCELLED))
+        assertEquals(R.string.summary_status_summarizing, displaySummaryStatus(SUMMARY_STATUS_SUMMARIZING))
+        assertNull(displayJobStatus("Transcribing audio"))
     }
 
     @Test
     fun resolveMicrosoftSpeechErrorMessage_mentionsConfigurationForMissingEndpoint() {
         assertEquals(
-            "Microsoft MAI Transcribe endpoint not found. Check the configured Speech region or custom endpoint.",
+            UserMessage(R.string.microsoft_speech_endpoint_not_found),
             resolveMicrosoftSpeechErrorMessage(404, """{"error":{"message":"Resource not found"}}"""),
         )
     }
@@ -432,13 +430,16 @@ class TranscriptionPresentationTest {
 
     @Test
     fun resolveMicrosoftSpeechKeyValidationResult_rejectsBadRequestProbe() {
-        assertEquals("Validation failed: HTTP 400", resolveMicrosoftSpeechKeyValidationResult(400).errorMessage)
+        assertEquals(
+            UserMessage(R.string.validation_failed_http, listOf(400)),
+            resolveMicrosoftSpeechKeyValidationResult(400).errorMessage,
+        )
     }
 
     @Test
     fun resolveMicrosoftSpeechKeyValidationResult_rejectsUnauthorizedKey() {
         assertEquals(
-            "Invalid key for Microsoft MAI Transcribe. Use the Speech resource key from your Foundry resource, not a project API key.",
+            UserMessage(R.string.microsoft_speech_key_invalid),
             resolveMicrosoftSpeechKeyValidationResult(401).errorMessage,
         )
     }
@@ -451,7 +452,7 @@ class TranscriptionPresentationTest {
     @Test
     fun resolveMicrosoftSpeechKeyValidationResult_rejectsInconclusiveProbeResponses() {
         assertEquals(
-            "Validation failed: HTTP 404",
+            UserMessage(R.string.validation_failed_http, listOf(404)),
             resolveMicrosoftSpeechKeyValidationResults(listOf(404, 405, 400)).errorMessage,
         )
     }
@@ -459,7 +460,7 @@ class TranscriptionPresentationTest {
     @Test
     fun resolveMicrosoftSpeechKeyValidationResult_rejectsUnauthorizedAcrossFallbacks() {
         assertEquals(
-            "Invalid key for Microsoft MAI Transcribe. Use the Speech resource key from your Foundry resource, not a project API key.",
+            UserMessage(R.string.microsoft_speech_key_invalid),
             resolveMicrosoftSpeechKeyValidationResults(listOf(404, 401, 405)).errorMessage,
         )
     }
@@ -582,17 +583,17 @@ class TranscriptionPresentationTest {
     }
 
     @Test
-    fun parseTranscriptTextValue_returnsFallbackForBlankPlainTranscript() {
+    fun parseTranscriptTextValue_returnsEmptyTextForBlankPlainTranscript() {
         assertEquals(
-            "No text found.",
+            "",
             parseTranscriptTextValue("   \n\t  ", speakerDiarizationEnabled = false),
         )
     }
 
     @Test
-    fun parseTranscriptTextValue_returnsFallbackForBlankDiarizedTranscript() {
+    fun parseTranscriptTextValue_returnsEmptyTextForBlankDiarizedTranscript() {
         assertEquals(
-            "No text found.",
+            "",
             parseTranscriptTextValue("  \n   \n", speakerDiarizationEnabled = true),
         )
     }

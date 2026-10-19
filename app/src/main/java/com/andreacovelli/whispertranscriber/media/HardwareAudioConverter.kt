@@ -8,9 +8,14 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
 import android.os.storage.StorageManager
+import com.andreacovelli.whispertranscriber.QuantityText
+import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.UserFacingIOException
+import com.andreacovelli.whispertranscriber.UserFacingIllegalStateException
+import com.andreacovelli.whispertranscriber.UserMessage
+import com.andreacovelli.whispertranscriber.requireUserFacing
 import java.io.File
 import java.io.FileNotFoundException
-import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.max
@@ -104,7 +109,7 @@ object HardwareAudioConverter {
             }
 
             val decoderName = MediaCodecList(MediaCodecList.REGULAR_CODECS).findDecoderForFormat(srcFormat)
-                ?: throw IOException("No decoder supports the selected audio format.")
+                ?: throw UserFacingIOException(UserMessage(R.string.conversion_no_decoder))
             decoder = MediaCodec.createByCodecName(decoderName)
             decoder.configure(srcFormat, null, null, 0)
             decoder.start()
@@ -160,7 +165,7 @@ object HardwareAudioConverter {
                 .firstOrNull { (_, format) ->
                     format.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
                 }
-                ?: error("No audio track found")
+                ?: throw UserFacingIllegalStateException(UserMessage(R.string.conversion_no_audio_track))
             extractor.selectTrack(audioTrack.first)
             succeeded = true
             return extractor to audioTrack.second
@@ -188,8 +193,12 @@ object HardwareAudioConverter {
 
     private fun validateSourceDuration(durationUs: Long, maximumDurationUsExclusive: Long?) {
         if (maximumDurationUsExclusive == null || durationUs <= 0) return
-        require(durationUs < maximumDurationUsExclusive) {
-            "Audio must be shorter than ${maximumDurationUsExclusive / MICROSECONDS_IN_SECOND} seconds."
+        requireUserFacing(durationUs < maximumDurationUsExclusive) {
+            val maximumSeconds = (maximumDurationUsExclusive / MICROSECONDS_IN_SECOND).toInt()
+            UserMessage(
+                R.string.conversion_audio_too_long,
+                listOf(QuantityText(R.plurals.duration_seconds, maximumSeconds)),
+            )
         }
     }
 

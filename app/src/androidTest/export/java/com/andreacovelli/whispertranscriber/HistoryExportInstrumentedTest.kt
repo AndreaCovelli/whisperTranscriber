@@ -1,6 +1,7 @@
 package com.andreacovelli.whispertranscriber
 
 import androidx.room.Room
+import androidx.room.RoomDatabase
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.andreacovelli.whispertranscriber.data.AppDatabase
@@ -20,6 +21,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -40,11 +42,25 @@ class HistoryExportInstrumentedTest {
     private val secondPage = CountDownLatch(1)
     private val continueExport = CountDownLatch(1)
 
+    private val context = InstrumentationRegistry.getInstrumentation().targetContext
+    private val fileDatabaseName = "export-test-${System.nanoTime()}.db"
+
     @Before
     fun setUp() {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
         directory = File(context.cacheDir, "export-test-${System.nanoTime()}").apply { mkdirs() }
-        db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+        openRepository(Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java))
+    }
+
+    @After
+    fun tearDown() {
+        continueExport.countDown()
+        db.close()
+        context.deleteDatabase(fileDatabaseName)
+        directory.deleteRecursively()
+    }
+
+    private fun openRepository(builder: RoomDatabase.Builder<AppDatabase>) {
+        db = builder
             .setQueryCallback({ sql, _ ->
                 if (pausePages.get() && sql.contains("ORDER BY timestamp DESC, id DESC LIMIT") &&
                     pages.incrementAndGet() == 2
@@ -55,13 +71,6 @@ class HistoryExportInstrumentedTest {
             }, Runnable::run)
             .build()
         repository = RoomHistoryRepository(db, db.transcriptionHistoryDao(), db.transcriptionJobDao())
-    }
-
-    @After
-    fun tearDown() {
-        continueExport.countDown()
-        db.close()
-        directory.deleteRecursively()
     }
 
     @Test
@@ -104,6 +113,28 @@ class HistoryExportInstrumentedTest {
         continueExport.countDown()
         export.await()
         mutation.await()
+        val output = JSONArray(destination.toString("UTF-8"))
+        assertEquals((205 downTo 1).toList(), (0 until output.length()).map { output.getJSONObject(it).getInt("id") })
+        assertTrue(directory.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun export_doesNotBlockWritesToAFileDatabase() = runBlocking {
+        db.close()
+        openRepository(Room.databaseBuilder(context, AppDatabase::class.java, fileDatabaseName))
+        (1..205).forEach { repository.insert(item(it)) }
+        pausePages.set(true)
+        val destination = ByteArrayOutputStream()
+        val export =
+            async(Dispatchers.IO) { repository.exportHistory(HistoryExportFormat.JSON, directory) { destination } }
+        assertTrue(secondPage.await(10, TimeUnit.SECONDS))
+        // The export is paused inside its snapshot; writes must still commit instead of waiting for it.
+        withTimeout(10_000) {
+            repository.deleteById(150)
+            repository.insert(item(999))
+        }
+        continueExport.countDown()
+        export.await()
         val output = JSONArray(destination.toString("UTF-8"))
         assertEquals((205 downTo 1).toList(), (0 until output.length()).map { output.getJSONObject(it).getInt("id") })
         assertTrue(directory.listFiles().orEmpty().isEmpty())
