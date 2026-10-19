@@ -1,6 +1,6 @@
 [versions]
 agp = "9.4.1"
-googleGenai = "1.76.0"
+googleGenai = "1.78.0"
 hilt = "2.60.1"
 androidxHilt = "1.4.0"
 kotlin = "2.4.21"
@@ -20,13 +20,13 @@ room = "2.8.5"
 ksp = "2.3.12"
 navigationCompose = "2.10.2"
 lifecycleViewmodelCompose = "2.11.0"
-paging = "3.5.2"
+paging = "3.5.3"
 work = "2.12.0"
 detekt = "1.23.8"
-spotless = "8.10.3"
+spotless = "8.10.4"
 serialization = "1.11.0"
-jackson = "2.22.3"
-cyclonedx = "3.5.0"
+jackson = "2.22.4"
+cyclonedx = "3.5.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
