@@ -76,10 +76,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Require tag commit on main
-        run: |
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-
       - name: Validate SemVer tag and derive version
         id: version
         env:

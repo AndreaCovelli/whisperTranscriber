@@ -10,8 +10,10 @@ from urllib.request import Request, urlopen
 
 # These job and step names form the release verification contract with ci.yml.
 CHECKS = {
-    "quality": ("Quality", {"Run quality checks"}),
-    "build-unit": ("Build & Unit", {"Build debug APK and run JVM tests"}),
+    "quality-build": (
+        "Quality & Build",
+        {"Run quality checks", "Build debug APK and run JVM tests"},
+    ),
     "debug": (
         "Instrumentation (debug)",
         {"Verify notification permission recreation", "Run managed-device tests"},
@@ -80,11 +82,7 @@ def verification_outputs(completed):
     return {
         "required": str(completed != set(CHECKS)).lower(),
         "skip-jobs": json.dumps(
-            [
-                check
-                for check in ("quality", "build-unit", "security")
-                if check in completed
-            ]
+            [check for check in ("quality-build", "security") if check in completed]
         ),
         "instrumentation-suites": json.dumps(
             [suite for suite in ("debug", "minifiedSmoke") if suite not in completed]

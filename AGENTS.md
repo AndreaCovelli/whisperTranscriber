@@ -132,7 +132,8 @@ Additional focused commands:
 - Use `clean` for diagnosed build-cache problems, not as a routine first step.
 - `--no-daemon` is a diagnostic option, not a normal requirement.
 
-If a sequential build reports Kotlin/KSP cache corruption, inspect
+If a sequential build reports Kotlin/KSP cache corruption, rerun it with
+`-Pkotlin.build.report.output=file -Pksp.incremental.log=true`, then inspect
 `build/reports/kotlin-build/` and `app/build/kspCaches/*/logs/` before changing
 toolchain or incremental-build settings.
 
@@ -272,11 +273,11 @@ checks and report exactly what was not run and why.
 - Pull requests should explain user-visible behavior, queue/background effects,
   migrations, and the exact verification performed. Include screenshots for
   visible UI changes.
-- CI runs the quality gate (`spotlessCheck detekt lintDebug`) separately from the
-  debug build and JVM tests (`assembleDebug testDebugUnitTest`), managed-device
-  instrumentation (`debug` and `minifiedSmoke` suites), security scans, and
-  actionlint for `.github/` changes. Path filters select applicable checks;
-  manual CI runs execute all checks.
+- CI runs the quality gate (`spotlessCheck detekt lintDebug`) followed by the
+  debug build and JVM tests (`assembleDebug testDebugUnitTest`) in one job,
+  alongside managed-device instrumentation (`debug` and `minifiedSmoke` suites),
+  security scans, and actionlint for `.github/` changes. Path filters select
+  applicable checks; manual CI runs execute all checks.
   `CI Gate` is the required aggregate check.
 - Dependency updates use `renovate.json`, which extends the shared
   `AndreaCovelli/renovate-config` preset.

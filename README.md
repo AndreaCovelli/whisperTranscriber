@@ -317,7 +317,7 @@ gitleaks dir --config .gitleaks.toml --redact .
 grype sbom:app/build/reports/cyclonedx-release/bom.json --only-fixed --fail-on high
 ```
 
-The checked-in wrapper uses Gradle 9.8.0 with Detekt 1.23.8. The tooling-only Gradle 10 deprecation follow-up is tracked in [issue #159](https://github.com/AndreaCovelli/whisperTranscriber/issues/159) for review by 2026-10-26.
+The checked-in wrapper uses Gradle 9.8.1 with Detekt 1.23.8. The tooling-only Gradle 10 deprecation follow-up is tracked in [issue #159](https://github.com/AndreaCovelli/whisperTranscriber/issues/159) for review by 2026-10-26.
 
 Dependency updates are configured through [Renovate](renovate.json), which extends
 the shared `AndreaCovelli/renovate-config` preset. CI runs quality checks, the debug
