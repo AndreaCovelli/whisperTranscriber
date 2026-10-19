@@ -12,7 +12,6 @@
     <string name="settings_summarizer_model">Summarizer Model</string>
     <string name="settings_speaker_diarization">Speaker Diarization</string>
     <string name="settings_speaker_diarization_body">Label speakers in transcriptions when the provider can distinguish them</string>
-    <string name="settings_speaker_diarization_body_microsoft">Speaker diarization for Microsoft MAI Transcribe 2 is not yet enabled in this app</string>
     <string name="settings_automatic_summarization">Automatic Summarization</string>
     <string name="settings_automatic_summarization_body">Summarize completed transcriptions automatically</string>
     <string name="settings_background_share_summary_notifications">Stay in current app when sharing</string>

@@ -147,7 +147,7 @@ class TranscriptionQueueService @Inject constructor(
                 queuedSummarizerCustomModelName =
                 persistedPostTranscriptionConfig.queuedSummarizerCustomModelName,
                 batchId = batchId,
-                speakerDiarizationEnabled = provider.isGemini() && speakerDiarizationEnabled,
+                speakerDiarizationEnabled = speakerDiarizationEnabled,
                 status = JOB_STATUS_QUEUED,
                 progress = 0f,
                 isRunning = false,

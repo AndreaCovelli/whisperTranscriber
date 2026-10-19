@@ -60,6 +60,8 @@ internal class MicrosoftSpeechTranscriber(
     private val mimeType: String,
     private val endpoint: MicrosoftSpeechEndpoint,
     private val modelName: String,
+    private val speakerDiarizationEnabled: Boolean,
+    private val speakerLabelPrefix: String,
     private val audioInspection: AudioInspection,
     private val okHttpClient: OkHttpClient,
     private val ioDispatcher: CoroutineDispatcher,
@@ -77,14 +79,7 @@ internal class MicrosoftSpeechTranscriber(
                 encodedPath = "speechtotext/transcriptions:transcribe",
                 apiVersion = MICROSOFT_SPEECH_API_VERSION,
             )
-            val definitionJson = JSONObject()
-                .put(
-                    "enhancedMode",
-                    JSONObject()
-                        .put("enabled", true)
-                        .put("model", modelName),
-                )
-                .toString()
+            val definitionJson = buildMicrosoftSpeechDefinition(modelName, speakerDiarizationEnabled).toString()
             val multipartBody = MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
                 .addFormDataPart(
@@ -123,7 +118,11 @@ internal class MicrosoftSpeechTranscriber(
             emit(
                 TranscriptionResult.Success(
                     TranscriptionData(
-                        text = parseMicrosoftSpeechTranscriptText(response),
+                        text = if (speakerDiarizationEnabled) {
+                            parseMicrosoftSpeechDiarizedTranscriptText(response, speakerLabelPrefix)
+                        } else {
+                            parseMicrosoftSpeechTranscriptText(response)
+                        },
                         language = parseMicrosoftSpeechLanguage(response),
                         model = modelName,
                     ),
@@ -315,6 +314,60 @@ internal fun parseMicrosoftSpeechTranscriptText(response: JSONObject): String {
         .trim()
         .ifBlank { NO_TEXT_FOUND }
 }
+
+internal fun buildMicrosoftSpeechDefinition(modelName: String, speakerDiarizationEnabled: Boolean): JSONObject =
+    JSONObject()
+        .put(
+            "enhancedMode",
+            JSONObject()
+                .put("enabled", true)
+                .put("model", modelName),
+        )
+        .apply {
+            if (speakerDiarizationEnabled) put("diarization", JSONObject().put("enabled", true))
+        }
+
+/**
+ * Formats diarized phrases like the Gemini diarization output: consecutive phrases from the same
+ * speaker are merged into one "<prefix> A: text" line, with letters assigned in order of first
+ * appearance. Falls back to the plain transcript when the response carries no speaker information.
+ */
+internal fun parseMicrosoftSpeechDiarizedTranscriptText(response: JSONObject, speakerLabelPrefix: String): String {
+    val plainText = parseMicrosoftSpeechTranscriptText(response)
+    val phrases = response.optJSONArray("phrases") ?: return plainText
+    val speakerPhrases = (0 until phrases.length()).mapNotNull { index ->
+        val phrase = phrases.optJSONObject(index) ?: return@mapNotNull null
+        val text = phrase.optString("text").trim().takeIf(String::isNotBlank) ?: return@mapNotNull null
+        val speaker = (phrase.opt("speaker") as? Number)?.toInt()
+        speaker to text
+    }
+    if (speakerPhrases.none { (speaker, _) -> speaker != null }) return plainText
+
+    val normalizedPrefix = speakerLabelPrefix.trim().ifBlank { "Speaker" }
+    val speakerLabels = linkedMapOf<Int, String>()
+    val lines = mutableListOf<Pair<Int?, StringBuilder>>()
+    speakerPhrases.forEach { (speaker, text) ->
+        val last = lines.lastOrNull()
+        if (last != null && last.first == speaker) {
+            last.second.append(' ').append(text)
+        } else {
+            lines += speaker to StringBuilder(text)
+        }
+    }
+    return lines.joinToString(separator = "\n") { (speaker, text) ->
+        if (speaker == null) {
+            text.toString()
+        } else {
+            val label = speakerLabels.getOrPut(speaker) { microsoftSpeechSpeakerLabel(speakerLabels.size) }
+            "$normalizedPrefix $label: $text"
+        }
+    }
+}
+
+private fun microsoftSpeechSpeakerLabel(index: Int): String =
+    if (index < ALPHABET_SIZE) ('A' + index).toString() else (index + 1).toString()
+
+private const val ALPHABET_SIZE = 26
 
 internal fun parseMicrosoftSpeechLanguage(response: JSONObject): String = response.optJSONArray("phrases")
     ?.let(::selectDominantMicrosoftSpeechLocale)

@@ -171,7 +171,7 @@ private val TranscriptionJob.isReadyForAutoSummary: Boolean
 internal fun UiState.toTranscriptionQueueSettings(): TranscriptionQueueSettings = TranscriptionQueueSettings(
     provider = provider,
     customModelName = transcriptionCustomGeminiModelName,
-    speakerDiarizationEnabled = provider.isGemini() && speakerDiarizationEnabled,
+    speakerDiarizationEnabled = speakerDiarizationEnabled,
 )
 
 internal fun UiState.toSummarizationSettings(): SummarizationSettings = SummarizationSettings(

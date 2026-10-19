@@ -47,6 +47,21 @@ class ApiKeyManagerInstrumentedTest {
     }
 
     @Test
+    fun getTranscriptionQueueSettings_keepsSpeakerDiarizationForMicrosoft() = runBlocking {
+        apiKeyManager.saveProvider(TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE)
+        apiKeyManager.saveSpeakerDiarization(true)
+
+        assertEquals(
+            TranscriptionQueueSettings(
+                provider = TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
+                customModelName = "",
+                speakerDiarizationEnabled = true,
+            ),
+            apiKeyManager.getTranscriptionQueueSettings(),
+        )
+    }
+
+    @Test
     fun getTranscriptionQueueSettings_returnsSavedCustomGeminiSelection() = runBlocking {
         apiKeyManager.saveProvider(TranscriptionProvider.GEMINI_CUSTOM)
         apiKeyManager.saveTranscriptionCustomGeminiModelName("gemini-custom-audio-model")

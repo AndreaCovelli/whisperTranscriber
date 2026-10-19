@@ -88,9 +88,6 @@ internal class MainSettingsDelegate(
     private fun updateProviderSelection(provider: TranscriptionProvider) {
         launchSafely {
             settings.saveProvider(provider)
-            if (!provider.isGemini()) {
-                settings.saveSpeakerDiarization(false)
-            }
         }
     }
 
@@ -113,9 +110,8 @@ internal class MainSettingsDelegate(
     }
 
     private fun updateSpeakerDiarization(enabled: Boolean) {
-        val normalized = getState().provider.isGemini() && enabled
         launchSafely {
-            settings.saveSpeakerDiarization(normalized)
+            settings.saveSpeakerDiarization(enabled)
         }
     }
 

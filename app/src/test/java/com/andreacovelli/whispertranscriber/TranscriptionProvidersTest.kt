@@ -20,6 +20,7 @@ import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.Buffer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -44,6 +45,45 @@ class TranscriptionProvidersTest {
 
     @Test
     fun microsoftTranscriber_sendsAndReportsStoredModel() = runBlocking {
+        val (requestBody, results) = runMicrosoftTranscriber(
+            responseJson = """{"combinedPhrases":[{"text":"hello"}]}""",
+            modelName = "mai-transcribe-1.5",
+            speakerDiarizationEnabled = false,
+        )
+
+        assertTrue(requestBody.contains("\"model\":\"mai-transcribe-1.5\""))
+        assertFalse(requestBody.contains("diarization"))
+        val success = results.filterIsInstance<TranscriptionResult.Success>().single()
+        assertEquals("mai-transcribe-1.5", success.data.model)
+        assertEquals("hello", success.data.text)
+    }
+
+    @Test
+    fun microsoftTranscriber_withDiarization_requestsAndLabelsSpeakers() = runBlocking {
+        val (requestBody, results) = runMicrosoftTranscriber(
+            responseJson = """
+                {
+                  "combinedPhrases":[{"text":"Hello. Hi."}],
+                  "phrases":[
+                    {"speaker":0,"text":"Hello.","locale":"en-US"},
+                    {"speaker":1,"text":"Hi.","locale":"en-US"}
+                  ]
+                }
+            """.trimIndent(),
+            modelName = MICROSOFT_MAI_TRANSCRIBE_MODEL,
+            speakerDiarizationEnabled = true,
+        )
+
+        assertTrue(requestBody.contains("\"diarization\":{\"enabled\":true}"))
+        val success = results.filterIsInstance<TranscriptionResult.Success>().single()
+        assertEquals("Locutore A: Hello.\nLocutore B: Hi.", success.data.text)
+    }
+
+    private suspend fun runMicrosoftTranscriber(
+        responseJson: String,
+        modelName: String,
+        speakerDiarizationEnabled: Boolean,
+    ): Pair<String, List<TranscriptionResult>> {
         var requestBody = ""
         val client = OkHttpClient.Builder()
             .addInterceptor { chain ->
@@ -56,10 +96,7 @@ class TranscriptionProvidersTest {
                     .protocol(Protocol.HTTP_1_1)
                     .code(200)
                     .message("OK")
-                    .body(
-                        """{"combinedPhrases":[{"text":"hello"}]}"""
-                            .toResponseBody("application/json".toMediaType()),
-                    )
+                    .body(responseJson.toResponseBody("application/json".toMediaType()))
                     .build()
             }
             .build()
@@ -67,21 +104,20 @@ class TranscriptionProvidersTest {
             writeBytes(byteArrayOf(1))
         }
 
-        try {
+        return try {
             val results = MicrosoftSpeechTranscriber(
                 apiKey = "test-key".toCharArray(),
                 audioFile = audioFile,
                 mimeType = "audio/wav",
                 endpoint = MicrosoftSpeechEndpoint.parse("swedencentral"),
-                modelName = "mai-transcribe-1.5",
+                modelName = modelName,
+                speakerDiarizationEnabled = speakerDiarizationEnabled,
+                speakerLabelPrefix = "Locutore",
                 audioInspection = AudioInspection(sizeBytes = 1, durationUs = 1),
                 okHttpClient = client,
                 ioDispatcher = Dispatchers.Unconfined,
             ).transcribe().toList()
-
-            assertTrue(requestBody.contains("\"model\":\"mai-transcribe-1.5\""))
-            val success = results.filterIsInstance<TranscriptionResult.Success>().single()
-            assertEquals("mai-transcribe-1.5", success.data.model)
+            requestBody to results
         } finally {
             audioFile.delete()
         }

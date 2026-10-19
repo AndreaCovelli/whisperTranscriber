@@ -77,9 +77,6 @@ internal fun decodeHistoricalSummarizerProvider(name: String?): TranscriptionPro
     return provider?.takeIf(TranscriptionProvider::isGemini)
 }
 
-private fun normalizeSpeakerDiarization(provider: TranscriptionProvider, enabled: Boolean): Boolean =
-    provider.isGemini() && enabled
-
 @Singleton
 class ApiKeyManager @Inject constructor(
     @param:ApplicationContext private val context: Context,
@@ -303,10 +300,7 @@ class ApiKeyManager @Inject constructor(
         TranscriptionQueueSettings(
             provider = provider,
             customModelName = prefs[GEMINI_TRANSCRIPTION_CUSTOM_MODEL_NAME].orEmpty(),
-            speakerDiarizationEnabled = normalizeSpeakerDiarization(
-                provider = provider,
-                enabled = prefs[SPEAKER_DIARIZATION_ENABLED] ?: false,
-            ),
+            speakerDiarizationEnabled = prefs[SPEAKER_DIARIZATION_ENABLED] ?: false,
         )
     }.distinctUntilChanged()
 

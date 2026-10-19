@@ -201,18 +201,13 @@ internal object MainReducer {
     }
 
     private fun reduceSettings(state: UiState, msg: MainMsg): UiState = when (msg) {
-        is MainMsg.SetProvider -> state.copy(
-            provider = msg.provider,
-            speakerDiarizationEnabled = msg.provider.isGemini() && state.speakerDiarizationEnabled,
-        )
+        is MainMsg.SetProvider -> state.copy(provider = msg.provider)
         is MainMsg.SetSummarizerProvider -> state.copy(summarizerProvider = msg.provider)
         is MainMsg.SetAutomaticSummarization -> state.copy(automaticSummarizationEnabled = msg.enabled)
         is MainMsg.SetBackgroundShareSummaryNotificationsEnabled -> state.copy(
             backgroundShareSummaryNotificationsEnabled = msg.enabled,
         )
-        is MainMsg.SetSpeakerDiarization -> state.copy(
-            speakerDiarizationEnabled = state.provider.isGemini() && msg.enabled,
-        )
+        is MainMsg.SetSpeakerDiarization -> state.copy(speakerDiarizationEnabled = msg.enabled)
         is MainMsg.SetMicrosoftSpeechRegion -> state.copy(
             microsoftSpeechRegion = msg.region,
             microsoftSpeechKeyValidation = KeyValidationState.Idle,

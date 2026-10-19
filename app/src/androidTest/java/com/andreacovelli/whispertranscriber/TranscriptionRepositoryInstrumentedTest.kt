@@ -351,7 +351,7 @@ class TranscriptionRepositoryInstrumentedTest {
     }
 
     @Test
-    fun retry_requiresTerminalFailureAndAudio_andNormalizesProviderSettings() = runBlocking {
+    fun retry_requiresTerminalFailureAndAudio_andKeepsMicrosoftSpeakerDiarization() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val audio = File.createTempFile("retry-test", ".wav", context.cacheDir).apply { writeText("audio") }
         try {
@@ -369,7 +369,7 @@ class TranscriptionRepositoryInstrumentedTest {
             val retried = requireNotNull(repository.getJob(jobId))
             assertEquals(JOB_STATUS_QUEUED, retried.status)
             assertEquals(0, retried.retryCount)
-            assertFalse(retried.speakerDiarizationEnabled)
+            assertTrue(retried.speakerDiarizationEnabled)
             assertEquals(RetryResult.INELIGIBLE_STATUS, retryWithMicrosoft(jobId))
             repository.cancelJob(jobId)
             audio.delete()

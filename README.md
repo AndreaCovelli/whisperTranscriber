@@ -10,7 +10,7 @@ Share one or more audio files from a file manager or audio player to queue them 
 - **Multi-provider transcription** — choose between Microsoft MAI Transcribe 2 or Gemini (Flash Lite, Flash, Pro, or a custom model)
 - **Batch processing** — share multiple audio files at once; jobs are staged locally, queued, and processed sequentially
 - **AI summarization** — generate summaries manually or automatically after transcription, with a separately selected Gemini model (requires a Gemini API key)
-- **Speaker labels** — optionally ask Gemini to label distinguishable speakers in transcripts
+- **Speaker labels** — optionally label distinguishable speakers in Microsoft MAI Transcribe or Gemini transcripts
 - **Background sharing** — stay in the sharing app while audio is queued, and receive the transcript or summary in a result notification
 - **Transcription history** — all transcripts are saved locally in a searchable Room database
 - **Secure key storage** — API keys are encrypted with AES-256-GCM via Android Keystore and never stored in plaintext
@@ -176,8 +176,8 @@ Select **Custom Model** in either the transcription or summarizer selector in Se
 
 Choose the **Summarizer** model separately from the transcription provider. Enable
 **Automatic Summarization** to summarize completed transcripts. **Speaker Diarization**
-is available for Gemini transcription and labels speakers when they can be
-distinguished.
+is available for Microsoft MAI Transcribe 2 and Gemini transcription and labels
+speakers when they can be distinguished.
 
 Enable **Stay in current app when sharing** to queue audio without opening the main
 screen. Allow notifications to receive the transcript, or the summary when automatic
@@ -247,7 +247,7 @@ Text sharing uses inline text below 128 KiB UTF-8 and a temporary text file for 
 
 ### Settings
 
-Configure the transcription and summarizer models, manage API keys, enter a Microsoft Speech region or custom endpoint, and control automatic summarization, Gemini speaker labels, and background sharing. Keys can be forgotten (deleted from encrypted storage) at any time.
+Configure the transcription and summarizer models, manage API keys, enter a Microsoft Speech region or custom endpoint, and control automatic summarization, speaker labels, and background sharing. Keys can be forgotten (deleted from encrypted storage) at any time.
 
 ---
 

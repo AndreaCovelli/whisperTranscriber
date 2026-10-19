@@ -691,7 +691,6 @@ class TranscriptionExecutionRunner @Inject constructor(
         speakerLabelPrefix: String,
     ): ProviderTranscriber = when (providerExecution) {
         is ProviderExecution.MicrosoftSpeech -> {
-            check(!speakerDiarizationEnabled) { "Speaker diarization is not supported by Microsoft MAI Transcribe." }
             val microsoftSpeechInput = checkNotNull(preparedInput as? PreparedAudioInput.MicrosoftSpeech) {
                 "Internal error: Microsoft Speech audio data missing."
             }
@@ -707,6 +706,8 @@ class TranscriptionExecutionRunner @Inject constructor(
                     mimeType = microsoftSpeechInput.mimeType,
                     endpoint = endpoint,
                     modelName = providerExecution.modelName,
+                    speakerDiarizationEnabled = speakerDiarizationEnabled,
+                    speakerLabelPrefix = speakerLabelPrefix,
                     audioInspection = microsoftSpeechInput.inspection,
                     okHttpClient = okHttpClient,
                     ioDispatcher = ioDispatcher,
