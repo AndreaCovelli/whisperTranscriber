@@ -75,39 +75,20 @@ internal class MicrosoftSpeechTranscriber(
             validateMicrosoftSpeechAudio(audioInspection)
 
             emit(TranscriptionResult.Loading("Uploading audio ($mimeType) to Microsoft Speech..."))
-            val transcribeUrl = endpoint.buildEndpoint(
-                encodedPath = "speechtotext/transcriptions:transcribe",
-                apiVersion = MICROSOFT_SPEECH_API_VERSION,
-            )
-            val definitionJson = buildMicrosoftSpeechDefinition(modelName, speakerDiarizationEnabled).toString()
-            val multipartBody = MultipartBody.Builder()
-                .setType(MultipartBody.FORM)
-                .addFormDataPart(
-                    "audio",
-                    audioFile.name,
-                    audioFile.asRequestBody(mimeType.toMediaType()),
-                )
-                .addFormDataPart("definition", definitionJson)
-                .build()
-
-            val responseBody = apiKey.useAsString { key ->
-                val request = Request.Builder()
-                    .url(transcribeUrl)
-                    .header(MICROSOFT_SPEECH_KEY_HEADER, key)
-                    .post(multipartBody)
-                    .build()
-                withContext(ioDispatcher) {
-                    okHttpClient.newCall(request).awaitResult { response ->
-                        val bodyText = response.body.string()
-                        if (!response.isSuccessful) {
-                            throw MicrosoftSpeechHttpException(
-                                code = response.code,
-                                message = resolveMicrosoftSpeechErrorMessage(response.code, bodyText),
-                            )
-                        }
-                        bodyText
-                    }
+            var diarized = speakerDiarizationEnabled
+            val responseBody = try {
+                requestTranscription(diarized)
+            } catch (e: MicrosoftSpeechHttpException) {
+                if (!diarized || !shouldRetryMicrosoftSpeechWithoutDiarization(e.code, audioInspection.durationUs)) {
+                    throw e
                 }
+                diarized = false
+                emit(
+                    TranscriptionResult.Loading(
+                        "Speaker diarization failed for this recording. Transcribing without speaker labels...",
+                    ),
+                )
+                requestTranscription(diarized)
             }
 
             val response = try {
@@ -118,7 +99,7 @@ internal class MicrosoftSpeechTranscriber(
             emit(
                 TranscriptionResult.Success(
                     TranscriptionData(
-                        text = if (speakerDiarizationEnabled) {
+                        text = if (diarized) {
                             parseMicrosoftSpeechDiarizedTranscriptText(response, speakerLabelPrefix)
                         } else {
                             parseMicrosoftSpeechTranscriptText(response)
@@ -145,6 +126,43 @@ internal class MicrosoftSpeechTranscriber(
             emit(TranscriptionResult.Error(IllegalStateException(e.message ?: "Microsoft Speech request failed.", e)))
         } finally {
             apiKey.fill('\u0000')
+        }
+    }
+
+    private suspend fun requestTranscription(diarized: Boolean): String {
+        val transcribeUrl = endpoint.buildEndpoint(
+            encodedPath = "speechtotext/transcriptions:transcribe",
+            apiVersion = MICROSOFT_SPEECH_API_VERSION,
+        )
+        val definitionJson = buildMicrosoftSpeechDefinition(modelName, diarized).toString()
+        val multipartBody = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart(
+                "audio",
+                audioFile.name,
+                audioFile.asRequestBody(mimeType.toMediaType()),
+            )
+            .addFormDataPart("definition", definitionJson)
+            .build()
+
+        return apiKey.useAsString { key ->
+            val request = Request.Builder()
+                .url(transcribeUrl)
+                .header(MICROSOFT_SPEECH_KEY_HEADER, key)
+                .post(multipartBody)
+                .build()
+            withContext(ioDispatcher) {
+                okHttpClient.newCall(request).awaitResult { response ->
+                    val bodyText = response.body.string()
+                    if (!response.isSuccessful) {
+                        throw MicrosoftSpeechHttpException(
+                            code = response.code,
+                            message = resolveMicrosoftSpeechErrorMessage(response.code, bodyText),
+                        )
+                    }
+                    bodyText
+                }
+            }
         }
     }
 }
@@ -314,6 +332,14 @@ internal fun parseMicrosoftSpeechTranscriptText(response: JSONObject): String {
         .trim()
         .ifBlank { NO_TEXT_FOUND }
 }
+
+// MAI-Transcribe-2 diarization supports shorter recordings than plain transcription. Microsoft
+// does not publish the exact limit; longer diarized requests have been reported to fail with
+// HTTP 408, 500, or 503 from about 15 minutes, while the same audio transcribes without diarization.
+internal const val MICROSOFT_DIARIZATION_FALLBACK_MIN_DURATION_US = 10L * 60L * 1_000_000L
+
+internal fun shouldRetryMicrosoftSpeechWithoutDiarization(code: Int, durationUs: Long): Boolean =
+    durationUs >= MICROSOFT_DIARIZATION_FALLBACK_MIN_DURATION_US && code in setOf(408, 500, 503)
 
 internal fun buildMicrosoftSpeechDefinition(modelName: String, speakerDiarizationEnabled: Boolean): JSONObject =
     JSONObject()
