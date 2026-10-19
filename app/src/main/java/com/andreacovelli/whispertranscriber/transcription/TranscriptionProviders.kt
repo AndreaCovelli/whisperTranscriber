@@ -1,5 +1,6 @@
 package com.andreacovelli.whispertranscriber.transcription
 
+import androidx.annotation.StringRes
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.security.GeminiApiFailure
 import com.andreacovelli.whispertranscriber.security.GenAiClientFactory
@@ -40,6 +41,7 @@ data class TranscriptionData(val text: String, val language: String, val model: 
 
 sealed interface TranscriptionResult {
     data class Loading(val message: String) : TranscriptionResult
+    data class LocalizedLoading(@param:StringRes val messageId: Int) : TranscriptionResult
     data class Success(val data: TranscriptionData) : TranscriptionResult
     data class Error(val exception: Exception) : TranscriptionResult
 }
@@ -60,6 +62,8 @@ internal class MicrosoftSpeechTranscriber(
     private val mimeType: String,
     private val endpoint: MicrosoftSpeechEndpoint,
     private val modelName: String,
+    private val speakerDiarizationEnabled: Boolean,
+    private val speakerLabelPrefix: String,
     private val audioInspection: AudioInspection,
     private val okHttpClient: OkHttpClient,
     private val ioDispatcher: CoroutineDispatcher,
@@ -73,46 +77,16 @@ internal class MicrosoftSpeechTranscriber(
             validateMicrosoftSpeechAudio(audioInspection)
 
             emit(TranscriptionResult.Loading("Uploading audio ($mimeType) to Microsoft Speech..."))
-            val transcribeUrl = endpoint.buildEndpoint(
-                encodedPath = "speechtotext/transcriptions:transcribe",
-                apiVersion = MICROSOFT_SPEECH_API_VERSION,
-            )
-            val definitionJson = JSONObject()
-                .put(
-                    "enhancedMode",
-                    JSONObject()
-                        .put("enabled", true)
-                        .put("model", modelName),
-                )
-                .toString()
-            val multipartBody = MultipartBody.Builder()
-                .setType(MultipartBody.FORM)
-                .addFormDataPart(
-                    "audio",
-                    audioFile.name,
-                    audioFile.asRequestBody(mimeType.toMediaType()),
-                )
-                .addFormDataPart("definition", definitionJson)
-                .build()
-
-            val responseBody = apiKey.useAsString { key ->
-                val request = Request.Builder()
-                    .url(transcribeUrl)
-                    .header(MICROSOFT_SPEECH_KEY_HEADER, key)
-                    .post(multipartBody)
-                    .build()
-                withContext(ioDispatcher) {
-                    okHttpClient.newCall(request).awaitResult { response ->
-                        val bodyText = response.body.string()
-                        if (!response.isSuccessful) {
-                            throw MicrosoftSpeechHttpException(
-                                code = response.code,
-                                message = resolveMicrosoftSpeechErrorMessage(response.code, bodyText),
-                            )
-                        }
-                        bodyText
-                    }
+            var diarized = speakerDiarizationEnabled
+            val responseBody = try {
+                requestTranscription(diarized)
+            } catch (e: MicrosoftSpeechHttpException) {
+                if (!diarized || !shouldRetryMicrosoftSpeechWithoutDiarization(e.code, audioInspection.durationUs)) {
+                    throw e
                 }
+                diarized = false
+                emit(TranscriptionResult.LocalizedLoading(R.string.transcription_status_diarization_fallback))
+                requestTranscription(diarized)
             }
 
             val response = try {
@@ -123,7 +97,11 @@ internal class MicrosoftSpeechTranscriber(
             emit(
                 TranscriptionResult.Success(
                     TranscriptionData(
-                        text = parseMicrosoftSpeechTranscriptText(response),
+                        text = if (diarized) {
+                            parseMicrosoftSpeechDiarizedTranscriptText(response, speakerLabelPrefix)
+                        } else {
+                            parseMicrosoftSpeechTranscriptText(response)
+                        },
                         language = parseMicrosoftSpeechLanguage(response),
                         model = modelName,
                     ),
@@ -146,6 +124,43 @@ internal class MicrosoftSpeechTranscriber(
             emit(TranscriptionResult.Error(IllegalStateException(e.message ?: "Microsoft Speech request failed.", e)))
         } finally {
             apiKey.fill('\u0000')
+        }
+    }
+
+    private suspend fun requestTranscription(diarized: Boolean): String {
+        val transcribeUrl = endpoint.buildEndpoint(
+            encodedPath = "speechtotext/transcriptions:transcribe",
+            apiVersion = MICROSOFT_SPEECH_API_VERSION,
+        )
+        val definitionJson = buildMicrosoftSpeechDefinition(modelName, diarized).toString()
+        val multipartBody = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart(
+                "audio",
+                audioFile.name,
+                audioFile.asRequestBody(mimeType.toMediaType()),
+            )
+            .addFormDataPart("definition", definitionJson)
+            .build()
+
+        return apiKey.useAsString { key ->
+            val request = Request.Builder()
+                .url(transcribeUrl)
+                .header(MICROSOFT_SPEECH_KEY_HEADER, key)
+                .post(multipartBody)
+                .build()
+            withContext(ioDispatcher) {
+                okHttpClient.newCall(request).awaitResult { response ->
+                    val bodyText = response.body.string()
+                    if (!response.isSuccessful) {
+                        throw MicrosoftSpeechHttpException(
+                            code = response.code,
+                            message = resolveMicrosoftSpeechErrorMessage(response.code, bodyText),
+                        )
+                    }
+                    bodyText
+                }
+            }
         }
     }
 }
@@ -315,6 +330,68 @@ internal fun parseMicrosoftSpeechTranscriptText(response: JSONObject): String {
         .trim()
         .ifBlank { NO_TEXT_FOUND }
 }
+
+// MAI-Transcribe-2 diarization supports shorter recordings than plain transcription. Microsoft
+// does not publish the exact limit; longer diarized requests have been reported to fail with
+// HTTP 408, 500, or 503 from about 15 minutes, while the same audio transcribes without diarization.
+internal const val MICROSOFT_DIARIZATION_FALLBACK_MIN_DURATION_US = 10L * 60L * 1_000_000L
+
+internal fun shouldRetryMicrosoftSpeechWithoutDiarization(code: Int, durationUs: Long): Boolean =
+    durationUs >= MICROSOFT_DIARIZATION_FALLBACK_MIN_DURATION_US && code in setOf(408, 500, 503)
+
+internal fun buildMicrosoftSpeechDefinition(modelName: String, speakerDiarizationEnabled: Boolean): JSONObject =
+    JSONObject()
+        .put(
+            "enhancedMode",
+            JSONObject()
+                .put("enabled", true)
+                .put("model", modelName),
+        )
+        .apply {
+            if (speakerDiarizationEnabled) put("diarization", JSONObject().put("enabled", true))
+        }
+
+/**
+ * Formats diarized phrases like the Gemini diarization output: consecutive phrases from the same
+ * speaker are merged into one "<prefix> A: text" line, with letters assigned in order of first
+ * appearance. Falls back to the plain transcript when the response carries no speaker information.
+ */
+internal fun parseMicrosoftSpeechDiarizedTranscriptText(response: JSONObject, speakerLabelPrefix: String): String {
+    val plainText = parseMicrosoftSpeechTranscriptText(response)
+    val phrases = response.optJSONArray("phrases") ?: return plainText
+    val speakerPhrases = (0 until phrases.length()).mapNotNull { index ->
+        val phrase = phrases.optJSONObject(index) ?: return@mapNotNull null
+        val text = phrase.optString("text").trim().takeIf(String::isNotBlank) ?: return@mapNotNull null
+        val speaker = (phrase.opt("speaker") as? Number)?.toInt()
+        speaker to text
+    }
+    if (speakerPhrases.none { (speaker, _) -> speaker != null }) return plainText
+
+    val normalizedPrefix = speakerLabelPrefix.trim().ifBlank { "Speaker" }
+    val speakerLabels = linkedMapOf<Int, String>()
+    val lines = mutableListOf<Pair<Int?, StringBuilder>>()
+    speakerPhrases.forEach { (speaker, text) ->
+        val last = lines.lastOrNull()
+        if (last != null && last.first == speaker) {
+            last.second.append(' ').append(text)
+        } else {
+            lines += speaker to StringBuilder(text)
+        }
+    }
+    return lines.joinToString(separator = "\n") { (speaker, text) ->
+        if (speaker == null) {
+            text.toString()
+        } else {
+            val label = speakerLabels.getOrPut(speaker) { microsoftSpeechSpeakerLabel(speakerLabels.size) }
+            "$normalizedPrefix $label: $text"
+        }
+    }
+}
+
+private fun microsoftSpeechSpeakerLabel(index: Int): String =
+    if (index < ALPHABET_SIZE) ('A' + index).toString() else (index + 1).toString()
+
+private const val ALPHABET_SIZE = 26
 
 internal fun parseMicrosoftSpeechLanguage(response: JSONObject): String = response.optJSONArray("phrases")
     ?.let(::selectDominantMicrosoftSpeechLocale)

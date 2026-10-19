@@ -25,6 +25,7 @@ import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_SUMMARI
 import com.andreacovelli.whispertranscriber.transcription.displayJobStatus
 import com.andreacovelli.whispertranscriber.transcription.displaySummaryStatus
 import com.andreacovelli.whispertranscriber.transcription.isMicrosoftSpeechUploadSizeSupported
+import com.andreacovelli.whispertranscriber.transcription.parseMicrosoftSpeechDiarizedTranscriptText
 import com.andreacovelli.whispertranscriber.transcription.parseMicrosoftSpeechLanguage
 import com.andreacovelli.whispertranscriber.transcription.parseMicrosoftSpeechTranscriptText
 import com.andreacovelli.whispertranscriber.transcription.parseTranscriptTextValue
@@ -292,12 +293,12 @@ class TranscriptionPresentationTest {
     }
 
     @Test
-    fun uiStateToTranscriptionQueueSettings_disablesSpeakerDiarizationForMicrosoft() {
+    fun uiStateToTranscriptionQueueSettings_preservesSpeakerDiarizationForMicrosoft() {
         assertEquals(
             TranscriptionQueueSettings(
                 provider = TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
                 customModelName = "",
-                speakerDiarizationEnabled = false,
+                speakerDiarizationEnabled = true,
             ),
             UiState(
                 provider = TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
@@ -498,6 +499,62 @@ class TranscriptionPresentationTest {
 
         assertEquals("Ciao mondo\nSeconda riga", parseMicrosoftSpeechTranscriptText(response))
         assertEquals("it-IT", parseMicrosoftSpeechLanguage(response))
+    }
+
+    @Test
+    fun parseMicrosoftSpeechDiarizedTranscriptText_mergesConsecutivePhrasesAndLabelsByFirstAppearance() {
+        val response = JSONObject(
+            """
+            {
+              "combinedPhrases": [{ "text": "Good afternoon. This is Sam. Hi there. Thanks." }],
+              "phrases": [
+                { "speaker": 1, "text": "Good afternoon." },
+                { "speaker": 1, "text": "This is Sam." },
+                { "speaker": 0, "text": "Hi there." },
+                { "speaker": 1, "text": "Thanks." }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals(
+            "Speaker A: Good afternoon. This is Sam.\nSpeaker B: Hi there.\nSpeaker A: Thanks.",
+            parseMicrosoftSpeechDiarizedTranscriptText(response, speakerLabelPrefix = "Speaker"),
+        )
+    }
+
+    @Test
+    fun parseMicrosoftSpeechDiarizedTranscriptText_keepsUnattributedPhrasesUnlabeled() {
+        val response = JSONObject(
+            """
+            {
+              "phrases": [
+                { "speaker": 0, "text": "Hello." },
+                { "text": "Unknown speaker." },
+                { "speaker": 0, "text": "Bye." }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals(
+            "Speaker A: Hello.\nUnknown speaker.\nSpeaker A: Bye.",
+            parseMicrosoftSpeechDiarizedTranscriptText(response, speakerLabelPrefix = "  "),
+        )
+    }
+
+    @Test
+    fun parseMicrosoftSpeechDiarizedTranscriptText_fallsBackToPlainTextWithoutSpeakers() {
+        val response = JSONObject(
+            """
+            {
+              "combinedPhrases": [{ "text": "Hello from MAI" }],
+              "phrases": [{ "text": "Hello from MAI", "locale": "en-US" }]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals("Hello from MAI", parseMicrosoftSpeechDiarizedTranscriptText(response, "Speaker"))
     }
 
     @Test

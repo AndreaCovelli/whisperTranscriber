@@ -10,7 +10,6 @@ import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.data.TranscriptionJobDao
 import com.andreacovelli.whispertranscriber.queue.MAX_NONTERMINAL_JOBS
 import com.andreacovelli.whispertranscriber.queue.RetryResult
-import com.andreacovelli.whispertranscriber.settings.decodeTranscriptionProvider
 import java.io.File
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -178,8 +177,7 @@ class TranscriptionRepository @Inject constructor(
             notifyResult = notifyResult,
             queuedSummarizerProviderName = queuedSummarizerProviderName,
             queuedSummarizerCustomModelName = queuedSummarizerCustomModelName,
-            speakerDiarizationEnabled =
-            decodeTranscriptionProvider(providerName).isGemini() && speakerDiarizationEnabled,
+            speakerDiarizationEnabled = speakerDiarizationEnabled,
         )
         RetryResult.ACCEPTED
     }

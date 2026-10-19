@@ -163,17 +163,11 @@ private fun TranscriptionProviderCard(uiState: UiState, dispatch: (MainMsg) -> U
 
 @Composable
 private fun SpeakerDiarizationCard(uiState: UiState, dispatch: (MainMsg) -> Unit) {
-    val diarizationSupported = uiState.provider.isGemini()
     SettingsToggleCard(
         title = stringResource(R.string.settings_speaker_diarization),
-        body = if (diarizationSupported) {
-            stringResource(R.string.settings_speaker_diarization_body)
-        } else {
-            stringResource(R.string.settings_speaker_diarization_body_microsoft)
-        },
+        body = stringResource(R.string.settings_speaker_diarization_body),
         checked = uiState.speakerDiarizationEnabled,
         onCheckedChange = { dispatch(MainMsg.SetSpeakerDiarization(it)) },
-        enabled = diarizationSupported,
     )
 }
 
@@ -309,13 +303,7 @@ private fun BackgroundShareSummaryNotificationsCard(uiState: UiState, onCheckedC
 }
 
 @Composable
-private fun SettingsToggleCard(
-    title: String,
-    body: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    enabled: Boolean = true,
-) {
+private fun SettingsToggleCard(title: String, body: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -336,7 +324,6 @@ private fun SettingsToggleCard(
                     modifier = Modifier.semantics { contentDescription = title },
                     checked = checked,
                     onCheckedChange = onCheckedChange,
-                    enabled = enabled,
                 )
             }
         }

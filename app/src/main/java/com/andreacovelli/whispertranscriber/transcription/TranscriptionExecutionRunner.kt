@@ -666,17 +666,20 @@ class TranscriptionExecutionRunner @Inject constructor(
             speakerLabelPrefix = speakerLabelPrefix,
         )
         var resultData: TranscriptionData? = null
+        suspend fun reportProviderStatus(message: String) {
+            val providerMessage = applicationContext.getString(
+                R.string.transcription_status_provider_message,
+                providerDisplayName(providerExecution),
+                message,
+            )
+            requireOwnedUpdate(repository.updateStatus(jobId, executionOwnerId, providerMessage))
+            onProgressNotification(jobId, displayName, providerMessage)
+        }
         transcriber.transcribe().collect { result ->
             when (result) {
-                is TranscriptionResult.Loading -> {
-                    val providerMessage = applicationContext.getString(
-                        R.string.transcription_status_provider_message,
-                        providerDisplayName(providerExecution),
-                        result.message,
-                    )
-                    requireOwnedUpdate(repository.updateStatus(jobId, executionOwnerId, providerMessage))
-                    onProgressNotification(jobId, displayName, providerMessage)
-                }
+                is TranscriptionResult.Loading -> reportProviderStatus(result.message)
+                is TranscriptionResult.LocalizedLoading ->
+                    reportProviderStatus(applicationContext.getString(result.messageId))
                 is TranscriptionResult.Success -> resultData = result.data
                 is TranscriptionResult.Error -> throw result.exception
             }
@@ -691,7 +694,6 @@ class TranscriptionExecutionRunner @Inject constructor(
         speakerLabelPrefix: String,
     ): ProviderTranscriber = when (providerExecution) {
         is ProviderExecution.MicrosoftSpeech -> {
-            check(!speakerDiarizationEnabled) { "Speaker diarization is not supported by Microsoft MAI Transcribe." }
             val microsoftSpeechInput = checkNotNull(preparedInput as? PreparedAudioInput.MicrosoftSpeech) {
                 "Internal error: Microsoft Speech audio data missing."
             }
@@ -707,6 +709,8 @@ class TranscriptionExecutionRunner @Inject constructor(
                     mimeType = microsoftSpeechInput.mimeType,
                     endpoint = endpoint,
                     modelName = providerExecution.modelName,
+                    speakerDiarizationEnabled = speakerDiarizationEnabled,
+                    speakerLabelPrefix = speakerLabelPrefix,
                     audioInspection = microsoftSpeechInput.inspection,
                     okHttpClient = okHttpClient,
                     ioDispatcher = ioDispatcher,

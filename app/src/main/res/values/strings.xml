@@ -12,7 +12,6 @@
     <string name="settings_summarizer_model">Summarizer Model</string>
     <string name="settings_speaker_diarization">Speaker Diarization</string>
     <string name="settings_speaker_diarization_body">Label speakers in transcriptions when the provider can distinguish them</string>
-    <string name="settings_speaker_diarization_body_microsoft">Speaker diarization for Microsoft MAI Transcribe 2 is not yet enabled in this app</string>
     <string name="settings_automatic_summarization">Automatic Summarization</string>
     <string name="settings_automatic_summarization_body">Summarize completed transcriptions automatically</string>
     <string name="settings_background_share_summary_notifications">Stay in current app when sharing</string>
@@ -82,6 +81,7 @@
     <string name="transcription_status_copying_supported_gemini">Format supported (%1$s). Copying audio for Gemini…</string>
     <string name="transcription_status_preparing_upload_gemini">Preparing for Gemini upload…</string>
     <string name="transcription_status_provider_message">%1$s: %2$s</string>
+    <string name="transcription_status_diarization_fallback">Speaker diarization failed for this recording. Transcribing without speaker labels…</string>
     <string name="transcription_retry_notification_title">Retry scheduled: %1$s</string>
     <string name="transcription_retry_notification_body">Temporary issue. Automatic retry scheduled.\n\n%1$s</string>
     <string name="main_clear_completed">Clear completed</string>
