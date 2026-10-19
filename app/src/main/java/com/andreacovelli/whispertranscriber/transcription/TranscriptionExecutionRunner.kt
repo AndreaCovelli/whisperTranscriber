@@ -666,17 +666,20 @@ class TranscriptionExecutionRunner @Inject constructor(
             speakerLabelPrefix = speakerLabelPrefix,
         )
         var resultData: TranscriptionData? = null
+        suspend fun reportProviderStatus(message: String) {
+            val providerMessage = applicationContext.getString(
+                R.string.transcription_status_provider_message,
+                providerDisplayName(providerExecution),
+                message,
+            )
+            requireOwnedUpdate(repository.updateStatus(jobId, executionOwnerId, providerMessage))
+            onProgressNotification(jobId, displayName, providerMessage)
+        }
         transcriber.transcribe().collect { result ->
             when (result) {
-                is TranscriptionResult.Loading -> {
-                    val providerMessage = applicationContext.getString(
-                        R.string.transcription_status_provider_message,
-                        providerDisplayName(providerExecution),
-                        result.message,
-                    )
-                    requireOwnedUpdate(repository.updateStatus(jobId, executionOwnerId, providerMessage))
-                    onProgressNotification(jobId, displayName, providerMessage)
-                }
+                is TranscriptionResult.Loading -> reportProviderStatus(result.message)
+                is TranscriptionResult.LocalizedLoading ->
+                    reportProviderStatus(applicationContext.getString(result.messageId))
                 is TranscriptionResult.Success -> resultData = result.data
                 is TranscriptionResult.Error -> throw result.exception
             }

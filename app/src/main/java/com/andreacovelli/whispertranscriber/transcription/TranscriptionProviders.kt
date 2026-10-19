@@ -1,5 +1,6 @@
 package com.andreacovelli.whispertranscriber.transcription
 
+import androidx.annotation.StringRes
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.security.GeminiApiFailure
 import com.andreacovelli.whispertranscriber.security.GenAiClientFactory
@@ -40,6 +41,7 @@ data class TranscriptionData(val text: String, val language: String, val model: 
 
 sealed interface TranscriptionResult {
     data class Loading(val message: String) : TranscriptionResult
+    data class LocalizedLoading(@param:StringRes val messageId: Int) : TranscriptionResult
     data class Success(val data: TranscriptionData) : TranscriptionResult
     data class Error(val exception: Exception) : TranscriptionResult
 }
@@ -83,11 +85,7 @@ internal class MicrosoftSpeechTranscriber(
                     throw e
                 }
                 diarized = false
-                emit(
-                    TranscriptionResult.Loading(
-                        "Speaker diarization failed for this recording. Transcribing without speaker labels...",
-                    ),
-                )
+                emit(TranscriptionResult.LocalizedLoading(R.string.transcription_status_diarization_fallback))
                 requestTranscription(diarized)
             }
 

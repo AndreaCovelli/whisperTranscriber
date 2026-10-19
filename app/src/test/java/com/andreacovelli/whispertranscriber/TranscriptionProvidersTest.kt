@@ -100,6 +100,11 @@ class TranscriptionProvidersTest {
         assertEquals(2, requestBodies.size)
         assertTrue(requestBodies[0].contains("\"diarization\":{\"enabled\":true}"))
         assertFalse(requestBodies[1].contains("diarization"))
+        assertTrue(
+            results.contains(
+                TranscriptionResult.LocalizedLoading(R.string.transcription_status_diarization_fallback),
+            ),
+        )
         val success = results.filterIsInstance<TranscriptionResult.Success>().single()
         assertEquals("Hello. Hi.", success.data.text)
     }
