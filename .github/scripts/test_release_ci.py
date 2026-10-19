@@ -48,8 +48,11 @@ def job(name, *steps, conclusion="success"):
 
 def successful_jobs():
     return [
-        job("Quality", "Run quality checks"),
-        job("Build & Unit", "Build debug APK and run JVM tests"),
+        job(
+            "Quality & Build",
+            "Run quality checks",
+            "Build debug APK and run JVM tests",
+        ),
         job(
             "Instrumentation (debug)",
             "Verify notification permission recreation",
@@ -129,9 +132,7 @@ class ReleaseCiTest(unittest.TestCase):
 
         self.assertEqual(result["required"], "false")
         self.assertEqual(result["instrumentation-suites"], "[]")
-        self.assertEqual(
-            json.loads(result["skip-jobs"]), ["quality", "build-unit", "security"]
-        )
+        self.assertEqual(json.loads(result["skip-jobs"]), ["quality-build", "security"])
 
     def test_waits_for_running_ci_instead_of_starting_duplicate_tests(self):
         api = FakeGitHub(runs=[successful_run(status="in_progress", conclusion=None)])
@@ -224,8 +225,7 @@ class ReleaseCiTest(unittest.TestCase):
                         json.loads(result["instrumentation-suites"]), [missing_suite]
                     )
                     self.assertEqual(
-                        json.loads(result["skip-jobs"]),
-                        ["quality", "build-unit", "security"],
+                        json.loads(result["skip-jobs"]), ["quality-build", "security"]
                     )
 
     def test_secret_scan_alone_does_not_count_as_full_security_verification(self):
@@ -235,12 +235,12 @@ class ReleaseCiTest(unittest.TestCase):
         result = self.plan(FakeGitHub(jobs=jobs))
 
         self.assertEqual(result["required"], "true")
-        self.assertEqual(json.loads(result["skip-jobs"]), ["quality", "build-unit"])
+        self.assertEqual(json.loads(result["skip-jobs"]), ["quality-build"])
         self.assertEqual(result["instrumentation-suites"], "[]")
 
     def test_a_skipped_export_result_guard_requires_the_smoke_suite(self):
         jobs = successful_jobs()
-        jobs[3]["steps"][-1]["conclusion"] = "skipped"
+        jobs[2]["steps"][-1]["conclusion"] = "skipped"
 
         result = self.plan(FakeGitHub(jobs=jobs))
 
@@ -347,8 +347,7 @@ class ReleaseCiTest(unittest.TestCase):
         environment = {
             "CHANGES_RESULT": "success",
             "WORKFLOW_LINT_RESULT": "success",
-            "QUALITY_RESULT": "success",
-            "BUILD_UNIT_RESULT": "success",
+            "QUALITY_BUILD_RESULT": "success",
             "INSTRUMENTATION_RESULT": "success",
             "SECURITY_RESULT": "success",
             "SECURITY_REUSED": "false",
@@ -372,8 +371,7 @@ class ReleaseCiTest(unittest.TestCase):
         for key in (
             "CHANGES_RESULT",
             "WORKFLOW_LINT_RESULT",
-            "QUALITY_RESULT",
-            "BUILD_UNIT_RESULT",
+            "QUALITY_BUILD_RESULT",
             "INSTRUMENTATION_RESULT",
             "SECURITY_RESULT",
         ):
