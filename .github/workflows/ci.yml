@@ -196,9 +196,22 @@ jobs:
           fi
           df -h /
 
+      # Install the system image here, not in pixel6Api34Setup, so its revision can key the
+      # snapshot cache below.
       - name: Install Android emulator
+        id: emulator
+        env:
+          SYSTEM_IMAGE: system-images;android-34;aosp_atd;x86_64
         run: |
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "emulator"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "emulator" "$SYSTEM_IMAGE"
+          revision() {
+            python3 -I -c 'import sys, xml.etree.ElementTree as E; print(".".join(c.text for c in E.parse(sys.argv[1]).getroot().find("localPackage/revision")))' "$1"
+          }
+          EMULATOR=$(revision "$ANDROID_HOME/emulator/package.xml")
+          IMAGE=$(revision "$ANDROID_HOME/${SYSTEM_IMAGE//;//}/package.xml")
+          AGP=$(sed -n 's/^agp = "\(.*\)"$/\1/p' gradle/libs.versions.toml)
+          test -n "$EMULATOR" && test -n "$IMAGE" && test -n "$AGP"
+          echo "avd-cache-key=managed-avd-v1-$ImageOS-pixel6Api34-atd34r$IMAGE-emulator$EMULATOR-agp$AGP" >> "$GITHUB_OUTPUT"
 
       - name: Enable KVM access
         run: sudo chmod 666 /dev/kvm
@@ -207,6 +220,14 @@ jobs:
         run: |
           "$ANDROID_HOME/emulator/emulator" -accel-check
 
+      # pixel6Api34Setup reuses a restored AVD and recreates its snapshot if it cannot load.
+      - name: Restore managed device snapshot
+        id: restore_managed_device
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.android/avd/gradle-managed
+          key: ${{ steps.emulator.outputs.avd-cache-key }}
+
       - name: Prepare managed device
         id: prepare_managed_device
         timeout-minutes: 5
@@ -214,6 +235,19 @@ jobs:
           ./gradlew pixel6Api34Setup
           -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
           --console=plain
+
+      # Save before tests touch the device. Only main writes, so PRs reuse one shared entry.
+      - name: Save managed device snapshot
+        if: >-
+          ${{
+            github.ref == 'refs/heads/main' &&
+            matrix.suite == 'debug' &&
+            steps.restore_managed_device.outputs.cache-hit != 'true'
+          }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.android/avd/gradle-managed
+          key: ${{ steps.emulator.outputs.avd-cache-key }}
 
       - name: Diagnose managed-device setup failure
         timeout-minutes: 5
@@ -324,6 +358,21 @@ jobs:
         if: ${{ needs.changes.outputs.android == 'true' }}
         run: ./gradlew :app:cyclonedxDirectBom --console=plain
 
+      # Grype publishes one DB a day, so a daily key lets later runs skip the download.
+      # scan-action's cache-db input reuses one fixed key, which keeps the first DB forever.
+      - name: Select Grype DB cache key
+        if: ${{ needs.changes.outputs.android == 'true' }}
+        id: grype_db_key
+        run: echo "key=grype-db-v6-$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Grype DB
+        if: ${{ needs.changes.outputs.android == 'true' }}
+        id: restore_grype_db
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/grype/db
+          key: ${{ steps.grype_db_key.outputs.key }}
+
       - name: Report release runtime SBOM vulnerabilities
         if: ${{ needs.changes.outputs.android == 'true' }}
         uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
@@ -334,6 +383,18 @@ jobs:
           severity-cutoff: negligible
           only-fixed: false
           fail-build: false
+
+      - name: Save Grype DB
+        if: >-
+          ${{
+            needs.changes.outputs.android == 'true' &&
+            github.ref == 'refs/heads/main' &&
+            steps.restore_grype_db.outputs.cache-hit != 'true'
+          }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/grype/db
+          key: ${{ steps.grype_db_key.outputs.key }}
 
       - name: Gate fixed high and critical release runtime vulnerabilities
         if: ${{ needs.changes.outputs.android == 'true' }}
