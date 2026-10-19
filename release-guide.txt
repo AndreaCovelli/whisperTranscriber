@@ -30,9 +30,16 @@
 
   ----------------------------------------------------------------------------------------------------------------------
 
-  Step 3 — Add secrets to GitHub
+  Step 3 — Add secrets to the release environment
 
-  Go to: Your repo → Settings → Secrets and variables → Actions → New repository secret
+  Go to: Your repo → Settings → Environments → New environment, and name it release.
+  Under Deployment branches and tags, choose Selected branches and tags and add the tag
+  rule v*. Only the publish job uses this environment, so other workflows cannot read
+  the signing secrets.
+
+  Then open the release environment → Environment secrets → Add environment secret.
+  If you already created these as repository secrets, recreate them here and delete the
+  repository copies.
 
   Add all four:
 

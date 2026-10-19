@@ -62,7 +62,7 @@ def successful_jobs():
         ),
         job(
             "Security",
-            "Scan full history for secrets",
+            "Scan new commits for secrets",
             "Generate release runtime CycloneDX SBOM",
             "Report release runtime SBOM vulnerabilities",
             "Gate fixed high and critical release runtime vulnerabilities",
@@ -230,7 +230,7 @@ class ReleaseCiTest(unittest.TestCase):
 
     def test_secret_scan_alone_does_not_count_as_full_security_verification(self):
         jobs = successful_jobs()
-        jobs[-1] = job("Security", "Scan full history for secrets")
+        jobs[-1] = job("Security", "Scan new commits for secrets")
 
         result = self.plan(FakeGitHub(jobs=jobs))
 
@@ -346,6 +346,7 @@ class ReleaseCiTest(unittest.TestCase):
         script = textwrap.dedent(gate.split("        run: |\n", 1)[1])
         environment = {
             "CHANGES_RESULT": "success",
+            "WORKFLOW_LINT_RESULT": "success",
             "QUALITY_RESULT": "success",
             "BUILD_UNIT_RESULT": "success",
             "INSTRUMENTATION_RESULT": "success",
@@ -370,6 +371,7 @@ class ReleaseCiTest(unittest.TestCase):
     def test_ci_gate_blocks_failure_in_each_missing_verification_job(self):
         for key in (
             "CHANGES_RESULT",
+            "WORKFLOW_LINT_RESULT",
             "QUALITY_RESULT",
             "BUILD_UNIT_RESULT",
             "INSTRUMENTATION_RESULT",

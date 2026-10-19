@@ -23,7 +23,7 @@ CHECKS = {
     "security": (
         "Security",
         {
-            "Scan full history for secrets",
+            "Scan new commits for secrets",
             "Generate release runtime CycloneDX SBOM",
             "Report release runtime SBOM vulnerabilities",
             "Gate fixed high and critical release runtime vulnerabilities",

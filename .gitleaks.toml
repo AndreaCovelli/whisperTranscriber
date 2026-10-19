@@ -8,5 +8,5 @@ description = "Ignore generated, cached, and machine-local directories"
 paths = [
   '''(?:^|/)(?:\.gradle|\.kotlin|build|captures|\.externalNativeBuild|\.cxx)(?:/.*)?$''',
   '''(?:^|/)\.idea/(?:caches|libraries)(?:/.*)?$''',
-  '''(?:^|/)(?:\.agents|\.codex)(?:/.*)?$''',
+  '''(?:^|/)(?:\.agents|\.claude|\.codex)(?:/.*)?$''',
 ]

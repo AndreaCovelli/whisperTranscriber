@@ -1,4 +1,13 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>AndreaCovelli/renovate-config"]
+  "extends": ["github>AndreaCovelli/renovate-config"],
+  "packageRules": [
+    {
+      "description": "Keep setup-java on the JDK that the Gradle daemon JVM criteria and Kotlin toolchain require",
+      "matchManagers": ["github-actions"],
+      "matchDepNames": ["java-jdk"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    }
+  ]
 }
