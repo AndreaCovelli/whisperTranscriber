@@ -34,7 +34,7 @@ permissions:
 jobs:
   changes:
     name: Detect relevant changes
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       android: ${{ steps.select.outputs.android }}
@@ -105,7 +105,7 @@ jobs:
     name: Workflow Lint
     needs: changes
     if: ${{ needs.changes.outputs.workflows == 'true' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Checkout
@@ -124,7 +124,7 @@ jobs:
         !contains(fromJSON(inputs.skip-jobs || '[]'), 'quality') &&
         needs.changes.outputs.android == 'true'
       }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
     steps:
       - name: Checkout
@@ -156,7 +156,7 @@ jobs:
         !contains(fromJSON(inputs.skip-jobs || '[]'), 'build-unit') &&
         needs.changes.outputs.android == 'true'
       }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
     steps:
       - name: Checkout
@@ -188,7 +188,7 @@ jobs:
         inputs.instrumentation-suites != '[]' &&
         needs.changes.outputs.instrumentation == 'true'
       }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -316,7 +316,7 @@ jobs:
     name: Security
     needs: changes
     if: ${{ !contains(fromJSON(inputs.skip-jobs || '[]'), 'security') }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
     permissions:
       contents: read
@@ -396,7 +396,7 @@ jobs:
     name: CI Gate
     if: always()
     needs: [changes, workflow-lint, quality, build-unit, instrumentation, security]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Require every applicable verification job
