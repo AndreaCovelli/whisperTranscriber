@@ -1,13 +1,4 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>AndreaCovelli/renovate-config"],
-  "packageRules": [
-    {
-      "description": "Group minor and patch Gradle dependency updates",
-      "matchManagers": ["gradle"],
-      "matchUpdateTypes": ["minor", "patch"],
-      "groupName": "Gradle dependencies",
-      "groupSlug": "gradle-dependencies"
-    }
-  ]
+  "extends": ["github>AndreaCovelli/renovate-config"]
 }
