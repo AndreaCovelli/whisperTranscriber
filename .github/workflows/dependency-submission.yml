@@ -20,7 +20,7 @@ permissions: {}
 jobs:
   dependency-submission:
     name: Submit Gradle dependency graph
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
       contents: write

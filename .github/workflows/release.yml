@@ -15,7 +15,7 @@ permissions: {}
 jobs:
   ci-status:
     name: Reuse main CI
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 40
     permissions:
       contents: read
@@ -63,7 +63,7 @@ jobs:
         ((needs.ci-status.outputs.required == 'false' && needs.verify.result == 'skipped') ||
          (needs.ci-status.outputs.required == 'true' && needs.verify.result == 'success'))
       }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     # The release environment holds the signing secrets and admits only v* tags.
     environment: release
