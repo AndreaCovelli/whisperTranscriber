@@ -173,7 +173,11 @@ class TranscriptionQueueService @Inject constructor(
             scheduleNextQueuedJobIfIdle()
             QueuedShareResult(
                 jobsCreated = preparedAudio.size,
-                statusMessage = context.getString(R.string.main_queued_files, preparedAudio.size),
+                statusMessage = context.resources.getQuantityString(
+                    R.plurals.main_queued_files,
+                    preparedAudio.size,
+                    preparedAudio.size,
+                ),
                 firstCreatedJobId = jobIds.firstOrNull()?.toInt(),
             )
         }

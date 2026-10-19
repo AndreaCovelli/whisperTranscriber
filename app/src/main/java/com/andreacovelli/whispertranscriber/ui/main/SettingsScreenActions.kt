@@ -2,17 +2,6 @@ package com.andreacovelli.whispertranscriber.ui.main
 
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 
-data class MainScreenActions(
-    val clearCompletedJobs: () -> Unit,
-    val summarizeJob: (Int) -> Unit,
-    val clearSummary: (Int) -> Unit,
-    val clearTranscript: (Int) -> Unit,
-    val retryJob: (Int) -> Unit,
-    val cancelJob: (Int) -> Unit,
-    val cancelSummary: (Int) -> Unit,
-    val deleteJob: (Int) -> Unit,
-)
-
 data class SettingsScreenActions(
     val setProvider: (TranscriptionProvider) -> Unit,
     val setSummarizerProvider: (TranscriptionProvider) -> Unit,
@@ -33,24 +22,4 @@ data class SettingsScreenActions(
     val resetGeminiKeyValidation: () -> Unit,
     val forgetMicrosoftSpeechKey: () -> Unit,
     val forgetGeminiKey: () -> Unit,
-)
-
-internal fun createMainScreenActions(
-    clearCompletedJobs: () -> Unit,
-    summarizeJob: (Int) -> Unit,
-    clearSummary: (Int) -> Unit,
-    clearTranscript: (Int) -> Unit,
-    retryJob: (Int) -> Unit,
-    cancelJob: (Int) -> Unit,
-    cancelSummary: (Int) -> Unit,
-    deleteJob: (Int) -> Unit,
-): MainScreenActions = MainScreenActions(
-    clearCompletedJobs = clearCompletedJobs,
-    summarizeJob = summarizeJob,
-    clearSummary = clearSummary,
-    clearTranscript = clearTranscript,
-    retryJob = retryJob,
-    cancelJob = cancelJob,
-    cancelSummary = cancelSummary,
-    deleteJob = deleteJob,
 )

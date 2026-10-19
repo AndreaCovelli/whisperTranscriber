@@ -371,7 +371,9 @@ class MainViewModel @Inject constructor(
         if (uris.isEmpty()) return
 
         viewModelScope.launch {
-            reduce(MainMsg.StatusChanged(appContext.getString(R.string.main_queuing_files, uris.size)))
+            val queuingMessage =
+                appContext.resources.getQuantityString(R.plurals.main_queuing_files, uris.size, uris.size)
+            reduce(MainMsg.StatusChanged(queuingMessage))
             val firstCreatedJobId = try {
                 val queueSettings = resolveTranscriptionQueueSettingsForShare()
                 val result = queueService.enqueueSharedAudio(
