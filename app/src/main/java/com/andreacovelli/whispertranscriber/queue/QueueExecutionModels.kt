@@ -18,11 +18,6 @@ data class PersistedPostTranscriptionConfig(
     val queuedSummarizerCustomModelName: String,
 )
 
-internal fun JobExecutionBackend.supportedOnThisDevice(): Boolean = when (this) {
-    JobExecutionBackend.WORK_MANAGER -> true
-    JobExecutionBackend.USER_INITIATED_JOB -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
-}
-
 internal fun resolveShareExecutionBackend(preferImmediateBackgroundStart: Boolean): JobExecutionBackend =
     if (preferImmediateBackgroundStart && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
         JobExecutionBackend.USER_INITIATED_JOB

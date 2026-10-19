@@ -31,7 +31,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
 
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
@@ -70,21 +69,12 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(): OkHttpClient {
-        val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.NONE
-            redactHeader("Ocp-Apim-Subscription-Key")
-            redactHeader("x-goog-api-key")
-        }
-
-        return OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            // Long-running uploads and transcriptions can keep the socket open for large files.
-            .readTimeout(10, TimeUnit.MINUTES)
-            .writeTimeout(10, TimeUnit.MINUTES)
-            .addInterceptor(logging)
-            .build()
-    }
+    fun provideOkHttpClient(): OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        // Long-running uploads and transcriptions can keep the socket open for large files.
+        .readTimeout(10, TimeUnit.MINUTES)
+        .writeTimeout(10, TimeUnit.MINUTES)
+        .build()
 
     @Provides
     @IoDispatcher

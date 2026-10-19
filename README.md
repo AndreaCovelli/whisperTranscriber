@@ -285,10 +285,9 @@ Versions below match the checked-in [version catalog](gradle/libs.versions.toml)
 | Room                       | 2.8.5      | Local SQLite database        |
 | DataStore Preferences      | 1.2.1      | Persistent key-value storage |
 | OkHttp                     | 5.5.0      | Microsoft Speech HTTP client |
-| OkHttp Logging Interceptor | 5.5.0      | HTTP logging (disabled)      |
-| Google Gen AI SDK          | 1.75.0     | Gemini API client            |
+| Google Gen AI SDK          | 1.78.0     | Gemini API client            |
 | KSP                        | 2.3.12     | Room and Hilt code generation |
-| Kotlin                     | 2.4.20     | Language / Compose plugin    |
+| Kotlin                     | 2.4.21     | Language / Compose plugin    |
 
 ---
 
@@ -317,7 +316,7 @@ gitleaks dir --config .gitleaks.toml --redact .
 grype sbom:app/build/reports/cyclonedx-release/bom.json --only-fixed --fail-on high
 ```
 
-The checked-in wrapper uses Gradle 9.8.1 with Detekt 1.23.8. The tooling-only Gradle 10 deprecation follow-up is tracked in [issue #159](https://github.com/AndreaCovelli/whisperTranscriber/issues/159) for review by 2026-10-26.
+The checked-in wrapper uses Gradle 9.8.1 with Detekt 1.23.8. The tooling-only Gradle 10 deprecation follow-up is tracked in [issue #159](https://github.com/AndreaCovelli/whisperTranscriber/issues/159) for review by 2027-01-17; Detekt 2.0 was still prerelease (`2.0.0-alpha.6`) as of 2026-10-19.
 
 Dependency updates are configured through [Renovate](renovate.json), which extends
 the shared `AndreaCovelli/renovate-config` preset. CI runs quality checks, the debug

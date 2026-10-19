@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -306,7 +307,12 @@ private fun BatchProgressCard(state: BatchProgressState) {
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                text = stringResource(R.string.main_batch_progress, state.currentFileNumber, state.totalFiles),
+                text = pluralStringResource(
+                    R.plurals.main_batch_progress,
+                    state.totalFiles,
+                    state.currentFileNumber,
+                    state.totalFiles,
+                ),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
             )

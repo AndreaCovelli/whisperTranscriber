@@ -225,7 +225,7 @@ dependencies {
     implementation(libs.gson)
     // Required to satisfy the google-genai runtime service entry and avoid release-time R8 warnings.
     implementation(libs.jackson.module.kotlin)
-    implementation(libs.okhttp.logging.interceptor)
+    implementation(libs.okhttp)
 
     implementation(libs.androidx.material.icons.core)
     implementation(libs.androidx.material.icons.extended)
