@@ -274,8 +274,9 @@ checks and report exactly what was not run and why.
   visible UI changes.
 - CI runs the quality gate (`spotlessCheck detekt lintDebug`) separately from the
   debug build and JVM tests (`assembleDebug testDebugUnitTest`), managed-device
-  instrumentation (`debug` and `minifiedSmoke` suites), and security scans.
-  Path filters select applicable checks; manual CI runs execute all checks.
+  instrumentation (`debug` and `minifiedSmoke` suites), security scans, and
+  actionlint for `.github/` changes. Path filters select applicable checks;
+  manual CI runs execute all checks.
   `CI Gate` is the required aggregate check.
 - Dependency updates use `renovate.json`, which extends the shared
   `AndreaCovelli/renovate-config` preset.

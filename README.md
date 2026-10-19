@@ -306,7 +306,7 @@ Audio files are accessed via Android share intents — no `READ_EXTERNAL_STORAGE
 
 ## Repository security
 
-CI scans full Git history with Gitleaks while `.gitleaks.toml` excludes generated build, Gradle, and local-tool directories from filesystem scans. Grype receives only the CycloneDX SBOM generated from `releaseRuntimeClasspath` and fails on fixed high or critical findings; it does not crawl the workspace.
+CI scans each pushed commit and each pull request's commits with Gitleaks, and manual CI runs scan the full Git history, while `.gitleaks.toml` excludes generated build, Gradle, and local-tool directories from filesystem scans. Grype receives only the CycloneDX SBOM generated from `releaseRuntimeClasspath` and fails on fixed high or critical findings; it does not crawl the workspace.
 
 Equivalent scoped local scans are:
 
@@ -321,9 +321,9 @@ The checked-in wrapper uses Gradle 9.8.0 with Detekt 1.23.8. The tooling-only Gr
 
 Dependency updates are configured through [Renovate](renovate.json), which extends
 the shared `AndreaCovelli/renovate-config` preset. CI runs quality checks, the debug
-build and unit tests, separate `debug` and `minifiedSmoke` device suites, and security
-scans. Path filters select applicable checks; manual CI runs execute all checks.
-`CI Gate` aggregates the results. See [the release guide](release-guide.txt) for
+build and unit tests, separate `debug` and `minifiedSmoke` device suites, security
+scans, and actionlint for `.github/` changes. Path filters select applicable checks;
+manual CI runs execute all checks. `CI Gate` aggregates the results. See [the release guide](release-guide.txt) for
 signing setup and tag-triggered releases.
 
 ---

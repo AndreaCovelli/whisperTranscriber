@@ -24,7 +24,8 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Every main commit needs a completed run for path selection and release reuse.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -33,11 +34,12 @@ permissions:
 jobs:
   changes:
     name: Detect relevant changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
-      android: ${{ steps.changes.outputs.android }}
-      instrumentation: ${{ steps.changes.outputs.instrumentation }}
+      android: ${{ steps.select.outputs.android }}
+      instrumentation: ${{ steps.select.outputs.instrumentation }}
+      workflows: ${{ steps.select.outputs.workflows }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -57,7 +59,7 @@ jobs:
           filters: |
             android:
               - ".editorconfig"
-              - ".github/workflows/**"
+              - ".github/workflows/ci.yml"
               - "app/**"
               - "build.gradle.kts"
               - "config/**"
@@ -79,6 +81,40 @@ jobs:
               - "gradlew"
               - "gradlew.bat"
               - "settings.gradle.kts"
+            workflows:
+              - ".github/**"
+
+      - name: Select jobs to run
+        id: select
+        env:
+          RUN_ALL: ${{ inputs.force || github.event_name == 'workflow_dispatch' }}
+          ANDROID: ${{ steps.changes.outputs.android }}
+          INSTRUMENTATION: ${{ steps.changes.outputs.instrumentation }}
+          WORKFLOWS: ${{ steps.changes.outputs.workflows }}
+        run: |
+          if [ "$RUN_ALL" = "true" ]; then
+            ANDROID=true INSTRUMENTATION=true WORKFLOWS=true
+          fi
+          {
+            echo "android=${ANDROID:-false}"
+            echo "instrumentation=${INSTRUMENTATION:-false}"
+            echo "workflows=${WORKFLOWS:-false}"
+          } >> "$GITHUB_OUTPUT"
+
+  workflow-lint:
+    name: Workflow Lint
+    needs: changes
+    if: ${{ needs.changes.outputs.workflows == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Lint workflows
+        uses: kjanat/actionlint@08bb2c4f0d039744455b87aef1c647fb8b66d37b # v1.17.0
 
   quality:
     name: Quality
@@ -86,11 +122,9 @@ jobs:
     if: >-
       ${{
         !contains(fromJSON(inputs.skip-jobs || '[]'), 'quality') &&
-        (inputs.force ||
-        github.event_name == 'workflow_dispatch' ||
-        needs.changes.outputs.android == 'true')
+        needs.changes.outputs.android == 'true'
       }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - name: Checkout
@@ -102,12 +136,13 @@ jobs:
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
-          java-version: "25"
+          java-version: "21"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
           add-job-summary: "on-failure"
 
       - name: Run quality checks
@@ -119,11 +154,9 @@ jobs:
     if: >-
       ${{
         !contains(fromJSON(inputs.skip-jobs || '[]'), 'build-unit') &&
-        (inputs.force ||
-        github.event_name == 'workflow_dispatch' ||
-        needs.changes.outputs.android == 'true')
+        needs.changes.outputs.android == 'true'
       }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - name: Checkout
@@ -135,12 +168,13 @@ jobs:
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
-          java-version: "25"
+          java-version: "21"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
           add-job-summary: "on-failure"
 
       - name: Build debug APK and run JVM tests
@@ -152,11 +186,9 @@ jobs:
     if: >-
       ${{
         inputs.instrumentation-suites != '[]' &&
-        (inputs.force ||
-        github.event_name == 'workflow_dispatch' ||
-        needs.changes.outputs.instrumentation == 'true')
+        needs.changes.outputs.instrumentation == 'true'
       }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -177,12 +209,13 @@ jobs:
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
-          java-version: "25"
+          java-version: "21"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
           add-job-summary: "on-failure"
 
       - name: Reserve disk space for the API 34 managed device
@@ -192,13 +225,6 @@ jobs:
             sudo rm -rf /usr/local/lib/android/sdk/ndk
           fi
           df -h /
-
-      - name: Restore API 34 ATD system image
-        id: atd_cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: /usr/local/lib/android/sdk/system-images/android-34/aosp_atd/x86_64
-          key: ${{ runner.os }}-android-atd-api34-aosp-x86_64-v1
 
       - name: Install Android emulator
         run: |
@@ -275,19 +301,6 @@ jobs:
               raise SystemExit("All four minified export scenarios must execute and pass.")
           PY
 
-      - name: Save API 34 ATD system image
-        if: >-
-          ${{
-            success() &&
-            matrix.suite == 'debug' &&
-            github.event_name == 'push' &&
-            steps.atd_cache.outputs.cache-hit != 'true'
-          }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: /usr/local/lib/android/sdk/system-images/android-34/aosp_atd/x86_64
-          key: ${{ steps.atd_cache.outputs.cache-primary-key }}
-
       - name: Upload instrumentation reports on failure
         if: ${{ failure() || cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -297,12 +310,13 @@ jobs:
             app/build/reports/androidTests/managedDevice/
             app/build/outputs/androidTest-results/managedDevice/
           if-no-files-found: warn
+          retention-days: 7
 
   security:
     name: Security
     needs: changes
     if: ${{ !contains(fromJSON(inputs.skip-jobs || '[]'), 'security') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
       contents: read
@@ -314,53 +328,37 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Scan full history for secrets
+      # Push runs scan the pushed commits, pull requests scan the PR commits, and manual runs
+      # scan the full history. Commit ranges need the full checkout above.
+      - name: Scan new commits for secrets
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: .gitleaks.toml
           GITLEAKS_ENABLE_COMMENTS: "false"
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
 
       - name: Set up JDK 21
-        if: >-
-          ${{
-            inputs.force ||
-            github.event_name == 'workflow_dispatch' ||
-            needs.changes.outputs.android == 'true'
-          }}
+        if: ${{ needs.changes.outputs.android == 'true' }}
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
-          java-version: "25"
+          java-version: "21"
 
       - name: Setup Gradle
-        if: >-
-          ${{
-            inputs.force ||
-            github.event_name == 'workflow_dispatch' ||
-            needs.changes.outputs.android == 'true'
-          }}
+        if: ${{ needs.changes.outputs.android == 'true' }}
         uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
           add-job-summary: "on-failure"
 
       - name: Generate release runtime CycloneDX SBOM
-        if: >-
-          ${{
-            inputs.force ||
-            github.event_name == 'workflow_dispatch' ||
-            needs.changes.outputs.android == 'true'
-          }}
+        if: ${{ needs.changes.outputs.android == 'true' }}
         run: ./gradlew :app:cyclonedxDirectBom --console=plain
 
       - name: Report release runtime SBOM vulnerabilities
-        if: >-
-          ${{
-            inputs.force ||
-            github.event_name == 'workflow_dispatch' ||
-            needs.changes.outputs.android == 'true'
-          }}
+        if: ${{ needs.changes.outputs.android == 'true' }}
         uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
         with:
           # The SBOM input is mutually exclusive with a workspace path scan.
@@ -371,12 +369,7 @@ jobs:
           fail-build: false
 
       - name: Gate fixed high and critical release runtime vulnerabilities
-        if: >-
-          ${{
-            inputs.force ||
-            github.event_name == 'workflow_dispatch' ||
-            needs.changes.outputs.android == 'true'
-          }}
+        if: ${{ needs.changes.outputs.android == 'true' }}
         uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
         with:
           # Keep Grype scoped to the release runtime dependency graph.
@@ -390,25 +383,26 @@ jobs:
         if: >-
           ${{
             always() &&
-            (inputs.force ||
-            github.event_name == 'workflow_dispatch' ||
-            needs.changes.outputs.android == 'true')
+            needs.changes.outputs.android == 'true'
           }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-runtime-sbom
           path: app/build/reports/cyclonedx-release/bom.json
           if-no-files-found: error
+          retention-days: 14
 
   ci-gate:
     name: CI Gate
     if: always()
-    needs: [changes, quality, build-unit, instrumentation, security]
-    runs-on: ubuntu-latest
+    needs: [changes, workflow-lint, quality, build-unit, instrumentation, security]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - name: Require every applicable verification job
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
+          WORKFLOW_LINT_RESULT: ${{ needs.workflow-lint.result }}
           QUALITY_RESULT: ${{ needs.quality.result }}
           BUILD_UNIT_RESULT: ${{ needs.build-unit.result }}
           INSTRUMENTATION_RESULT: ${{ needs.instrumentation.result }}
@@ -421,6 +415,6 @@ jobs:
           else
             test "$SECURITY_RESULT" = "success"
           fi
-          for result in "$QUALITY_RESULT" "$BUILD_UNIT_RESULT" "$INSTRUMENTATION_RESULT"; do
+          for result in "$WORKFLOW_LINT_RESULT" "$QUALITY_RESULT" "$BUILD_UNIT_RESULT" "$INSTRUMENTATION_RESULT"; do
             test "$result" = "success" || test "$result" = "skipped"
           done
