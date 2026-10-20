@@ -98,6 +98,8 @@ object HardwareAudioConverter {
             val maximumDataBytes = maximumDurationUsExclusive
                 ?.let(::maximumPcm16MonoDataBytesForDurationExclusive)
                 ?: MAX_CLASSIC_WAV_DATA_BYTES
+            val decoderName = MediaCodecList(MediaCodecList.REGULAR_CODECS).findDecoderForFormat(srcFormat)
+                ?: throw UserFacingIOException(UserMessage(R.string.conversion_no_decoder))
             state = createDecoderState(srcFormat).apply {
                 writer = Pcm16WavWriter(outputFile, maximumDataBytes)
             }
@@ -112,8 +114,6 @@ object HardwareAudioConverter {
                 onProgress?.invoke(0f)
             }
 
-            val decoderName = MediaCodecList(MediaCodecList.REGULAR_CODECS).findDecoderForFormat(srcFormat)
-                ?: throw UserFacingIOException(UserMessage(R.string.conversion_no_decoder))
             decoder = MediaCodec.createByCodecName(decoderName)
             decoder.configure(srcFormat, null, null, 0)
             decoder.start()
@@ -243,41 +243,53 @@ object HardwareAudioConverter {
         var progressState = ProgressState(lastProgress = -1f, lastDispatchNs = 0L)
         val drainWatchdog = DecoderDrainWatchdog(END_OF_STREAM_STALL_TIMEOUT_NS)
 
+        // Keep the codec pipelined: fill every free input buffer and drain every ready output buffer without
+        // waiting, and block only when neither side can make progress.
         while (!outputEos && currentCoroutineContext().isActive) {
-            if (!inputEos) {
+            var queuedInput = false
+            while (!inputEos) {
                 val feedResult = queueNextInputBuffer(
                     decoder = decoder,
                     extractor = extractor,
-                    inputTimeoutUs = CODEC_BUFFER_TIMEOUT_US,
                     durationUs = durationUs,
                     progressState = progressState,
                     onProgress = onProgress,
-                )
+                ) ?: break
+                queuedInput = true
                 inputEos = feedResult.inputEos
                 progressState = feedResult.progressState
             }
-            when (handleDecoderOutput(decoder, info, state, scratchBuffers)) {
-                DecoderOutput.END_OF_STREAM -> outputEos = true
-                DecoderOutput.PRODUCED -> drainWatchdog.onOutput()
-                DecoderOutput.NONE -> if (inputEos && drainWatchdog.isStalled()) {
-                    // Some decoders never flag end of stream; keep the audio decoded so far.
-                    android.util.Log.w("HardwareAudioConverter", "Decoder stalled after end of input")
-                    outputEos = true
+            var outputTimeoutUs = if (queuedInput) 0L else CODEC_BUFFER_TIMEOUT_US
+            while (!outputEos) {
+                when (handleDecoderOutput(decoder, info, outputTimeoutUs, state, scratchBuffers)) {
+                    DecoderOutput.END_OF_STREAM -> outputEos = true
+                    DecoderOutput.PRODUCED -> {
+                        drainWatchdog.onOutput()
+                        outputTimeoutUs = 0L
+                    }
+                    DecoderOutput.NONE -> {
+                        if (inputEos && drainWatchdog.isStalled()) {
+                            // Some decoders never flag end of stream; keep the audio decoded so far.
+                            android.util.Log.w("HardwareAudioConverter", "Decoder stalled after end of input")
+                            outputEos = true
+                        }
+                        break
+                    }
                 }
             }
         }
     }
 
+    /** Queues the next sample into a free input buffer, or returns null when the decoder has none free. */
     private suspend fun queueNextInputBuffer(
         decoder: MediaCodec,
         extractor: MediaExtractor,
-        inputTimeoutUs: Long,
         durationUs: Long,
         progressState: ProgressState,
         onProgress: (suspend (Float) -> Unit)?,
-    ): InputFeedResult {
-        val inputIndex = decoder.dequeueInputBuffer(inputTimeoutUs)
-        if (inputIndex < 0) return InputFeedResult(inputEos = false, progressState = progressState)
+    ): InputFeedResult? {
+        val inputIndex = decoder.dequeueInputBuffer(0L)
+        if (inputIndex < 0) return null
 
         val inputBuffer = requireNotNull(decoder.getInputBuffer(inputIndex))
         inputBuffer.clear()
@@ -315,9 +327,10 @@ object HardwareAudioConverter {
     private fun handleDecoderOutput(
         decoder: MediaCodec,
         info: MediaCodec.BufferInfo,
+        timeoutUs: Long,
         state: DecoderState,
         scratchBuffers: ScratchBuffers,
-    ): DecoderOutput = when (val outputIndex = decoder.dequeueOutputBuffer(info, CODEC_BUFFER_TIMEOUT_US)) {
+    ): DecoderOutput = when (val outputIndex = decoder.dequeueOutputBuffer(info, timeoutUs)) {
         MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
             updateDecoderState(decoder.outputFormat, state)
             DecoderOutput.PRODUCED
