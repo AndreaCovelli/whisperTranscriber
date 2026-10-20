@@ -397,6 +397,17 @@ private const val PREPARING_SHARE_NOTIFICATION_ID = 0
 // upwards. Foreground job notifications start at 200_000 and the worker uses 1001, so neither is affected.
 private val LEGACY_ONGOING_NOTIFICATION_IDS = 60_000 until 200_000
 
+// Earlier versions posted untagged result notifications as 20_000 + jobId. Larger job IDs would
+// reach the untagged foreground job notifications, so they are left alone.
+private const val LEGACY_RESULT_NOTIFICATION_OFFSET = 20_000
+
+private fun legacyResultNotificationId(jobId: Int): Int? =
+    if (jobId in 1..LEGACY_ONGOING_NOTIFICATION_IDS.last - LEGACY_RESULT_NOTIFICATION_OFFSET) {
+        LEGACY_RESULT_NOTIFICATION_OFFSET + jobId
+    } else {
+        null
+    }
+
 /** Redacts the notification on secure lock screens when the user hides sensitive content. */
 private fun NotificationCompat.Builder.setPrivateContent(
     context: Context,
@@ -608,6 +619,7 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
     fun cancelResult(jobId: Int) {
         clearCache(jobId)
         NotificationManagerCompat.from(context).cancel(RESULT_NOTIFICATION_TAG, jobId)
+        legacyResultNotificationId(jobId)?.let { legacyId -> notificationManager.cancel(legacyId) }
     }
 
     internal fun clearCache(jobId: Int) {
