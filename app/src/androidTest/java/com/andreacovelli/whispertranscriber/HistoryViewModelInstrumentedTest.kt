@@ -7,6 +7,7 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListUpdateCallback
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.history.HistoryDateSource
@@ -232,6 +233,22 @@ class HistoryViewModelInstrumentedTest {
         dispatch(HistoryMsg.ExportHistory(destination, HistoryExportFormat.TXT))
 
         assertEquals(HistoryUiEvent.Toast(R.string.history_export_failed), awaitEvent())
+    }
+
+    @Test
+    fun saveContent_writesTheChosenFieldAndReportsUnavailableDestinations() = runBlocking {
+        val id = insertHistory("Transcript", summary = "Summary to save")
+        val destination = File.createTempFile("history-save-test-", ".txt", context.cacheDir).also(testFiles::add)
+
+        dispatch(HistoryMsg.SaveContent(id, HistoryContentField.SUMMARY, destination.toUri()))
+
+        assertEquals(HistoryUiEvent.Toast(R.string.text_save_success), awaitEvent())
+        assertEquals("Summary to save", destination.readText())
+
+        val unavailable = "content://${context.packageName}.missing-provider/save.txt".toUri()
+        dispatch(HistoryMsg.SaveContent(id, HistoryContentField.TRANSCRIPT, unavailable))
+
+        assertEquals(HistoryUiEvent.Toast(R.string.text_save_failed), awaitEvent())
     }
 
     private suspend fun dispatch(msg: HistoryMsg) = withContext(Dispatchers.Main) { viewModel.dispatch(msg) }

@@ -1,5 +1,6 @@
 package com.andreacovelli.whispertranscriber.history
 
+import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.google.gson.stream.JsonWriter
 import java.io.StringWriter
@@ -31,6 +32,25 @@ fun buildHistoryExport(items: List<TranscriptionHistory>, format: HistoryExportF
 
 fun suggestedHistoryExportFileName(format: HistoryExportFormat, clock: Clock = Clock.systemDefaultZone()): String =
     "whispertranscriber-history-${LocalDate.now(clock)}.${format.extension}"
+
+private val unsafeFileNameCharacters = Regex("""[\\/:*?"<>|\p{Cntrl}]""")
+private const val MAX_TEXT_EXPORT_BASE_NAME_LENGTH = 100
+
+/** Derives "<audio name>-transcript.txt" or "<audio name>-summary.txt" from the audio's display name. */
+fun suggestedTextExportFileName(displayName: String, field: HistoryContentField): String {
+    val baseName = displayName
+        .substringBeforeLast('.')
+        .replace(unsafeFileNameCharacters, "_")
+        .trim()
+        .take(MAX_TEXT_EXPORT_BASE_NAME_LENGTH)
+        .trim()
+        .ifEmpty { "audio" }
+    val suffix = when (field) {
+        HistoryContentField.TRANSCRIPT -> "transcript"
+        HistoryContentField.SUMMARY -> "summary"
+    }
+    return "$baseName-$suffix.${HistoryExportFormat.TXT.extension}"
+}
 
 fun writeHistoryExport(writer: Writer, format: HistoryExportFormat, items: Iterable<TranscriptionHistory>) {
     val export = HistoryExportWriter(writer, format)

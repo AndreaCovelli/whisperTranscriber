@@ -3,6 +3,7 @@ package com.andreacovelli.whispertranscriber.ui.main
 import android.net.Uri
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.UserMessage
+import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 
@@ -50,6 +51,7 @@ sealed interface MainMsg {
     data class SummarizeJob(val jobId: Int) : MainMsg
     data class ClearSummary(val jobId: Int) : MainMsg
     data class ClearTranscript(val jobId: Int) : MainMsg
+    data class SaveJobContent(val jobId: Int, val field: HistoryContentField, val destination: Uri) : MainMsg
     data class RetryJob(val jobId: Int) : MainMsg
     data class CancelJob(val jobId: Int) : MainMsg
     data class CancelSummary(val jobId: Int) : MainMsg

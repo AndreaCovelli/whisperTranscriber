@@ -77,6 +77,8 @@ class HistoryItemCardInstrumentedTest {
                             delete = {},
                             shareTranscript = {},
                             shareSummary = {},
+                            saveTranscript = {},
+                            saveSummary = {},
                         ),
                     )
                 }
@@ -128,6 +130,8 @@ class HistoryItemCardInstrumentedTest {
                             delete = {},
                             shareTranscript = {},
                             shareSummary = {},
+                            saveTranscript = {},
+                            saveSummary = {},
                         ),
                     )
                 }
@@ -159,7 +163,7 @@ class HistoryItemCardInstrumentedTest {
                             ),
                             expanded = expanded,
                             onToggleExpand = { expanded = !expanded },
-                            actions = HistoryItemCardActions({}, {}, {}, {}, {}, {}, {}),
+                            actions = HistoryItemCardActions({}, {}, {}, {}, {}, {}, {}, {}, {}),
                         )
                     }
                 }

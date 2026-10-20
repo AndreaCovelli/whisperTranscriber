@@ -8,6 +8,8 @@ data class TranscriptionJobCardActions(
     val copySummary: () -> Unit,
     val shareTranscript: () -> Unit,
     val shareSummary: () -> Unit,
+    val saveTranscript: () -> Unit,
+    val saveSummary: () -> Unit,
     val retryTranscription: () -> Unit,
     val retrySummary: () -> Unit,
     val cancel: () -> Unit,

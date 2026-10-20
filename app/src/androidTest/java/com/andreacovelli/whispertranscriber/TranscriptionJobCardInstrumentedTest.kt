@@ -163,6 +163,26 @@ class TranscriptionJobCardInstrumentedTest {
         composeRule.runOnIdle { assertEquals(listOf("retrySummary", "clearSummary"), calls) }
     }
 
+    @Test
+    fun completedJob_savesTranscriptAndSummaryToFiles() {
+        setCard(
+            TranscriptionJobState(
+                id = 7,
+                status = JOB_STATUS_COMPLETED,
+                transcript = "Transcript text",
+                summary = "Summary text",
+                summaryStatus = SUMMARY_STATUS_GENERATED,
+            ),
+        )
+
+        composeRule.onNodeWithContentDescription(context.getString(R.string.save_transcription_title)).performClick()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.save_summary_title))
+            .performScrollTo()
+            .performClick()
+
+        composeRule.runOnIdle { assertEquals(listOf("saveTranscript", "saveSummary"), calls) }
+    }
+
     private fun setCard(job: TranscriptionJobState) {
         val actions = TranscriptionJobCardActions(
             summarize = { calls += "summarize" },
@@ -172,6 +192,8 @@ class TranscriptionJobCardInstrumentedTest {
             copySummary = { calls += "copySummary" },
             shareTranscript = { calls += "shareTranscript" },
             shareSummary = { calls += "shareSummary" },
+            saveTranscript = { calls += "saveTranscript" },
+            saveSummary = { calls += "saveSummary" },
             retryTranscription = { calls += "retryTranscription" },
             retrySummary = { calls += "retrySummary" },
             cancel = { calls += "cancel" },

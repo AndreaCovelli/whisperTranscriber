@@ -186,6 +186,7 @@ class MainViewModel @Inject constructor(
                 )
             }
             is MainMsg.ClearTranscript -> viewModelScope.launch { queueService.clearJobTranscription(msg.jobId) }
+            is MainMsg.SaveJobContent -> saveJobContent(msg.jobId, msg.field, msg.destination)
             is MainMsg.RetryJob -> retryJob(msg.jobId)
             is MainMsg.CancelJob -> viewModelScope.launch { queueService.cancelJob(msg.jobId) }
             is MainMsg.CancelSummary -> cancelSummary(msg.jobId)
@@ -228,6 +229,14 @@ class MainViewModel @Inject constructor(
     private fun reportShareQueueFailure(error: Exception): Int? {
         reduce(MainMsg.StatusChanged(error.userMessageOr(R.string.background_share_queue_failed_body)))
         return null
+    }
+
+    private fun saveJobContent(jobId: Int, field: HistoryContentField, destination: Uri) {
+        viewModelScope.launch {
+            val text = repository.getJobContent(jobId, field)
+            val saved = text.isNotBlank() && textTransfer.save(text, destination)
+            _events.send(if (saved) R.string.text_save_success else R.string.text_save_failed)
+        }
     }
 
     private fun retryJob(jobId: Int) {

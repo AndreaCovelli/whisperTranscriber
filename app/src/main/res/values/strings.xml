@@ -37,7 +37,8 @@
         <item quantity="one">Processing %1$d of %2$d file…</item>
         <item quantity="other">Processing %1$d of %2$d files…</item>
     </plurals>
-    <string name="main_empty_jobs">Share one or more audio files to start transcribing.</string>
+    <string name="main_empty_jobs">Pick or share one or more audio files to start transcribing.</string>
+    <string name="main_pick_audio">Transcribe file</string>
     <string name="main_waiting_for_audios">Waiting for audios…</string>
     <plurals name="main_queuing_files">
         <item quantity="one">Queuing %1$d file…</item>
@@ -89,6 +90,8 @@
     <string name="main_copied_summary">Copied summary</string>
     <string name="share_transcription_title">Share Transcription</string>
     <string name="share_summary_title">Share Summary</string>
+    <string name="save_transcription_title">Save Transcription</string>
+    <string name="save_summary_title">Save Summary</string>
     <string name="clear_summary">Clear summary</string>
     <string name="clear_transcription">Clear transcription</string>
     <string name="copy_type">Copy %1$s</string>
@@ -167,6 +170,8 @@
     <string name="history_load_failed">History could not be loaded.</string>
     <string name="clipboard_copy_failed">This text could not be copied. Use Share to send it as a file.</string>
     <string name="text_share_failed">The text could not be shared. Please try again.</string>
+    <string name="text_save_success">Saved to file.</string>
+    <string name="text_save_failed">The file could not be saved. Please try again.</string>
 
     <!-- Job and summary status labels; the stored status codes are database data. -->
     <string name="job_status_queued">Queued</string>

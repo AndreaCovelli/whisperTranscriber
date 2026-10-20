@@ -22,8 +22,10 @@ internal fun CardSectionHeader(
     title: String,
     onCopy: () -> Unit,
     onShare: () -> Unit,
+    onSave: () -> Unit,
     onClear: () -> Unit,
     shareDescription: String,
+    saveDescription: String,
     clearDescription: String,
     trailing: @Composable (() -> Unit)? = null,
 ) {
@@ -48,6 +50,9 @@ internal fun CardSectionHeader(
                 }
                 IconButton(onClick = onShare) {
                     Icon(painterResource(R.drawable.ic_share), shareDescription)
+                }
+                IconButton(onClick = onSave) {
+                    Icon(painterResource(R.drawable.ic_download), saveDescription)
                 }
                 IconButton(onClick = onClear) {
                     Icon(

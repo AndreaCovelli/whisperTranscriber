@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.andreacovelli.whispertranscriber.background.SummaryScheduler
+import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.queue.MAX_NONTERMINAL_JOBS
 import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
@@ -240,6 +241,21 @@ class MainViewModelInstrumentedTest {
         awaitState { it.status == UserMessage(R.string.summarization_status_cancelled) }
         assertEquals(JOB_STATUS_CANCELLED, fixture.repository.getJob(jobId)?.status)
         assertTrue(summaries.cancelled.isEmpty())
+    }
+
+    @Test
+    fun saveJobContent_writesTheTranscriptAndRejectsBlankContent() = runBlocking {
+        val jobId = insertJob(JOB_STATUS_COMPLETED, transcript = "Saved transcript é")
+        val destination = File.createTempFile("main-vm-save-", ".txt", context.cacheDir).also(testFiles::add)
+
+        dispatch(MainMsg.SaveJobContent(jobId, HistoryContentField.TRANSCRIPT, destination.toUri()))
+
+        assertEquals(R.string.text_save_success, awaitEvent())
+        assertEquals("Saved transcript é", destination.readText(Charsets.UTF_8))
+
+        dispatch(MainMsg.SaveJobContent(jobId, HistoryContentField.SUMMARY, destination.toUri()))
+
+        assertEquals(R.string.text_save_failed, awaitEvent())
     }
 
     @Test
