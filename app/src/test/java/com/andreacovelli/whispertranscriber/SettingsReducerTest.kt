@@ -74,4 +74,24 @@ class SettingsReducerTest {
         assertEquals(KeyValidationState.Idle, state.geminiKeyValidation)
         assertEquals(KeyValidationState.Error(UserMessage.verbatim("other key")), state.microsoftSpeechKeyValidation)
     }
+
+    @Test
+    fun clearingValidationResults_resetsFinishedResultsAndKeepsInFlightValidations() {
+        val state = SettingsReducer.reduce(
+            SettingsUiState(
+                microsoftSpeechKeyValidation = KeyValidationState.Error(UserMessage.verbatim("bad key")),
+                microsoftSpeechRegionValidation = RegionValidationState.Valid("eastus"),
+                geminiKeyValidation = KeyValidationState.Validating,
+                transcriptionCustomModelValidation = CustomModelValidation.Valid("Custom"),
+                summarizerCustomModelValidation = CustomModelValidation.Validating,
+            ),
+            SettingsMsg.ClearValidationResults,
+        )
+
+        assertEquals(KeyValidationState.Idle, state.microsoftSpeechKeyValidation)
+        assertEquals(RegionValidationState.Idle, state.microsoftSpeechRegionValidation)
+        assertEquals(KeyValidationState.Validating, state.geminiKeyValidation)
+        assertEquals(CustomModelValidation.Idle, state.transcriptionCustomModelValidation)
+        assertEquals(CustomModelValidation.Validating, state.summarizerCustomModelValidation)
+    }
 }

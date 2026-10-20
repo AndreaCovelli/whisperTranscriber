@@ -64,6 +64,9 @@ sealed interface SettingsMsg {
     data object ForgetMicrosoftSpeechKey : SettingsMsg
     data object ForgetGeminiKey : SettingsMsg
 
+    /** Clears finished validation feedback so a reopened settings screen does not show stale results. */
+    data object ClearValidationResults : SettingsMsg
+
     data class TranscriptionSettingsLoaded(val settings: TranscriptionQueueSettings) : SettingsMsg
     data class SummarizationSettingsLoaded(val settings: SummarizationSettings) : SettingsMsg
     data class MicrosoftSpeechApiKeyStateChanged(val state: ApiKeyState) : SettingsMsg
@@ -114,8 +117,25 @@ internal object SettingsReducer {
         is SettingsMsg.AutomaticSummarizationLoaded -> state.copy(automaticSummarizationEnabled = msg.enabled)
         is SettingsMsg.BackgroundShareSummaryNotificationsLoaded ->
             state.copy(backgroundShareSummaryNotificationsEnabled = msg.enabled)
+        SettingsMsg.ClearValidationResults -> clearValidationResults(state)
         else -> reduceValidation(state, msg)
     }
+
+    // In-flight validations keep their state; their results still arrive and are shown.
+    private fun clearValidationResults(state: SettingsUiState): SettingsUiState = state.copy(
+        microsoftSpeechKeyValidation = state.microsoftSpeechKeyValidation.clearedResult(),
+        microsoftSpeechRegionValidation = state.microsoftSpeechRegionValidation
+            .takeIf { it is RegionValidationState.Validating } ?: RegionValidationState.Idle,
+        geminiKeyValidation = state.geminiKeyValidation.clearedResult(),
+        transcriptionCustomModelValidation = state.transcriptionCustomModelValidation.clearedResult(),
+        summarizerCustomModelValidation = state.summarizerCustomModelValidation.clearedResult(),
+    )
+
+    private fun KeyValidationState.clearedResult(): KeyValidationState =
+        takeIf { it is KeyValidationState.Validating } ?: KeyValidationState.Idle
+
+    private fun CustomModelValidation.clearedResult(): CustomModelValidation =
+        takeIf { it is CustomModelValidation.Validating } ?: CustomModelValidation.Idle
 
     private fun reduceValidation(state: SettingsUiState, msg: SettingsMsg): SettingsUiState = when (msg) {
         SettingsMsg.ResetMicrosoftSpeechRegionValidation -> state.copy(

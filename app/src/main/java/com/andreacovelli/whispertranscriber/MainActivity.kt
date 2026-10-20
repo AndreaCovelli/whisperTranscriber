@@ -165,7 +165,10 @@ class MainActivity : ComponentActivity() {
                         MainScreen(
                             viewModel = mainViewModel,
                             onNavigateToHistory = { navController.navigate(HistoryRoute) },
-                            onNavigateToSettings = { navController.navigate(SettingsRoute) },
+                            onNavigateToSettings = {
+                                settingsViewModel.dispatch(SettingsMsg.ClearValidationResults)
+                                navController.navigate(SettingsRoute)
+                            },
                         )
                     }
 
