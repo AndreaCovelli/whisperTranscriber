@@ -86,7 +86,7 @@ class ContentMutationInstrumentedTest {
                         "",
                     ),
                 )
-                assertEquals(context.getString(R.string.provider_response_truncated), result.errorMessage)
+                assertEquals(UserMessage(R.string.provider_response_truncated), result.errorMessage)
                 assertEquals("Existing summary", fixture.db.transcriptionHistoryDao().getById(historyId)?.summary)
                 assertFalse(checkNotNull(fixture.repository.getJob(jobId)).isSummarizing)
             } finally {

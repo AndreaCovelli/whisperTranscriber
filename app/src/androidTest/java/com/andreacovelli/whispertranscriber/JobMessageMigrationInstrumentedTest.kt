@@ -93,10 +93,10 @@ class JobMessageMigrationInstrumentedTest {
                 uri, displayName, providerName, executionBackend, summarizeAfterTranscription, notifyResult,
                 queuedSummarizerProviderName, queuedSummarizerCustomModelName, status, progress, transcript,
                 language, model, summary, summaryProviderName, summaryModel, summaryStatus, isRunning,
-                isSummarizing, autoSummaryAttempted, retryCount, speakerDiarizationEnabled, error, summaryError,
-                timestamp
+                isSummarizing, autoSummaryAttempted, executionOwnerId, summaryAttemptId, retryCount,
+                speakerDiarizationEnabled, error, summaryError, timestamp, finishedAt
             ) VALUES (?, ?, 'GEMINI_FLASH', 'WORK_MANAGER', 0, 0, '', '', ?, 0, '', '', '', '', '', '', '',
-                ?, 0, 0, 0, 0, ?, ?, ?)
+                ?, 0, 0, '', '', 0, 0, ?, ?, ?, 0)
             """.trimIndent(),
             arrayOf<Any?>(
                 "content://test/$displayName",

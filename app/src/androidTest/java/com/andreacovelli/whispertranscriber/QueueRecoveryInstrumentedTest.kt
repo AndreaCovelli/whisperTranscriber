@@ -57,8 +57,8 @@ class QueueRecoveryInstrumentedTest {
             assertEquals(JOB_STATUS_ERROR, fixture.repository.getJob(first)?.status)
             assertEquals(0, fixture.repository.getJob(first)?.retryCount)
             assertEquals(
-                context.getString(R.string.transcription_foreground_denied_reopen),
-                fixture.repository.getJob(first)?.error,
+                UserMessage(R.string.transcription_foreground_denied_reopen),
+                StoredMessages.decode(fixture.repository.getJob(first)?.error),
             )
             assertEquals(listOf(next), fixture.scheduler.scheduled)
             assertFalse(fixture.queue.onForegroundPromotionDenied(first))
