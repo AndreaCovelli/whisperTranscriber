@@ -48,7 +48,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.andreacovelli.whispertranscriber.R
-import com.andreacovelli.whispertranscriber.settings.ApiKeyState
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_RETRY_SCHEDULED
 import com.andreacovelli.whispertranscriber.ui.components.TranscriptionJobCard
@@ -57,9 +56,9 @@ import com.andreacovelli.whispertranscriber.ui.components.providerDisplayLabel
 import com.andreacovelli.whispertranscriber.ui.copyTextWithFeedback
 import com.andreacovelli.whispertranscriber.ui.main.JobRevealRequest
 import com.andreacovelli.whispertranscriber.ui.main.MainMsg
+import com.andreacovelli.whispertranscriber.ui.main.MainUiState
 import com.andreacovelli.whispertranscriber.ui.main.MainViewModel
 import com.andreacovelli.whispertranscriber.ui.main.TranscriptionJobState
-import com.andreacovelli.whispertranscriber.ui.main.UiState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -114,7 +113,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit, onNavi
 private fun MainScreenContent(
     viewModel: MainViewModel,
     paddingValues: PaddingValues,
-    uiState: UiState,
+    uiState: MainUiState,
     onNavigateToSettings: () -> Unit,
     onClearCompleted: () -> Unit,
     clipboard: Clipboard,
@@ -134,7 +133,7 @@ private fun MainScreenContent(
         MainJobCard(
             viewModel = viewModel,
             job = job,
-            canSummarize = uiState.geminiApiKeyState is ApiKeyState.Present,
+            canSummarize = uiState.providerSummary.canSummarize,
             clipboard = clipboard,
             scope = scope,
             context = context,
@@ -144,7 +143,7 @@ private fun MainScreenContent(
 
 @Composable
 internal fun MainJobList(
-    uiState: UiState,
+    uiState: MainUiState,
     listState: LazyListState,
     modifier: Modifier = Modifier,
     onNavigateToSettings: () -> Unit,
@@ -152,9 +151,11 @@ internal fun MainJobList(
     onJobRevealHandled: (Long) -> Unit,
     jobContent: @Composable (TranscriptionJobState) -> Unit,
 ) {
-    val transcriptionProviderLabel = providerDisplayLabel(uiState.provider, uiState.transcriptionCustomGeminiModelName)
+    val providers = uiState.providerSummary
+    val transcriptionProviderLabel =
+        providerDisplayLabel(providers.transcriptionProvider, providers.transcriptionCustomModelName)
     val summarizerProviderLabel =
-        providerDisplayLabel(uiState.summarizerProvider, uiState.summarizerCustomGeminiModelName)
+        providerDisplayLabel(providers.summarizerProvider, providers.summarizerCustomModelName)
     val lifecycleOwner = LocalLifecycleOwner.current
     val revealRequest = uiState.jobRevealRequest as? JobRevealRequest.Ready
     val revealItemIndex = revealRequest?.let { resolveMainJobItemIndex(uiState, it.jobId) }
@@ -197,7 +198,7 @@ internal fun MainJobList(
     }
 }
 
-internal fun resolveMainJobItemIndex(uiState: UiState, jobId: Int): Int? {
+internal fun resolveMainJobItemIndex(uiState: MainUiState, jobId: Int): Int? {
     val jobIndex = uiState.jobs.indexOfFirst { it.id == jobId }
     if (jobIndex == -1) return null
 

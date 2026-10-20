@@ -37,7 +37,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.settings.ApiKeyState
-import com.andreacovelli.whispertranscriber.ui.main.KeyValidationState
+import com.andreacovelli.whispertranscriber.ui.settings.KeyValidationState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 

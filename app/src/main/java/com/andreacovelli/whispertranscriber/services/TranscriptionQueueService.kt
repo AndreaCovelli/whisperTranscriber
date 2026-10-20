@@ -354,7 +354,8 @@ class TranscriptionQueueService @Inject constructor(
         scheduleNextQueuedJobIfIdle()
     }
 
-    private suspend fun resolveAutomaticSummarizationWorkSpec(): PostTranscriptionWorkSpec? {
+    /** Returns the auto-summary spec for newly queued jobs, or null when it is off or no Gemini key exists. */
+    suspend fun resolveAutomaticSummarizationWorkSpec(): PostTranscriptionWorkSpec? {
         if (!settings.automaticSummarizationFlow.first()) return null
 
         val keyChars = settings.getGeminiApiKey() ?: return null

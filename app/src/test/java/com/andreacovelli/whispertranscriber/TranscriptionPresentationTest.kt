@@ -6,10 +6,8 @@ import com.andreacovelli.whispertranscriber.queue.JobExecutionBackend
 import com.andreacovelli.whispertranscriber.queue.postTranscriptionWorkSpec
 import com.andreacovelli.whispertranscriber.services.resolveMicrosoftSpeechKeyValidationResult
 import com.andreacovelli.whispertranscriber.services.resolveMicrosoftSpeechKeyValidationResults
-import com.andreacovelli.whispertranscriber.settings.ApiKeyState
 import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
-import com.andreacovelli.whispertranscriber.settings.TranscriptionQueueSettings
 import com.andreacovelli.whispertranscriber.settings.decodeHistoricalSummarizerProvider
 import com.andreacovelli.whispertranscriber.settings.decodeTranscriptionProvider
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_CANCELLED
@@ -31,11 +29,6 @@ import com.andreacovelli.whispertranscriber.ui.components.providerFamilyLabel
 import com.andreacovelli.whispertranscriber.ui.components.providerFamilyLabelForModel
 import com.andreacovelli.whispertranscriber.ui.components.shouldShowStopAction
 import com.andreacovelli.whispertranscriber.ui.main.TranscriptionJobState
-import com.andreacovelli.whispertranscriber.ui.main.UiState
-import com.andreacovelli.whispertranscriber.ui.main.resolveShareQueueSettings
-import com.andreacovelli.whispertranscriber.ui.main.toAutomaticSummarizationWorkSpec
-import com.andreacovelli.whispertranscriber.ui.main.toSummarizationSettings
-import com.andreacovelli.whispertranscriber.ui.main.toTranscriptionQueueSettings
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 import com.andreacovelli.whispertranscriber.ui.screens.buildBatchProgressState
 import org.json.JSONObject
@@ -44,88 +37,6 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class TranscriptionPresentationTest {
-    @Test
-    fun resolveShareQueueSettings_usesPersistedSettingsBeforeHydration() {
-        val resolved = resolveShareQueueSettings(
-            uiState = UiState(
-                provider = TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
-                transcriptionCustomGeminiModelName = "",
-                speakerDiarizationEnabled = false,
-            ),
-            transcriptionSettingsHydrated = false,
-            persistedSettings = TranscriptionQueueSettings(
-                provider = TranscriptionProvider.GEMINI_FLASH,
-                customModelName = "gemini-2.5-flash",
-                speakerDiarizationEnabled = true,
-            ),
-        )
-
-        assertEquals(
-            TranscriptionQueueSettings(
-                provider = TranscriptionProvider.GEMINI_FLASH,
-                customModelName = "gemini-2.5-flash",
-                speakerDiarizationEnabled = true,
-            ),
-            resolved,
-        )
-    }
-
-    @Test
-    fun resolveShareQueueSettings_prefersInMemoryStateAfterHydration() {
-        val resolved = resolveShareQueueSettings(
-            uiState = UiState(
-                provider = TranscriptionProvider.GEMINI_CUSTOM,
-                transcriptionCustomGeminiModelName = "gemini-live-custom",
-                speakerDiarizationEnabled = true,
-            ),
-            transcriptionSettingsHydrated = true,
-            persistedSettings = TranscriptionQueueSettings(
-                provider = TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
-                customModelName = "",
-                speakerDiarizationEnabled = false,
-            ),
-        )
-
-        assertEquals(
-            TranscriptionQueueSettings(
-                provider = TranscriptionProvider.GEMINI_CUSTOM,
-                customModelName = "gemini-live-custom",
-                speakerDiarizationEnabled = true,
-            ),
-            resolved,
-        )
-    }
-
-    @Test
-    fun uiStateToTranscriptionQueueSettings_preservesCurrentSelection() {
-        assertEquals(
-            TranscriptionQueueSettings(
-                provider = TranscriptionProvider.GEMINI_PRO,
-                customModelName = "ignored-for-built-in-model",
-                speakerDiarizationEnabled = true,
-            ),
-            UiState(
-                provider = TranscriptionProvider.GEMINI_PRO,
-                transcriptionCustomGeminiModelName = "ignored-for-built-in-model",
-                speakerDiarizationEnabled = true,
-            ).toTranscriptionQueueSettings(),
-        )
-    }
-
-    @Test
-    fun uiStateToSummarizationSettings_preservesCurrentSelection() {
-        assertEquals(
-            SummarizationSettings(
-                provider = TranscriptionProvider.GEMINI_CUSTOM,
-                customModelName = "gemini-custom-summary",
-            ),
-            UiState(
-                summarizerProvider = TranscriptionProvider.GEMINI_CUSTOM,
-                summarizerCustomGeminiModelName = "gemini-custom-summary",
-            ).toSummarizationSettings(),
-        )
-    }
-
     @Test
     fun postTranscriptionWorkSpec_roundTripsThroughQueuedJobPersistenceHelpers() {
         val spec = PostTranscriptionWorkSpec(
@@ -160,36 +71,6 @@ class TranscriptionPresentationTest {
         )
 
         assertNull(restored.postTranscriptionWorkSpec())
-    }
-
-    @Test
-    fun uiStateToAutomaticSummarizationWorkSpec_returnsNullWhenAutomaticSummarizationDisabled() {
-        assertNull(
-            UiState(
-                automaticSummarizationEnabled = false,
-                geminiApiKeyState = ApiKeyState.Present,
-            ).toAutomaticSummarizationWorkSpec(),
-        )
-    }
-
-    @Test
-    fun uiStateToAutomaticSummarizationWorkSpec_returnsSilentWorkerSpecWhenEnabled() {
-        assertEquals(
-            PostTranscriptionWorkSpec(
-                summarizeAfterTranscription = true,
-                notifyResult = false,
-                summarizationSettings = SummarizationSettings(
-                    provider = TranscriptionProvider.GEMINI_CUSTOM,
-                    customModelName = "gemini-custom-summary",
-                ),
-            ),
-            UiState(
-                automaticSummarizationEnabled = true,
-                geminiApiKeyState = ApiKeyState.Present,
-                summarizerProvider = TranscriptionProvider.GEMINI_CUSTOM,
-                summarizerCustomGeminiModelName = "gemini-custom-summary",
-            ).toAutomaticSummarizationWorkSpec(),
-        )
     }
 
     @Test
@@ -287,21 +168,6 @@ class TranscriptionPresentationTest {
     fun configuredCustomModelLabel_isNullForBlankCustomModelNameOrBuiltInProvider() {
         assertNull(configuredCustomModelLabel(TranscriptionProvider.GEMINI_CUSTOM, " "))
         assertNull(configuredCustomModelLabel(TranscriptionProvider.GEMINI_FLASH, "gemini-2.5-flash"))
-    }
-
-    @Test
-    fun uiStateToTranscriptionQueueSettings_preservesSpeakerDiarizationForMicrosoft() {
-        assertEquals(
-            TranscriptionQueueSettings(
-                provider = TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
-                customModelName = "",
-                speakerDiarizationEnabled = true,
-            ),
-            UiState(
-                provider = TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
-                speakerDiarizationEnabled = true,
-            ).toTranscriptionQueueSettings(),
-        )
     }
 
     @Test

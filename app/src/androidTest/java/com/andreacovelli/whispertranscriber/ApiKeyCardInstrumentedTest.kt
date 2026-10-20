@@ -18,7 +18,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.andreacovelli.whispertranscriber.settings.ApiKeyState
 import com.andreacovelli.whispertranscriber.ui.components.ApiKeyCard
-import com.andreacovelli.whispertranscriber.ui.main.KeyValidationState
+import com.andreacovelli.whispertranscriber.ui.settings.KeyValidationState
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith

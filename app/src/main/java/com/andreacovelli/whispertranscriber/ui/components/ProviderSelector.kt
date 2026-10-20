@@ -29,7 +29,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
-import com.andreacovelli.whispertranscriber.ui.main.CustomModelValidation
+import com.andreacovelli.whispertranscriber.ui.settings.CustomModelValidation
 
 @Composable
 fun ProviderSelector(

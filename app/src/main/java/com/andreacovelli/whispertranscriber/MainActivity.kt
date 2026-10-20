@@ -29,9 +29,12 @@ import com.andreacovelli.whispertranscriber.ui.main.MainViewModel
 import com.andreacovelli.whispertranscriber.ui.screens.HistoryScreen
 import com.andreacovelli.whispertranscriber.ui.screens.MainScreen
 import com.andreacovelli.whispertranscriber.ui.screens.SettingsScreen
+import com.andreacovelli.whispertranscriber.ui.settings.SettingsMsg
+import com.andreacovelli.whispertranscriber.ui.settings.SettingsViewModel
 import com.andreacovelli.whispertranscriber.ui.theme.WhisperTranscriberTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
@@ -87,11 +90,14 @@ class MainActivity : ComponentActivity() {
     lateinit var backgroundShareNotifier: BackgroundShareNotifier
 
     private val mainViewModel: MainViewModel by viewModels()
+
+    // Activity-scoped so the notification permission result can reach it from outside the settings screen.
+    private val settingsViewModel: SettingsViewModel by viewModels()
     private var pendingEnableBackgroundShareSummaryNotifications = false
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (pendingEnableBackgroundShareSummaryNotifications) {
-                mainViewModel.dispatch(MainMsg.SetBackgroundShareSummaryNotificationsEnabled(granted))
+                settingsViewModel.dispatch(SettingsMsg.SetBackgroundShareSummaryNotificationsEnabled(granted))
                 pendingEnableBackgroundShareSummaryNotifications = false
             }
         }
@@ -103,7 +109,7 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) maybeRequestNotificationPermission()
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                mainViewModel.events.collect { messageId ->
+                merge(mainViewModel.events, settingsViewModel.events).collect { messageId ->
                     Toast.makeText(this@MainActivity, messageId, Toast.LENGTH_LONG).show()
                 }
             }
@@ -193,7 +199,7 @@ class MainActivity : ComponentActivity() {
                         },
                     ) {
                         SettingsScreen(
-                            viewModel = mainViewModel,
+                            viewModel = settingsViewModel,
                             onNavigateBack = { navController.popBackStack() },
                             onBackgroundShareSummaryNotificationsChange =
                             ::handleBackgroundShareSummaryNotificationsToggle,
@@ -255,7 +261,7 @@ class MainActivity : ComponentActivity() {
     private fun handleBackgroundShareSummaryNotificationsToggle(enabled: Boolean) {
         if (!enabled) {
             pendingEnableBackgroundShareSummaryNotifications = false
-            mainViewModel.dispatch(MainMsg.SetBackgroundShareSummaryNotificationsEnabled(false))
+            settingsViewModel.dispatch(SettingsMsg.SetBackgroundShareSummaryNotificationsEnabled(false))
             return
         }
         if (
@@ -264,7 +270,7 @@ class MainActivity : ComponentActivity() {
             PackageManager.PERMISSION_GRANTED
         ) {
             pendingEnableBackgroundShareSummaryNotifications = false
-            mainViewModel.dispatch(MainMsg.SetBackgroundShareSummaryNotificationsEnabled(true))
+            settingsViewModel.dispatch(SettingsMsg.SetBackgroundShareSummaryNotificationsEnabled(true))
             return
         }
         pendingEnableBackgroundShareSummaryNotifications = true

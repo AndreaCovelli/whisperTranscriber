@@ -30,17 +30,13 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 sealed interface HistoryUiEvent {
@@ -62,11 +58,8 @@ class HistoryViewModel @Inject constructor(
     suspend fun shareText(text: String, title: String, launch: (Intent) -> Unit): Boolean =
         textTransfer.share(text, title, launch)
 
-    private val _model = MutableStateFlow(HistoryModel())
-    val model: StateFlow<HistoryModel> = _model.asStateFlow()
-    val searchQuery: StateFlow<String> = model
-        .map { it.searchQuery }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, _model.value.searchQuery)
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
     private val _uiEvents = Channel<HistoryUiEvent>()
     val uiEvents = _uiEvents.receiveAsFlow()
@@ -126,7 +119,7 @@ class HistoryViewModel @Inject constructor(
 
     fun dispatch(msg: HistoryMsg) {
         when (msg) {
-            is HistoryMsg.SetSearchQuery -> _model.update { HistoryReducer.reduce(it, msg) }
+            is HistoryMsg.SetSearchQuery -> _searchQuery.value = msg.query
             is HistoryMsg.PrepareShareTranscript -> prepareShareTranscript(msg.item)
             is HistoryMsg.PrepareShareSummary -> prepareShareSummary(msg.item)
             is HistoryMsg.PrepareExport -> prepareExport(msg.format)
@@ -139,8 +132,7 @@ class HistoryViewModel @Inject constructor(
     }
 
     @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
-    internal val pagedHistoryItems: Flow<PagingData<HistoryListRow>> = model
-        .map { it.searchQuery }
+    internal val pagedHistoryItems: Flow<PagingData<HistoryListRow>> = _searchQuery
         .debounce(250)
         .distinctUntilChanged()
         .flatMapLatest(historyRepository::getPagedHistory)
