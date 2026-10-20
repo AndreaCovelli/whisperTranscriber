@@ -22,9 +22,11 @@ import com.andreacovelli.whispertranscriber.ui.screens.HistoryScreen
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Before
@@ -56,7 +58,8 @@ class HistoryScreenInstrumentedTest {
 
     @After
     fun tearDown() {
-        composeRule.runOnUiThread { viewModel.viewModelScope.cancel() }
+        // Join, not just cancel: an in-flight Room query would otherwise outlive the closed database.
+        runBlocking { withContext(Dispatchers.Main) { viewModel.viewModelScope.coroutineContext.job.cancelAndJoin() } }
         fixture.close()
         settings.close()
     }

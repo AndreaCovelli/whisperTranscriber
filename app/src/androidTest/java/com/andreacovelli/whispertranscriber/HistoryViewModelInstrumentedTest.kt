@@ -25,7 +25,6 @@ import java.time.ZoneId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -97,7 +96,8 @@ class HistoryViewModelInstrumentedTest {
     @After
     fun tearDown() = runBlocking {
         collectionScope.coroutineContext.job.cancelAndJoin()
-        withContext(Dispatchers.Main) { viewModel.viewModelScope.cancel() }
+        // Join, not just cancel: an in-flight Room query would otherwise outlive the closed database.
+        withContext(Dispatchers.Main) { viewModel.viewModelScope.coroutineContext.job.cancelAndJoin() }
         fixture.close()
         settings.close()
         testFiles.forEach(File::delete)

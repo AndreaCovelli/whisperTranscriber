@@ -26,11 +26,12 @@ import java.util.Collections
 import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -72,7 +73,8 @@ class MainViewModelInstrumentedTest {
 
     @After
     fun tearDown() = runBlocking {
-        withContext(Dispatchers.Main) { viewModel.viewModelScope.cancel() }
+        // Join, not just cancel: an in-flight Room query would otherwise outlive the closed database.
+        withContext(Dispatchers.Main) { viewModel.viewModelScope.coroutineContext.job.cancelAndJoin() }
         fixture.db.transcriptionJobDao().getAllJobs().first().forEach { job ->
             job.stagedFilePath?.let { File(it).delete() }
         }
