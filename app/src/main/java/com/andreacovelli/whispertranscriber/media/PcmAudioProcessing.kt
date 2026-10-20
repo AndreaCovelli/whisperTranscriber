@@ -4,10 +4,8 @@ import java.nio.ByteBuffer
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.cos
-import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.roundToInt
 import kotlin.math.sin
 
 internal object PcmChannelMask {
@@ -61,6 +59,7 @@ internal object PcmMonoDownmixer {
     const val CENTER_GAIN = 0.707_106_77f
     private const val HEADROOM = 0.9f
     private const val PCM16_TO_FLOAT = 1f / 32_768f
+    private const val PCM16_MIX_SCALE = PCM16_TO_FLOAT * HEADROOM
 
     fun mixPcm16ToMono(
         source: ShortArray,
@@ -84,9 +83,9 @@ internal object PcmMonoDownmixer {
         repeat(frames) { destinationIndex ->
             var mixed = 0f
             repeat(sourceChannels) { channel ->
-                mixed += source[sourceIndex++].toInt() * PCM16_TO_FLOAT * gains[channel]
+                mixed += source[sourceIndex++] * gains[channel]
             }
-            destination[destinationIndex] = mixed * HEADROOM
+            destination[destinationIndex] = mixed * PCM16_MIX_SCALE
         }
     }
 
@@ -190,13 +189,11 @@ internal class MonoPcmResampler(
     private val tapCount = taps
     private val phaseCount = phases
     private val center = tapCount / 2 - 1
-    private val step = inputRate.toDouble() / outputRate.toDouble()
     private val kernel: Array<FloatArray>
     private val tail = FloatArray(tapCount)
     private var workBuffer = FloatArray(0)
     private var totalFramesSeen = 0L
     private var outputFramesProduced = 0L
-    private var sourcePosition = 0.0
 
     init {
         require(inputRate > 0)
@@ -205,6 +202,7 @@ internal class MonoPcmResampler(
         require(phaseCount > 0)
 
         val cutoff = 0.5 * min(1.0, outputRate.toDouble() / inputRate.toDouble()) * CUTOFF_MARGIN
+        val window = DoubleArray(tapCount) { tap -> blackmanWindow(tap, tapCount) }
         kernel = Array(phaseCount) { phaseIndex ->
             val fraction = phaseIndex.toDouble() / phaseCount.toDouble()
             val coefficients = DoubleArray(tapCount)
@@ -213,7 +211,7 @@ internal class MonoPcmResampler(
                 val distance = (tap - center) - fraction
                 val x = 2.0 * cutoff * distance
                 val sinc = if (abs(x) < 1e-8) 1.0 else sin(Math.PI * x) / (Math.PI * x)
-                val value = (2.0 * cutoff) * sinc * blackmanWindow(tap, tapCount)
+                val value = (2.0 * cutoff) * sinc * window[tap]
                 coefficients[tap] = value
                 sum += value
             }
@@ -235,27 +233,24 @@ internal class MonoPcmResampler(
         }
 
         val workStartGlobal = totalFramesSeen - tapCount
-        var relativePosition = sourcePosition - workStartGlobal
         val approximateOutputFrames =
             ((framesIn * outputRate.toLong()) / inputRate.toLong() + OUTPUT_CAPACITY_MARGIN).toInt()
         ensureOutputCapacity(approximateOutputFrames.coerceAtLeast(0))
         var outputIndex = 0
 
         while (true) {
-            val samplePosition = resolveSamplePosition(relativePosition)
-            val leftIndex = samplePosition.base - center
+            val phasePosition = phasePositionOf(outputFramesProduced)
+            val leftIndex = (phasePosition / phaseCount - workStartGlobal).toInt() - center
             if (leftIndex + tapCount > workFrames) break
+            // The previous call stopped at the first output whose taps reached past its input, so the next
+            // output always starts inside the retained tail.
+            check(leftIndex >= 0)
 
-            if (leftIndex >= 0) {
-                if (outputIndex >= outputBuffer.size) {
-                    ensureOutputCapacity(max(1, outputBuffer.size * 2))
-                }
-                outputBuffer[outputIndex++] = convolve(leftIndex, samplePosition.phase)
-                outputFramesProduced++
+            if (outputIndex >= outputBuffer.size) {
+                ensureOutputCapacity(max(1, outputBuffer.size * 2))
             }
-
-            relativePosition += step
-            sourcePosition += step
+            outputBuffer[outputIndex++] = convolve(leftIndex, (phasePosition % phaseCount).toInt())
+            outputFramesProduced++
         }
 
         val copyStart = max(0, workFrames - tapCount)
@@ -271,35 +266,31 @@ internal class MonoPcmResampler(
         workBuffer.fill(0f, tapCount, workFrames)
 
         val workStartGlobal = totalFramesSeen - tapCount
-        var relativePosition = sourcePosition - workStartGlobal
         val targetOutputFrames = ceilDiv(totalFramesSeen * outputRate.toLong(), inputRate.toLong())
         ensureOutputCapacity((targetOutputFrames - outputFramesProduced).coerceAtLeast(0).toInt())
         var outputIndex = 0
 
         while (outputFramesProduced < targetOutputFrames) {
-            val samplePosition = resolveSamplePosition(relativePosition)
-            val leftIndex = samplePosition.base - center
+            val phasePosition = phasePositionOf(outputFramesProduced)
+            val leftIndex = (phasePosition / phaseCount - workStartGlobal).toInt() - center
             check(leftIndex >= 0 && leftIndex + tapCount <= workFrames)
             if (outputIndex >= outputBuffer.size) {
                 ensureOutputCapacity(max(1, outputBuffer.size * 2))
             }
-            outputBuffer[outputIndex++] = convolve(leftIndex, samplePosition.phase)
+            outputBuffer[outputIndex++] = convolve(leftIndex, (phasePosition % phaseCount).toInt())
             outputFramesProduced++
-            relativePosition += step
-            sourcePosition += step
         }
         return outputIndex
     }
 
-    private fun resolveSamplePosition(relativePosition: Double): SamplePosition {
-        var base = floor(relativePosition).toInt()
-        val fraction = relativePosition - base
-        var phase = (fraction * phaseCount).roundToInt()
-        if (phase == phaseCount) {
-            phase = 0
-            base++
-        }
-        return SamplePosition(base, phase)
+    /**
+     * Returns the input position of [outputFrame] in units of 1/[phaseCount] input samples, rounded to the
+     * nearest phase. Exact integer math avoids the drift of accumulating a fractional step over long files;
+     * the product stays far below Long.MAX_VALUE for any WAV-sized output.
+     */
+    private fun phasePositionOf(outputFrame: Long): Long {
+        val doubledOutputRate = 2L * outputRate
+        return (outputFrame * inputRate * phaseCount * 2L + outputRate) / doubledOutputRate
     }
 
     private fun convolve(leftIndex: Int, phase: Int): Float {
@@ -324,8 +315,6 @@ internal class MonoPcmResampler(
             outputBuffer = FloatArray(max(minimumSize, outputBuffer.size.coerceAtLeast(8_192) * 2))
         }
     }
-
-    private data class SamplePosition(val base: Int, val phase: Int)
 
     private companion object {
         private const val DEFAULT_PHASES = 1_024

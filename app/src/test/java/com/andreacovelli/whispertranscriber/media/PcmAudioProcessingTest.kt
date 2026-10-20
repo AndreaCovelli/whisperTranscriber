@@ -152,6 +152,39 @@ class PcmAudioProcessingTest {
     }
 
     @Test
+    fun wavWriter_preservesSampleOrderAcrossBufferedWrites() {
+        val outputFile = File.createTempFile("buffered_pcm_", ".wav")
+        val pcmSamples = ShortArray(50_000) { index -> (index - 25_000).toShort() }
+        val pcmBytes = ByteBuffer.allocate(pcmSamples.size * 2).order(ByteOrder.LITTLE_ENDIAN)
+        pcmSamples.forEach(pcmBytes::putShort)
+        pcmBytes.flip()
+        val floatSamples = FloatArray(40_000) { index -> if (index % 2 == 0) 0.5f else -0.5f }
+        try {
+            Pcm16WavWriter(outputFile).use { writer ->
+                writer.writeMonoFloats(floatSamples, sampleCount = 3)
+                writer.writePcm16Buffer(pcmBytes, byteCount = pcmBytes.remaining())
+                writer.writeMonoFloats(floatSamples, floatSamples.size)
+                writer.finish()
+            }
+
+            val written = ByteBuffer.wrap(outputFile.readBytes()).order(ByteOrder.LITTLE_ENDIAN)
+            val expectedSamples = 3 + pcmSamples.size + floatSamples.size
+            assertEquals(44 + expectedSamples * 2, written.capacity())
+            assertEquals(expectedSamples * 2, written.getInt(40))
+            written.position(44)
+            assertEquals(16_384, written.getShort().toInt())
+            assertEquals(-16_383, written.getShort().toInt())
+            assertEquals(16_384, written.getShort().toInt())
+            pcmSamples.forEach { sample -> assertEquals(sample, written.getShort()) }
+            repeat(floatSamples.size) { index ->
+                assertEquals(if (index % 2 == 0) 16_384 else -16_383, written.getShort().toInt())
+            }
+        } finally {
+            outputFile.delete()
+        }
+    }
+
+    @Test
     fun wavWriter_writesNanSamplesAsSilence() {
         val outputFile = File.createTempFile("nan_pcm_", ".wav")
         try {

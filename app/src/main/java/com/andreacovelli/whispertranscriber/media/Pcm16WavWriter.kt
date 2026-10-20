@@ -9,7 +9,6 @@ import java.io.IOException
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -24,6 +23,7 @@ private const val MICROSECONDS_PER_SECOND = 1_000_000L
 private const val WAV_HEADER_BYTES = 44L
 private const val RIFF_CHUNK_OVERHEAD_BYTES = 36L
 private const val UINT32_MAX = 0xffff_ffffL
+private const val WRITE_BUFFER_BYTES = 64 * 1024
 internal const val MAX_CLASSIC_WAV_DATA_BYTES = UINT32_MAX - RIFF_CHUNK_OVERHEAD_BYTES - 1L
 
 internal fun maximumPcm16MonoDataBytesForDurationExclusive(durationUsExclusive: Long): Long {
@@ -40,8 +40,10 @@ internal class Pcm16WavWriter(file: File, private val maximumDataBytes: Long = M
     AutoCloseable {
     private val output = RandomAccessFile(file, "rw")
     private var dataBytesWritten = 0L
-    private var byteScratch = ByteArray(0)
-    private var byteBuffer: ByteBuffer? = null
+
+    // Decoded buffers are small (often under 1 KiB after resampling); batch them into fewer file writes.
+    private val pending = ByteArray(WRITE_BUFFER_BYTES)
+    private var pendingBytes = 0
     private var closed = false
 
     val fileDescriptor: FileDescriptor
@@ -71,16 +73,16 @@ internal class Pcm16WavWriter(file: File, private val maximumDataBytes: Long = M
         if (sampleCount == 0) return
         val byteCount = Math.multiplyExact(sampleCount, PCM16_BYTES_PER_SAMPLE)
         ensureWriteFits(byteCount)
-        ensureByteCapacity(byteCount)
 
-        val shorts = requireNotNull(byteBuffer).apply(ByteBuffer::clear).asShortBuffer()
-        repeat(sampleCount) { index ->
+        for (index in 0 until sampleCount) {
+            if (pendingBytes == pending.size) flushPending()
             val sample = samples[index]
             // roundToInt() rejects NaN, which a corrupt stream can decode to; write it as silence.
             val scaled = if (sample.isNaN()) 0 else (sample.coerceIn(-1f, 1f) * Short.MAX_VALUE).roundToInt()
-            shorts.put(scaled.toShort())
+            pending[pendingBytes] = scaled.toByte()
+            pending[pendingBytes + 1] = (scaled shr Byte.SIZE_BITS).toByte()
+            pendingBytes += PCM16_BYTES_PER_SAMPLE
         }
-        output.write(byteScratch, 0, byteCount)
         dataBytesWritten += byteCount
     }
 
@@ -89,9 +91,14 @@ internal class Pcm16WavWriter(file: File, private val maximumDataBytes: Long = M
         require(buffer.remaining() >= byteCount)
         if (byteCount == 0) return
         ensureWriteFits(byteCount)
-        ensureByteCapacity(byteCount)
-        buffer.get(byteScratch, 0, byteCount)
-        output.write(byteScratch, 0, byteCount)
+        var remaining = byteCount
+        while (remaining > 0) {
+            if (pendingBytes == pending.size) flushPending()
+            val chunk = min(remaining, pending.size - pendingBytes)
+            buffer.get(pending, pendingBytes, chunk)
+            pendingBytes += chunk
+            remaining -= chunk
+        }
         dataBytesWritten += byteCount
     }
 
@@ -104,6 +111,7 @@ internal class Pcm16WavWriter(file: File, private val maximumDataBytes: Long = M
         val durationUs = dataBytesWritten / PCM16_BYTES_PER_SAMPLE *
             MICROSECONDS_PER_SECOND / CONVERTED_AUDIO_SAMPLE_RATE
         try {
+            flushPending()
             val integerBuffer = ByteArray(Int.SIZE_BYTES)
             output.seek(4)
             writeUnsignedIntLittleEndian(RIFF_CHUNK_OVERHEAD_BYTES + dataBytesWritten, integerBuffer)
@@ -129,12 +137,10 @@ internal class Pcm16WavWriter(file: File, private val maximumDataBytes: Long = M
         }
     }
 
-    private fun ensureByteCapacity(minimumBytes: Int) {
-        if (byteScratch.size < minimumBytes) {
-            byteScratch = ByteArray(max(minimumBytes, byteScratch.size.coerceAtLeast(16_384) * 2))
-            byteBuffer = ByteBuffer.wrap(byteScratch).order(ByteOrder.LITTLE_ENDIAN)
-        } else if (byteBuffer == null) {
-            byteBuffer = ByteBuffer.wrap(byteScratch).order(ByteOrder.LITTLE_ENDIAN)
+    private fun flushPending() {
+        if (pendingBytes > 0) {
+            output.write(pending, 0, pendingBytes)
+            pendingBytes = 0
         }
     }
 
