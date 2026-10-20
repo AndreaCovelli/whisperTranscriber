@@ -67,7 +67,8 @@ class TextTransfer @Inject constructor(
     /** Writes [text] as UTF-8 to a document the user picked; returns false if the provider rejects it. */
     suspend fun save(text: String, destination: Uri): Boolean = withContext(ioDispatcher) {
         try {
-            val output = context.contentResolver.openOutputStream(destination) ?: return@withContext false
+            // "w" need not truncate, so overwriting a longer document could keep its old trailing text.
+            val output = context.contentResolver.openOutputStream(destination, "wt") ?: return@withContext false
             output.bufferedWriter(Charsets.UTF_8).use { it.write(text) }
             true
         } catch (_: IOException) {

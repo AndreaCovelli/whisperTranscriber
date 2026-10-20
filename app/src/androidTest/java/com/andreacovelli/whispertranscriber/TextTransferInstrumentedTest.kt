@@ -61,6 +61,22 @@ class TextTransferInstrumentedTest {
     }
 
     @Test
+    fun save_replacesTheWholeExistingDocument() = runBlocking {
+        val directory = File(context.cacheDir, "shared_text").apply { mkdirs() }
+        val destination = File.createTempFile("save-", ".txt", directory)
+        try {
+            destination.writeText("An older and much longer transcript")
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.shared-text", destination)
+
+            assertTrue(transfer.save("Newer é", uri))
+
+            assertEquals("Newer é", destination.readText(Charsets.UTF_8))
+        } finally {
+            destination.delete()
+        }
+    }
+
+    @Test
     fun fileProvider_cannotExposeUnrelatedCacheOrStagedAudio() {
         listOf(
             File(context.cacheDir, "unrelated.txt"),
