@@ -112,14 +112,25 @@ internal fun summaryNotificationId(jobId: Int): Int {
     return -1 - jobId
 }
 
+/** Schedules user-requested summaries; [SummaryWorkScheduler] runs them through WorkManager. */
+interface SummaryScheduler {
+    /** Returns the id of the new work, or of the pending work already summarizing this job. */
+    suspend fun enqueue(jobId: Int, displayName: String, settings: SummarizationSettings): UUID
+
+    /** Emits the status message (null when there is none) once the summary work finishes, then completes. */
+    fun statusMessages(workId: UUID): Flow<UserMessage?>
+
+    /** Stops the job's summary and returns the message to show. */
+    suspend fun cancel(jobId: Int): UserMessage
+}
+
 /** Enqueues and cancels user-requested summaries, one unique work entry per job. */
 @Singleton
 class SummaryWorkScheduler @Inject constructor(
     private val workManager: WorkManager,
     private val summarizationService: SummarizationService,
-) {
-    /** Returns the id of the new work, or of the pending work already summarizing this job. */
-    suspend fun enqueue(jobId: Int, displayName: String, settings: SummarizationSettings): UUID {
+) : SummaryScheduler {
+    override suspend fun enqueue(jobId: Int, displayName: String, settings: SummarizationSettings): UUID {
         val request = OneTimeWorkRequestBuilder<SummaryWorker>()
             .setInputData(summaryWorkInput(jobId, displayName, settings))
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
@@ -131,11 +142,8 @@ class SummaryWorkScheduler @Inject constructor(
         return retainedSummaryWorkId(request.id, workManager.getWorkInfosForUniqueWorkFlow(workName(jobId)).first())
     }
 
-    /**
-     * Emits the status message (null when there is none) once the summary work finishes, then completes.
-     * Work that no longer exists counts as finished, so the flow cannot wait forever.
-     */
-    fun statusMessages(workId: UUID): Flow<UserMessage?> = workManager.getWorkInfoByIdFlow(workId)
+    /** Work that no longer exists counts as finished, so the flow cannot wait forever. */
+    override fun statusMessages(workId: UUID): Flow<UserMessage?> = workManager.getWorkInfoByIdFlow(workId)
         .filter { info -> info == null || info.state.isFinished }
         .take(1)
         .map { info ->
@@ -146,7 +154,7 @@ class SummaryWorkScheduler @Inject constructor(
         }
 
     /** Cancels the stored attempt first so a late provider response cannot be saved. */
-    suspend fun cancel(jobId: Int): UserMessage {
+    override suspend fun cancel(jobId: Int): UserMessage {
         val statusMessage = summarizationService.cancelSummary(jobId)
         workManager.cancelUniqueWork(workName(jobId)).await()
         return statusMessage

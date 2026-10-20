@@ -25,7 +25,11 @@ import kotlinx.coroutines.Dispatchers
 import okhttp3.OkHttpClient
 
 /** Real Room, storage, and queue orchestration; only OS scheduling is recorded. */
-internal class RepairTestFixture(context: Context, queryCallback: RoomDatabase.QueryCallback? = null) : AutoCloseable {
+internal class RepairTestFixture(
+    context: Context,
+    queryCallback: RoomDatabase.QueryCallback? = null,
+    val settings: ApiKeyManager = ApiKeyManager(context),
+) : AutoCloseable {
     val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).apply {
         if (queryCallback != null) setQueryCallback(queryCallback, Runnable::run)
     }.build()
@@ -38,7 +42,6 @@ internal class RepairTestFixture(context: Context, queryCallback: RoomDatabase.Q
     val publisher = StoredResultPublisher(db, notifier)
     val audioStore = QueuedAudioStore(context, Dispatchers.IO)
     val scheduler = RecordingScheduler()
-    val settings = ApiKeyManager(context)
     val queue = TranscriptionQueueService(
         settings,
         repository,

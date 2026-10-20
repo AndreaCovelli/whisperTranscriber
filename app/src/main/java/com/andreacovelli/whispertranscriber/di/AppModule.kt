@@ -6,6 +6,8 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.work.WorkManager
+import com.andreacovelli.whispertranscriber.background.SummaryScheduler
+import com.andreacovelli.whispertranscriber.background.SummaryWorkScheduler
 import com.andreacovelli.whispertranscriber.data.AppDatabase
 import com.andreacovelli.whispertranscriber.data.HistoryRepository
 import com.andreacovelli.whispertranscriber.data.RoomHistoryRepository
@@ -95,6 +97,10 @@ abstract class RepositoryModule {
     abstract fun bindQueueScheduler(
         scheduler: com.andreacovelli.whispertranscriber.queue.AndroidQueueScheduler,
     ): com.andreacovelli.whispertranscriber.queue.QueueScheduler
+
+    @Binds
+    @Singleton
+    abstract fun bindSummaryScheduler(scheduler: SummaryWorkScheduler): SummaryScheduler
 
     @Binds
     @Singleton
