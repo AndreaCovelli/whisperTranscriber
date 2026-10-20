@@ -44,23 +44,20 @@ class TranscriptionSummarizationRepository @Inject constructor(
 
     suspend fun cancelSummarization(id: Int): Boolean = jobSummarizationDao.cancelSummarization(id) > 0
 
+    /** Claims the automatic summary for the execution that owns the running job. */
     suspend fun claimAutoSummary(
         id: Int,
+        executionOwnerId: String,
         attemptId: String,
         providerName: String,
         modelName: String,
-        executionOwnerId: String?,
-    ): Boolean = if (executionOwnerId == null) {
-        jobSummarizationDao.claimAutoSummary(id, attemptId, providerName, modelName) > 0
-    } else {
-        jobSummarizationDao.claimBackgroundAutoSummary(
-            id,
-            executionOwnerId,
-            attemptId,
-            providerName,
-            modelName,
-        ) > 0
-    }
+    ): Boolean = jobSummarizationDao.claimBackgroundAutoSummary(
+        id,
+        executionOwnerId,
+        attemptId,
+        providerName,
+        modelName,
+    ) > 0
 
     suspend fun claimManualSummary(id: Int, attemptId: String, providerName: String, modelName: String): Boolean =
         jobSummarizationDao.claimManualSummary(id, attemptId, providerName, modelName) > 0

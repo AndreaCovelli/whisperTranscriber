@@ -20,6 +20,7 @@ import com.andreacovelli.whispertranscriber.queue.executionBackendOrDefault
 import com.andreacovelli.whispertranscriber.queue.resolveShareExecutionBackend
 import com.andreacovelli.whispertranscriber.queue.toPersistedConfig
 import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
+import com.andreacovelli.whispertranscriber.settings.ApiKeyState
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
@@ -30,7 +31,10 @@ import javax.inject.Singleton
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -281,6 +285,22 @@ class TranscriptionQueueService @Inject constructor(
                 "${cleanup.orphanFilesDeleted} orphaned staged files.",
         )
         scheduleNextQueuedJobIfIdle()
+    }
+
+    /** Keeps unfinished jobs on the current auto-summary settings for as long as the process lives. */
+    suspend fun keepQueuedAutoSummaryInSync() {
+        combine(
+            settings.automaticSummarizationFlow,
+            settings.geminiApiKeyStateFlow.map { state -> state is ApiKeyState.Present },
+            settings.summarizationSettingsFlow,
+        ) { enabled, hasGeminiKey, summarizationSettings ->
+            summarizationSettings.takeIf { enabled && hasGeminiKey }
+        }
+            .distinctUntilChanged()
+            .collect { summarizationSettings ->
+                executionCoordinator.awaitRecovery()
+                repository.applyQueuedAutoSummary(summarizationSettings)
+            }
     }
 
     suspend fun cancelBackgroundSummaryIfRunning(jobId: Int): Boolean {

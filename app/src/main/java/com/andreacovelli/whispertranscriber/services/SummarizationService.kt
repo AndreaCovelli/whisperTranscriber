@@ -48,24 +48,26 @@ class SummarizationService @Inject constructor(
     @param:ApplicationContext private val applicationContext: Context,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
+    /**
+     * Summarizes a job's transcript. Without [executionOwnerId] this is a user request that may replace
+     * an existing summary; with it, this is the automatic summary of the execution that owns the job.
+     */
     suspend fun summarize(
         jobId: Int,
         settings: SummarizationSettings,
-        allowResummarize: Boolean,
         executionOwnerId: String? = null,
         fallbackStatusMessage: String = "",
         onStatusUpdate: suspend (String) -> Unit = {},
     ): SummarizationResult = operations.track(jobId) {
-        summarizeAttempt(jobId, settings, allowResummarize, executionOwnerId, fallbackStatusMessage, onStatusUpdate)
+        summarizeAttempt(jobId, settings, executionOwnerId, fallbackStatusMessage, onStatusUpdate)
     }
 
     private suspend fun summarizeAttempt(
         jobId: Int,
         settings: SummarizationSettings,
-        allowResummarize: Boolean,
-        executionOwnerId: String? = null,
-        fallbackStatusMessage: String = "",
-        onStatusUpdate: suspend (String) -> Unit = {},
+        executionOwnerId: String?,
+        fallbackStatusMessage: String,
+        onStatusUpdate: suspend (String) -> Unit,
     ): SummarizationResult {
         val summarizerSelection = try {
             resolveSummarizerSelection(settings)
@@ -79,7 +81,7 @@ class SummarizationService @Inject constructor(
         var summarizingCleared = false
         return try {
             val claimed = operations.withClaimLock {
-                if (allowResummarize) {
+                if (executionOwnerId == null) {
                     summarizationRepository.claimManualSummary(
                         jobId,
                         attemptId,
@@ -89,10 +91,10 @@ class SummarizationService @Inject constructor(
                 } else {
                     summarizationRepository.claimAutoSummary(
                         jobId,
+                        executionOwnerId,
                         attemptId,
                         summarizerSelection.provider.name,
                         summarizerSelection.modelName,
-                        executionOwnerId,
                     )
                 }
             }

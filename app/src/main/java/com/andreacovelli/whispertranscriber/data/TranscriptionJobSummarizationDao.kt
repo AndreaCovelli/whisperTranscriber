@@ -105,29 +105,6 @@ interface TranscriptionJobSummarizationDao {
             autoSummaryAttempted = 1,
             summaryAttemptId = :attemptId
         WHERE id = :id
-          AND isRunning = 0
-          AND isSummarizing = 0
-          AND autoSummaryAttempted = 0
-          AND historyId IS NOT NULL
-          AND summary = ''
-          AND error IS NULL
-          AND summaryError IS NULL
-        """,
-    )
-    suspend fun claimAutoSummary(id: Int, attemptId: String, providerName: String, modelName: String): Int
-
-    @Query(
-        """
-        UPDATE active_jobs
-        SET isSummarizing = 1,
-            summary = '',
-            summaryProviderName = :providerName,
-            summaryModel = :modelName,
-            summaryStatus = '$SUMMARY_STATUS_SUMMARIZING',
-            summaryError = NULL,
-            autoSummaryAttempted = 1,
-            summaryAttemptId = :attemptId
-        WHERE id = :id
           AND isRunning = 1
           AND executionOwnerId = :executionOwnerId
           AND isSummarizing = 0

@@ -31,6 +31,9 @@ class WhisperTranscriberApp :
         applicationScope.launch {
             queueService.recoverAndMaintainQueue()
         }
+        applicationScope.launch {
+            queueService.keepQueuedAutoSummaryInSync()
+        }
     }
 
     override val workManagerConfiguration: Configuration

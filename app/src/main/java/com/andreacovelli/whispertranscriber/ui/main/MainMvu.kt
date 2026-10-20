@@ -26,7 +26,7 @@ sealed interface MainMsg {
     data class MainNavigationHandled(val requestToken: Long) : MainMsg
     data class JobRevealHandled(val requestToken: Long) : MainMsg
     data object ClearCompletedJobs : MainMsg
-    data class SummarizeJob(val jobId: Int, val allowResummarize: Boolean = true) : MainMsg
+    data class SummarizeJob(val jobId: Int) : MainMsg
     data class ClearSummary(val jobId: Int) : MainMsg
     data class ClearTranscript(val jobId: Int) : MainMsg
     data class RetryJob(val jobId: Int) : MainMsg

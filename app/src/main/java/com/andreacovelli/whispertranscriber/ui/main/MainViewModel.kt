@@ -9,11 +9,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.background.PostTranscriptionWorkSpec
+import com.andreacovelli.whispertranscriber.background.SummaryWorkScheduler
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
-import com.andreacovelli.whispertranscriber.queue.JobOperationRegistry
 import com.andreacovelli.whispertranscriber.queue.RetryResult
-import com.andreacovelli.whispertranscriber.services.SummarizationService
 import com.andreacovelli.whispertranscriber.services.TranscriptionQueueService
 import com.andreacovelli.whispertranscriber.services.ValidationService
 import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
@@ -34,16 +33,11 @@ import com.andreacovelli.whispertranscriber.userMessageOr
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
-import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -165,15 +159,6 @@ internal fun buildJobPresentationState(jobs: List<TranscriptionJob>): JobPresent
     )
 }
 
-private val TranscriptionJob.hasSummaryBlockingState: Boolean
-    get() = isRunning || isSummarizing || error != null || summaryError != null
-
-private val UiState.isAutoSummaryActive: Boolean
-    get() = automaticSummarizationEnabled && geminiApiKeyState is ApiKeyState.Present
-
-private val TranscriptionJob.isReadyForAutoSummary: Boolean
-    get() = !hasSummaryBlockingState && transcript.isNotBlank() && summary.isBlank() && !autoSummaryAttempted
-
 internal fun UiState.toTranscriptionQueueSettings(): TranscriptionQueueSettings = TranscriptionQueueSettings(
     provider = provider,
     customModelName = transcriptionCustomGeminiModelName,
@@ -210,10 +195,9 @@ class MainViewModel @Inject constructor(
     private val settings: ApiKeyManager,
     private val repository: TranscriptionRepository,
     private val queueService: TranscriptionQueueService,
-    private val operations: JobOperationRegistry,
     private val textTransfer: TextTransfer,
     private val validationService: ValidationService,
-    private val summarizationService: SummarizationService,
+    private val summaryScheduler: SummaryWorkScheduler,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
     suspend fun shareText(text: String, title: String, launch: (Intent) -> Unit): Boolean =
@@ -225,12 +209,6 @@ class MainViewModel @Inject constructor(
     val uiState = _uiState.asStateFlow()
     private val _events = Channel<Int>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
-    private val summaryJobs = ConcurrentHashMap<Int, Job>()
-
-    // Automatic summaries run one at a time. Both are only touched on the main dispatcher.
-    private val autoSummaryRequests = Channel<Int>(Channel.UNLIMITED)
-    private val pendingAutoSummaries = mutableSetOf<Int>()
-    private val latestJobs = MutableStateFlow<List<TranscriptionJob>>(emptyList())
     private val transcriptionSettingsHydrated = MutableStateFlow(false)
     private val settingsDelegate = MainSettingsDelegate(
         getState = { _uiState.value },
@@ -239,7 +217,6 @@ class MainViewModel @Inject constructor(
         validationService = validationService,
         scope = viewModelScope,
         ioDispatcher = ioDispatcher,
-        markFinishedJobsAutoSummaryAttempted = repository::markFinishedJobsAutoSummaryAttempted,
         resolveMessage = { message -> message.resolve(appContext) },
         notify = { _events.trySend(it) },
     )
@@ -298,33 +275,6 @@ class MainViewModel @Inject constructor(
                             batchProgressState = presentationState.batchProgressState,
                         ),
                     )
-                    latestJobs.value = jobsList
-                }
-            }
-            launch {
-                // Rescan when auto-summary becomes active as well, so a completion observed while the
-                // setting or key was still propagating is not missed. Already-marked jobs fail the claim.
-                combine(
-                    latestJobs,
-                    _uiState.map { state -> state.isAutoSummaryActive }.distinctUntilChanged(),
-                ) { jobsList, isActive -> if (isActive) jobsList else emptyList() }
-                    .collect { jobsList ->
-                        jobsList.forEach { job ->
-                            if (job.isReadyForAutoSummary && pendingAutoSummaries.add(job.id)) {
-                                autoSummaryRequests.trySend(job.id)
-                            }
-                        }
-                    }
-            }
-            launch {
-                for (jobId in autoSummaryRequests) {
-                    try {
-                        if (_uiState.value.isAutoSummaryActive) {
-                            runSummarization(jobId, allowResummarize = false).join()
-                        }
-                    } finally {
-                        pendingAutoSummaries.remove(jobId)
-                    }
                 }
             }
         }
@@ -349,7 +299,7 @@ class MainViewModel @Inject constructor(
                 }
             }
             MainMsg.ClearCompletedJobs -> viewModelScope.launch { queueService.clearCompletedJobs() }
-            is MainMsg.SummarizeJob -> runSummarization(msg.jobId, allowResummarize = msg.allowResummarize)
+            is MainMsg.SummarizeJob -> requestSummary(msg.jobId)
             is MainMsg.ClearSummary -> viewModelScope.launch {
                 queueService.clearJobContent(
                     msg.jobId,
@@ -450,48 +400,29 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    private fun runSummarization(jobId: Int, allowResummarize: Boolean): Job {
-        val previousSummaryJob = summaryJobs.remove(jobId)
-        return viewModelScope.launch {
-            operations.track(jobId) {
-                previousSummaryJob?.cancelAndJoin()
-                val currentState = _uiState.value
-                val result = summarizationService.summarize(
-                    jobId = jobId,
-                    settings = currentState.toSummarizationSettings(),
-                    allowResummarize = allowResummarize,
-                    fallbackStatusMessage = currentState.status,
-                )
-                reduce(MainMsg.StatusChanged(result.statusMessage))
-            }
-        }.also { job ->
-            summaryJobs[jobId] = job
-            job.invokeOnCompletion {
-                summaryJobs.remove(jobId, job)
+    private fun requestSummary(jobId: Int) {
+        val displayName = _uiState.value.jobs.firstOrNull { it.id == jobId }?.displayName.orEmpty()
+        val summarizationSettings = _uiState.value.toSummarizationSettings()
+        viewModelScope.launch {
+            val workId = summaryScheduler.enqueue(jobId, displayName, summarizationSettings)
+            summaryScheduler.statusMessages(workId).collect { statusMessage ->
+                if (statusMessage.isNotEmpty()) reduce(MainMsg.StatusChanged(statusMessage))
             }
         }
     }
 
     private fun cancelSummary(jobId: Int) {
-        val localSummaryJob = summaryJobs.remove(jobId)
         viewModelScope.launch {
-            val backgroundCancelled = queueService.cancelBackgroundSummaryIfRunning(jobId)
-            val statusMessage = if (backgroundCancelled) {
+            val statusMessage = if (queueService.cancelBackgroundSummaryIfRunning(jobId)) {
                 appContext.getString(R.string.summarization_status_cancelled)
             } else {
-                summarizationService.cancelSummary(jobId)
+                summaryScheduler.cancel(jobId)
             }
-            localSummaryJob?.cancel()
             reduce(MainMsg.StatusChanged(statusMessage))
         }
     }
 
     private fun reduce(msg: MainMsg): UiState = _uiState.updateAndGet { state -> MainReducer.reduce(state, msg) }
-
-    override fun onCleared() {
-        summaryJobs.values.forEach(Job::cancel)
-        summaryJobs.clear()
-    }
 
     private suspend fun resolveTranscriptionQueueSettingsForShare(): TranscriptionQueueSettings {
         val currentState = _uiState.value

@@ -175,7 +175,9 @@ Select **Custom Model** in either the transcription or summarizer selector in Se
 ### Summaries, speaker labels, and background sharing
 
 Choose the **Summarizer** model separately from the transcription provider. Enable
-**Automatic Summarization** to summarize completed transcripts. **Speaker Diarization**
+**Automatic Summarization** to summarize each transcript as it finishes, including audio
+that is already queued; existing transcripts are not summarized retroactively. Automatic
+and manual summaries keep running in the background after you leave the app. **Speaker Diarization**
 is available for Microsoft MAI Transcribe 2 and Gemini transcription and labels
 speakers when they can be distinguished.
 

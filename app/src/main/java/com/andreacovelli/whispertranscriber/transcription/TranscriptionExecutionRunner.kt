@@ -193,7 +193,6 @@ class TranscriptionExecutionRunner @Inject constructor(
                 jobId = job.id,
                 executionOwnerId = executionOwnerId,
                 displayName = job.displayName,
-                postTranscriptionWorkSpec = postTranscriptionWorkSpec,
                 onProgressNotification = onProgressNotification,
             )
             backgroundShareNotifier.cancelBackgroundProcessing(job.id)
@@ -235,7 +234,6 @@ class TranscriptionExecutionRunner @Inject constructor(
             providerExecution = providerExecution,
             speakerDiarizationEnabled = job.speakerDiarizationEnabled,
             speakerLabelPrefix = speakerLabelPrefix,
-            postTranscriptionWorkSpec = postTranscriptionWorkSpec,
             stagedFilePath = job.stagedFilePath,
             onProgressNotification = onProgressNotification,
         )
@@ -265,7 +263,6 @@ class TranscriptionExecutionRunner @Inject constructor(
         providerExecution: ProviderExecution,
         speakerDiarizationEnabled: Boolean,
         speakerLabelPrefix: String,
-        postTranscriptionWorkSpec: PostTranscriptionWorkSpec?,
         stagedFilePath: String?,
         onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
     ) {
@@ -316,7 +313,6 @@ class TranscriptionExecutionRunner @Inject constructor(
                 jobId = jobId,
                 executionOwnerId = executionOwnerId,
                 displayName = displayName,
-                postTranscriptionWorkSpec = postTranscriptionWorkSpec,
                 onProgressNotification = onProgressNotification,
             )
         } finally {
@@ -364,14 +360,14 @@ class TranscriptionExecutionRunner @Inject constructor(
         jobId: Int,
         executionOwnerId: String,
         displayName: String,
-        postTranscriptionWorkSpec: PostTranscriptionWorkSpec?,
         onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
     ) {
+        // Re-read the stored config: changing the auto-summary settings rewrites it for unfinished jobs.
+        val postTranscriptionWorkSpec = repository.getJob(jobId)?.postTranscriptionWorkSpec()
         if (postTranscriptionWorkSpec?.summarizeAfterTranscription == true) {
             val summarizationResult = summarizationService.summarize(
                 jobId = jobId,
                 settings = postTranscriptionWorkSpec.summarizationSettings,
-                allowResummarize = false,
                 executionOwnerId = executionOwnerId,
                 fallbackStatusMessage = applicationContext.getString(R.string.job_status_completed),
                 onStatusUpdate = { statusMessage ->

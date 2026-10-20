@@ -594,16 +594,20 @@ interface TranscriptionJobDao {
     )
     suspend fun getReferencedStagedFilePaths(): List<String>
 
-    /** Excludes already-finished jobs from automatic summarization; only later completions qualify. */
+    /** Rewrites the post-transcription summary choice of jobs that have not reached summarization. */
     @Query(
         """
         UPDATE active_jobs
-        SET autoSummaryAttempted = 1
-        WHERE isRunning = 0
-          AND isSummarizing = 0
-          AND autoSummaryAttempted = 0
-          AND historyId IS NOT NULL
+        SET summarizeAfterTranscription = :summarizeAfterTranscription,
+            queuedSummarizerProviderName = :queuedSummarizerProviderName,
+            queuedSummarizerCustomModelName = :queuedSummarizerCustomModelName
+        WHERE isSummarizing = 0
+          AND (historyId IS NULL OR isRunning = 1)
         """,
     )
-    suspend fun markFinishedJobsAutoSummaryAttempted(): Int
+    suspend fun updateQueuedAutoSummary(
+        summarizeAfterTranscription: Boolean,
+        queuedSummarizerProviderName: String,
+        queuedSummarizerCustomModelName: String,
+    ): Int
 }

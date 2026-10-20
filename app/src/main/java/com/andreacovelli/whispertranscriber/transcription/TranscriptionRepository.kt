@@ -14,6 +14,7 @@ import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.data.TranscriptionJobDao
 import com.andreacovelli.whispertranscriber.queue.MAX_NONTERMINAL_JOBS
 import com.andreacovelli.whispertranscriber.queue.RetryResult
+import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import java.io.File
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -62,8 +63,16 @@ class TranscriptionRepository @Inject constructor(
         jobDao.insertAll(jobs)
     }
 
-    suspend fun markFinishedJobsAutoSummaryAttempted() {
-        jobDao.markFinishedJobsAutoSummaryAttempted()
+    /**
+     * Applies the current auto-summary choice to jobs whose transcription has not finished, so the
+     * runner reads it when they complete. A null [settings] turns automatic summaries off for them.
+     */
+    suspend fun applyQueuedAutoSummary(settings: SummarizationSettings?) {
+        jobDao.updateQueuedAutoSummary(
+            summarizeAfterTranscription = settings != null,
+            queuedSummarizerProviderName = settings?.provider?.name.orEmpty(),
+            queuedSummarizerCustomModelName = settings?.customModelName.orEmpty(),
+        )
     }
 
     suspend fun updateStatusAndProgress(id: Int, ownerId: String, status: String, progress: Float): Boolean =

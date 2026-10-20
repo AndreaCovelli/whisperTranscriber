@@ -23,7 +23,6 @@ internal class MainSettingsDelegate(
     private val validationService: ValidationService,
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher,
-    private val markFinishedJobsAutoSummaryAttempted: suspend () -> Unit,
     private val resolveMessage: (UserMessage) -> String,
     private val notify: (Int) -> Unit,
 ) {
@@ -72,8 +71,6 @@ internal class MainSettingsDelegate(
                 }
                 if (!credentials.isCurrent(token)) return@run
                 if (result.isValid) {
-                    // A newly usable summarizer must not summarize the existing backlog all at once.
-                    if (isGemini && getState().automaticSummarizationEnabled) markFinishedJobsAutoSummaryAttempted()
                     val persisted = credentials.persist(token) {
                         if (isGemini) {
                             settings.saveGeminiApiKey(
@@ -108,11 +105,8 @@ internal class MainSettingsDelegate(
     }
 
     private fun updateAutomaticSummarization(enabled: Boolean) {
-        launchSafely {
-            // Only jobs finishing after this point are summarized automatically, never the existing backlog.
-            if (enabled) markFinishedJobsAutoSummaryAttempted()
-            settings.saveAutomaticSummarization(enabled)
-        }
+        // Jobs still being transcribed pick this up; finished jobs are never summarized retroactively.
+        launchSafely { settings.saveAutomaticSummarization(enabled) }
     }
 
     private fun updateBackgroundShareSummaryNotificationsEnabled(enabled: Boolean) {

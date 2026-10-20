@@ -36,7 +36,6 @@ class ContentMutationInstrumentedTest {
                             com.andreacovelli.whispertranscriber.settings.TranscriptionProvider.GEMINI_FLASH,
                             "",
                         ),
-                        allowResummarize = true,
                     )
                 }
                 clear to pending
@@ -87,7 +86,6 @@ class ContentMutationInstrumentedTest {
                         com.andreacovelli.whispertranscriber.settings.TranscriptionProvider.GEMINI_FLASH,
                         "",
                     ),
-                    allowResummarize = true,
                 )
                 assertEquals(context.getString(R.string.provider_response_truncated), result.errorMessage)
                 assertEquals("Existing summary", fixture.db.transcriptionHistoryDao().getById(historyId)?.summary)
