@@ -75,8 +75,10 @@ internal class Pcm16WavWriter(file: File, private val maximumDataBytes: Long = M
 
         val shorts = requireNotNull(byteBuffer).apply(ByteBuffer::clear).asShortBuffer()
         repeat(sampleCount) { index ->
-            val scaled = (samples[index].coerceIn(-1f, 1f) * Short.MAX_VALUE).roundToInt()
-            shorts.put(scaled.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort())
+            val sample = samples[index]
+            // roundToInt() rejects NaN, which a corrupt stream can decode to; write it as silence.
+            val scaled = if (sample.isNaN()) 0 else (sample.coerceIn(-1f, 1f) * Short.MAX_VALUE).roundToInt()
+            shorts.put(scaled.toShort())
         }
         output.write(byteScratch, 0, byteCount)
         dataBytesWritten += byteCount

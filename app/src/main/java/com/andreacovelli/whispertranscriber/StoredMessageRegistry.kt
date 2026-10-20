@@ -22,6 +22,7 @@ internal object StoredMessageRegistry {
         "conversion_no_decoder" to R.string.conversion_no_decoder,
         "conversion_no_samples" to R.string.conversion_no_samples,
         "conversion_output_too_large" to R.string.conversion_output_too_large,
+        "conversion_unsupported_pcm_encoding" to R.string.conversion_unsupported_pcm_encoding,
         "custom_model_name_required" to R.string.custom_model_name_required,
         "gemini_api_key_missing" to R.string.gemini_api_key_missing,
         "gemini_audio_too_long" to R.string.gemini_audio_too_long,

@@ -1,5 +1,6 @@
 package com.andreacovelli.whispertranscriber.media
 
+import java.nio.ByteBuffer
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.cos
@@ -135,6 +136,48 @@ internal object PcmMonoDownmixer {
         require(sourceChannels > 0)
         require(sourceSamples >= frames * sourceChannels)
         require(destinationSamples >= frames)
+    }
+}
+
+/** Reads the integer PCM encodings other than 16-bit that MediaCodec decoders can emit as normalized floats. */
+internal object PcmIntegerSampleReader {
+    // AudioFormat encoding values; the 24- and 32-bit constants are only exposed from API 31.
+    const val ENCODING_PCM_8BIT = 3
+    const val ENCODING_PCM_24BIT_PACKED = 21
+    const val ENCODING_PCM_32BIT = 22
+
+    private const val PCM8_OFFSET = 128
+    private const val PCM8_TO_FLOAT = 1f / 128f
+    private const val PCM24_TO_FLOAT = 1f / 8_388_608f
+    private const val PCM32_TO_FLOAT = 1f / 2_147_483_648f
+
+    fun bytesPerSample(encoding: Int): Int? = when (encoding) {
+        ENCODING_PCM_8BIT -> 1
+        ENCODING_PCM_24BIT_PACKED -> 3
+        ENCODING_PCM_32BIT -> 4
+        else -> null
+    }
+
+    /** Reads [sampleCount] samples from [source]'s position, which must use little-endian byte order. */
+    fun readAsFloat(source: ByteBuffer, encoding: Int, destination: FloatArray, sampleCount: Int) {
+        val bytesPerSample = requireNotNull(bytesPerSample(encoding)) { "Unsupported PCM encoding: $encoding" }
+        require(sampleCount in 0..destination.size)
+        require(source.remaining() >= sampleCount * bytesPerSample)
+        var position = source.position()
+        repeat(sampleCount) { index ->
+            destination[index] = when (encoding) {
+                ENCODING_PCM_8BIT -> ((source.get(position).toInt() and 0xff) - PCM8_OFFSET) * PCM8_TO_FLOAT
+                ENCODING_PCM_24BIT_PACKED -> {
+                    val sample = (source.get(position).toInt() and 0xff) or
+                        ((source.get(position + 1).toInt() and 0xff) shl 8) or
+                        (source.get(position + 2).toInt() shl 16)
+                    sample * PCM24_TO_FLOAT
+                }
+                else -> source.getInt(position) * PCM32_TO_FLOAT
+            }
+            position += bytesPerSample
+        }
+        source.position(position)
     }
 }
 

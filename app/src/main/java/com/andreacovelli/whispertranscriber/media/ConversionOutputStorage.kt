@@ -36,14 +36,28 @@ internal object ConversionOutputStorage {
         val parentDir = outputFile.parentFile
         val storageUuid = resolveStorageUuid(storageManager, parentDir)
         if (storageUuid != null) {
-            val allocatableBytes = storageManager.getAllocatableBytes(storageUuid)
-            if (allocatableBytes < estimatedBytes) {
-                throw insufficientStorageException(estimatedBytes, allocatableBytes)
-            }
-            storageManager.allocateBytes(fileDescriptor, estimatedBytes)
+            allocate(
+                estimatedBytes = estimatedBytes,
+                allocatableBytes = storageManager.getAllocatableBytes(storageUuid),
+            ) { storageManager.allocateBytes(fileDescriptor, estimatedBytes) }
             return
         }
         ensureUsableSpace(parentDir, estimatedBytes)
+    }
+
+    /**
+     * Runs [allocateBytes] after checking [allocatableBytes]. Space can still run out between the check and the
+     * allocation, so an allocation failure is reported as insufficient storage too.
+     */
+    internal fun allocate(estimatedBytes: Long, allocatableBytes: Long, allocateBytes: () -> Unit) {
+        if (allocatableBytes < estimatedBytes) {
+            throw insufficientStorageException(estimatedBytes, allocatableBytes)
+        }
+        try {
+            allocateBytes()
+        } catch (error: IOException) {
+            throw insufficientStorageException(estimatedBytes, allocatableBytes, error)
+        }
     }
 
     private fun estimateConvertedDataBytes(durationUs: Long, maximumOutputDataBytes: Long): Long {
@@ -88,13 +102,17 @@ internal object ConversionOutputStorage {
         }
     }
 
-    private fun insufficientStorageException(estimatedBytes: Long, availableBytes: Long): IOException =
-        UserFacingIOException(
-            UserMessage(
-                R.string.conversion_insufficient_storage,
-                listOf(estimatedBytes / BYTES_PER_MEBIBYTE, availableBytes / BYTES_PER_MEBIBYTE),
-            ),
-        )
+    private fun insufficientStorageException(
+        estimatedBytes: Long,
+        availableBytes: Long,
+        cause: Throwable? = null,
+    ): IOException = UserFacingIOException(
+        UserMessage(
+            R.string.conversion_insufficient_storage,
+            listOf(estimatedBytes / BYTES_PER_MEBIBYTE, availableBytes / BYTES_PER_MEBIBYTE),
+        ),
+        cause,
+    )
 
     private fun ceilDiv(dividend: Long, divisor: Long): Long =
         if (dividend == 0L) 0L else 1L + (dividend - 1L) / divisor
