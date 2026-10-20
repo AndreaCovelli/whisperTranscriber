@@ -272,6 +272,11 @@ dependencies {
         // Keep Room migration testing and AndroidX saved state/navigation on one serialization runtime.
         implementation(libs.kotlinx.serialization.core)
         implementation(libs.kotlinx.serialization.json)
+        // AGP's lint tool brings older build-only transitives; keep them on patched releases.
+        "androidLintTool"("org.bouncycastle:bcpkix-jdk18on:1.86")
+        "androidLintTool"("org.bouncycastle:bcprov-jdk18on:1.86")
+        "androidLintTool"("org.apache.commons:commons-lang3:3.21.0")
+        "androidLintTool"("org.apache.httpcomponents:httpclient:4.5.14")
     }
 }
 

@@ -8,6 +8,9 @@ buildscript {
             classpath("org.jdom:jdom2:2.0.6.1")
             classpath("org.apache.commons:commons-lang3:3.21.0")
             classpath("org.apache.httpcomponents:httpclient:4.5.14")
+            // CycloneDX brings Jackson 2.22.2; keep it on a patched release.
+            classpath("com.fasterxml.jackson.core:jackson-core:2.22.4")
+            classpath("com.fasterxml.jackson.core:jackson-databind:2.22.4")
         }
     }
 }
