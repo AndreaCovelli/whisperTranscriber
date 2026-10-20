@@ -1,6 +1,23 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["github>AndreaCovelli/renovate-config"],
+  "customDatasources": {
+    "azure-speech-transcription-api": {
+      "defaultRegistryUrlTemplate": "https://api.github.com/repos/Azure/azure-rest-api-specs/contents/specification/cognitiveservices/data-plane/SpeechTranscription/stable",
+      "transformTemplates": ["{\"releases\": [$.{\"version\": name}]}"]
+    }
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Track the stable Azure Speech fast transcription REST API version",
+      "managerFilePatterns": ["/transcription/TranscriptionProviders\\.kt$/"],
+      "matchStrings": ["MICROSOFT_SPEECH_API_VERSION = \"(?<currentValue>\\d{4}-\\d{2}-\\d{2})\""],
+      "depNameTemplate": "azure-speech-transcription-api",
+      "datasourceTemplate": "custom.azure-speech-transcription-api",
+      "versioningTemplate": "regex:^(?<major>\\d{4})-(?<minor>\\d{2})-(?<patch>\\d{2})$"
+    }
+  ],
   "packageRules": [
     {
       "description": "Keep setup-java on the JDK that the Gradle daemon JVM criteria and Kotlin toolchain require",
@@ -8,6 +25,12 @@
       "matchDepNames": ["java-jdk"],
       "matchUpdateTypes": ["major"],
       "enabled": false
+    },
+    {
+      "description": "New API versions can change request or response formats that CI cannot exercise; review manually",
+      "matchDepNames": ["azure-speech-transcription-api"],
+      "groupName": "azure speech api version",
+      "automerge": false
     }
   ]
 }
