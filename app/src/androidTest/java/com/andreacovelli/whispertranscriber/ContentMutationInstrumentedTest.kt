@@ -22,6 +22,41 @@ class ContentMutationInstrumentedTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Test
+    fun getJobContent_readsLinkedHistoryAndFallsBackToJobColumns() = runBlocking {
+        RepairTestFixture(context).use { fixture ->
+            val historyId = fixture.history.insert(
+                TranscriptionHistory(text = "History transcript", language = "en", summary = "History summary"),
+            )
+            val linkedJobId = fixture.repository.addJob(
+                TranscriptionJob(
+                    uri = "content://test/linked.wav",
+                    displayName = "linked.wav",
+                    status = JOB_STATUS_COMPLETED,
+                    transcript = "Stale transcript",
+                    summary = "Stale summary",
+                    historyId = historyId,
+                ),
+            ).toInt()
+            val unlinkedJobId = fixture.repository.addJob(
+                TranscriptionJob(
+                    uri = "content://test/unlinked.wav",
+                    displayName = "unlinked.wav",
+                    status = JOB_STATUS_COMPLETED,
+                    transcript = "Job transcript",
+                    summary = "Job summary",
+                ),
+            ).toInt()
+            val repository = fixture.repository
+
+            assertEquals("History transcript", repository.getJobContent(linkedJobId, HistoryContentField.TRANSCRIPT))
+            assertEquals("History summary", repository.getJobContent(linkedJobId, HistoryContentField.SUMMARY))
+            assertEquals("Job transcript", repository.getJobContent(unlinkedJobId, HistoryContentField.TRANSCRIPT))
+            assertEquals("Job summary", repository.getJobContent(unlinkedJobId, HistoryContentField.SUMMARY))
+            assertEquals("", repository.getJobContent(-1, HistoryContentField.TRANSCRIPT))
+        }
+    }
+
+    @Test
     fun clearSummary_cancelsAnAttemptWaitingToAcquireItsClaim() = runBlocking {
         RepairTestFixture(context).use { fixture ->
             val (historyId, jobId) = linkedJob(fixture)

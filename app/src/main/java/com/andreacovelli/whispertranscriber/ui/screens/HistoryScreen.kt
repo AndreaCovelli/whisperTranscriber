@@ -57,6 +57,7 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.history.HistoryDateBucket
 import com.andreacovelli.whispertranscriber.history.HistoryDateLabel
@@ -64,8 +65,11 @@ import com.andreacovelli.whispertranscriber.history.HistoryExportFormat
 import com.andreacovelli.whispertranscriber.history.HistoryListRow
 import com.andreacovelli.whispertranscriber.history.extractHistorySearchTokens
 import com.andreacovelli.whispertranscriber.history.suggestedHistoryExportFileName
+import com.andreacovelli.whispertranscriber.history.suggestedTextExportFileName
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCard
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCardActions
+import com.andreacovelli.whispertranscriber.ui.components.TextSaveTarget
+import com.andreacovelli.whispertranscriber.ui.components.rememberTextFileSaveLauncher
 import com.andreacovelli.whispertranscriber.ui.copyTextWithFeedback
 import com.andreacovelli.whispertranscriber.ui.history.HistoryMsg
 import com.andreacovelli.whispertranscriber.ui.history.HistoryUiEvent
@@ -352,9 +356,20 @@ private fun ColumnScope.HistoryContent(
     scope: kotlinx.coroutines.CoroutineScope,
     context: android.content.Context,
 ) {
+    val saveTextFile = rememberTextFileSaveLauncher { target, destination ->
+        historyViewModel.dispatch(HistoryMsg.SaveContent(target.id, target.field, destination))
+    }
     val transcriptLabel = context.getString(R.string.job_transcription_title)
     val summaryLabel = context.getString(R.string.job_summary_title)
-    val actionFactory = remember(historyViewModel, clipboardManager, scope, context, transcriptLabel, summaryLabel) {
+    val actionFactory = remember(
+        historyViewModel,
+        clipboardManager,
+        scope,
+        context,
+        transcriptLabel,
+        summaryLabel,
+        saveTextFile,
+    ) {
         { item: TranscriptionHistory ->
             HistoryItemCardActions(
                 copyTranscript = {
@@ -372,6 +387,18 @@ private fun ColumnScope.HistoryContent(
                 delete = { historyViewModel.dispatch(HistoryMsg.DeleteItem(item)) },
                 shareTranscript = { historyViewModel.dispatch(HistoryMsg.PrepareShareTranscript(item)) },
                 shareSummary = { historyViewModel.dispatch(HistoryMsg.PrepareShareSummary(item)) },
+                saveTranscript = {
+                    saveTextFile(
+                        TextSaveTarget(item.id, HistoryContentField.TRANSCRIPT),
+                        suggestedTextExportFileName(item.displayName, HistoryContentField.TRANSCRIPT),
+                    )
+                },
+                saveSummary = {
+                    saveTextFile(
+                        TextSaveTarget(item.id, HistoryContentField.SUMMARY),
+                        suggestedTextExportFileName(item.displayName, HistoryContentField.SUMMARY),
+                    )
+                },
             )
         }
     }

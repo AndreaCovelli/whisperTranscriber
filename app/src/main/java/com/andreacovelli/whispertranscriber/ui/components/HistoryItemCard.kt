@@ -229,8 +229,10 @@ private fun HistoryItemBody(
             title = stringResource(R.string.job_transcription_title),
             onCopy = actions.copyTranscript,
             onShare = actions.shareTranscript,
+            onSave = actions.saveTranscript,
             onClear = actions.clearTranscript,
             shareDescription = stringResource(R.string.share_transcription_title),
+            saveDescription = stringResource(R.string.save_transcription_title),
             clearDescription = stringResource(R.string.clear_transcription),
         )
         Spacer(Modifier.height(4.dp))
@@ -286,8 +288,10 @@ private fun SummaryContent(
         title = stringResource(R.string.job_summary_title),
         onCopy = actions.copySummary,
         onShare = actions.shareSummary,
+        onSave = actions.saveSummary,
         onClear = actions.clearSummary,
         shareDescription = stringResource(R.string.share_summary_title),
+        saveDescription = stringResource(R.string.save_summary_title),
         clearDescription = stringResource(R.string.clear_summary),
     )
     if (item.summaryModel.isNotBlank()) {

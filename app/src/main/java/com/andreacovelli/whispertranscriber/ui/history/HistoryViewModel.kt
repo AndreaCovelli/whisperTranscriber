@@ -114,6 +114,18 @@ class HistoryViewModel @Inject constructor(
         }
     }
 
+    fun saveContent(historyId: Int, field: HistoryContentField, destination: Uri) {
+        viewModelScope.launch {
+            val item = historyRepository.getById(historyId)
+            val text = when (field) {
+                HistoryContentField.TRANSCRIPT -> item?.text
+                HistoryContentField.SUMMARY -> item?.summary
+            }.orEmpty()
+            val saved = text.isNotBlank() && textTransfer.save(text, destination)
+            _uiEvents.send(HistoryUiEvent.Toast(if (saved) R.string.text_save_success else R.string.text_save_failed))
+        }
+    }
+
     fun setSearchQuery(query: String) {
         dispatch(HistoryMsg.SetSearchQuery(query))
     }
@@ -125,6 +137,7 @@ class HistoryViewModel @Inject constructor(
             is HistoryMsg.PrepareShareSummary -> prepareShareSummary(msg.item)
             is HistoryMsg.PrepareExport -> prepareExport(msg.format)
             is HistoryMsg.ExportHistory -> exportHistory(msg.uri, msg.format)
+            is HistoryMsg.SaveContent -> saveContent(msg.historyId, msg.field, msg.destination)
             is HistoryMsg.ClearSummary -> clearSummary(msg.item)
             is HistoryMsg.ClearTranscript -> clearTranscript(msg.item)
             is HistoryMsg.DeleteItem -> deleteHistoryItem(msg.item)

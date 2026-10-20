@@ -3,6 +3,7 @@ package com.andreacovelli.whispertranscriber.ui
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.Clipboard
@@ -11,6 +12,7 @@ import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -59,6 +61,21 @@ class TextTransfer @Inject constructor(
             return false
         } finally {
             if (!handedOff) withContext(NonCancellable + ioDispatcher) { temporaryFile?.delete() }
+        }
+    }
+
+    /** Writes [text] as UTF-8 to a document the user picked; returns false if the provider rejects it. */
+    suspend fun save(text: String, destination: Uri): Boolean = withContext(ioDispatcher) {
+        try {
+            val output = context.contentResolver.openOutputStream(destination) ?: return@withContext false
+            output.bufferedWriter(Charsets.UTF_8).use { it.write(text) }
+            true
+        } catch (_: IOException) {
+            false
+        } catch (_: SecurityException) {
+            false
+        } catch (_: IllegalArgumentException) {
+            false
         }
     }
 }

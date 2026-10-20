@@ -1,8 +1,10 @@
 package com.andreacovelli.whispertranscriber
 
+import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.history.HistoryExportFormat
 import com.andreacovelli.whispertranscriber.history.buildHistoryExport
+import com.andreacovelli.whispertranscriber.history.suggestedTextExportFileName
 import com.andreacovelli.whispertranscriber.history.writeHistoryExport
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -10,6 +12,29 @@ import org.junit.Assert.fail
 import org.junit.Test
 
 class HistoryExportTest {
+    @Test
+    fun suggestedTextExportFileName_replacesTheAudioExtensionWithTheContentKind() {
+        assertEquals(
+            "meeting.notes-transcript.txt",
+            suggestedTextExportFileName("meeting.notes.m4a", HistoryContentField.TRANSCRIPT),
+        )
+        assertEquals("voice memo-summary.txt", suggestedTextExportFileName("voice memo", HistoryContentField.SUMMARY))
+    }
+
+    @Test
+    fun suggestedTextExportFileName_sanitizesUnsafeAndBlankNames() {
+        assertEquals(
+            "a_b_c__ d-transcript.txt",
+            suggestedTextExportFileName("a/b:c?\n d.wav", HistoryContentField.TRANSCRIPT),
+        )
+        assertEquals("audio-summary.txt", suggestedTextExportFileName(" .wav", HistoryContentField.SUMMARY))
+        assertEquals("audio-transcript.txt", suggestedTextExportFileName("", HistoryContentField.TRANSCRIPT))
+        assertEquals(
+            "x".repeat(100) + "-summary.txt",
+            suggestedTextExportFileName("x".repeat(300) + ".mp3", HistoryContentField.SUMMARY),
+        )
+    }
+
     @Test
     fun buildHistoryExport_formatsTxtWithSummaryAndMetadata() {
         val export = buildHistoryExport(listOf(historyItem()), HistoryExportFormat.TXT)

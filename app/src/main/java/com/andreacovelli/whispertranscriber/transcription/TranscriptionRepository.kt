@@ -152,6 +152,16 @@ class TranscriptionRepository @Inject constructor(
         true
     }
 
+    /** Reads content from the same owner [clearJobContent] writes to: the linked history row, else the job. */
+    suspend fun getJobContent(jobId: Int, field: HistoryContentField): String = db.withTransaction {
+        val job = jobDao.getJobById(jobId) ?: return@withTransaction ""
+        val history = job.historyId?.let { historyDao.getById(it) }
+        when (field) {
+            HistoryContentField.TRANSCRIPT -> history?.text ?: job.transcript
+            HistoryContentField.SUMMARY -> history?.summary ?: job.summary
+        }
+    }
+
     suspend fun getJob(jobId: Int): TranscriptionJob? = jobDao.getJobById(jobId)
 
     suspend fun getTranscriptForJob(jobId: Int): String = historyDao.getByJobId(jobId)?.text.orEmpty()

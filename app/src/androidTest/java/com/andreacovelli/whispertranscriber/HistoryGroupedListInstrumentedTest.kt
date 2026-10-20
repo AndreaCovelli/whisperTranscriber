@@ -68,6 +68,8 @@ class HistoryGroupedListInstrumentedTest {
                                 delete = {},
                                 shareTranscript = {},
                                 shareSummary = {},
+                                saveTranscript = {},
+                                saveSummary = {},
                             )
                         },
                     )

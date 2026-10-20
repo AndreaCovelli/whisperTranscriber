@@ -24,6 +24,8 @@ interface HistoryRepository {
 
     suspend fun hasHistory(): Boolean
 
+    suspend fun getById(id: Int): TranscriptionHistory?
+
     suspend fun exportHistory(
         format: HistoryExportFormat,
         temporaryDirectory: File,
@@ -76,6 +78,8 @@ class RoomHistoryRepository @Inject constructor(
     }
 
     override suspend fun hasHistory(): Boolean = historyDao.hasHistory()
+
+    override suspend fun getById(id: Int): TranscriptionHistory? = historyDao.getById(id)
 
     override suspend fun exportHistory(
         format: HistoryExportFormat,

@@ -2,6 +2,8 @@ package com.andreacovelli.whispertranscriber.ui.screens
 
 import android.content.Context
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +23,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -49,12 +52,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.UserMessage
+import com.andreacovelli.whispertranscriber.data.HistoryContentField
+import com.andreacovelli.whispertranscriber.history.suggestedTextExportFileName
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_RETRY_SCHEDULED
 import com.andreacovelli.whispertranscriber.ui.asString
+import com.andreacovelli.whispertranscriber.ui.components.TextSaveTarget
 import com.andreacovelli.whispertranscriber.ui.components.TranscriptionJobCard
 import com.andreacovelli.whispertranscriber.ui.components.TranscriptionJobCardActions
 import com.andreacovelli.whispertranscriber.ui.components.providerDisplayLabel
+import com.andreacovelli.whispertranscriber.ui.components.rememberTextFileSaveLauncher
 import com.andreacovelli.whispertranscriber.ui.copyTextWithFeedback
 import com.andreacovelli.whispertranscriber.ui.main.JobRevealRequest
 import com.andreacovelli.whispertranscriber.ui.main.MainMsg
@@ -72,6 +79,12 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit, onNavi
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val listState = rememberLazyListState()
+    val audioPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) viewModel.dispatch(MainMsg.SharedAudioReceived(uris))
+    }
+    val saveTextFile = rememberTextFileSaveLauncher { target, destination ->
+        viewModel.dispatch(MainMsg.SaveJobContent(target.id, target.field, destination))
+    }
 
     Scaffold(
         topBar = {
@@ -93,6 +106,13 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit, onNavi
                 },
             )
         },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = { audioPicker.launch(arrayOf(AUDIO_MIME_TYPE_FILTER)) },
+                icon = { Icon(painterResource(R.drawable.ic_upload), contentDescription = null) },
+                text = { Text(stringResource(R.string.main_pick_audio)) },
+            )
+        },
     ) { paddingValues ->
         MainScreenContent(
             viewModel = viewModel,
@@ -104,6 +124,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit, onNavi
             scope = scope,
             context = context,
             listState = listState,
+            onSaveText = saveTextFile,
             onJobRevealHandled = { requestToken ->
                 viewModel.dispatch(MainMsg.JobRevealHandled(requestToken))
             },
@@ -122,6 +143,7 @@ private fun MainScreenContent(
     scope: CoroutineScope,
     context: Context,
     listState: LazyListState,
+    onSaveText: (TextSaveTarget, String) -> Unit,
     onJobRevealHandled: (Long) -> Unit,
 ) {
     MainJobList(
@@ -139,6 +161,7 @@ private fun MainScreenContent(
             clipboard = clipboard,
             scope = scope,
             context = context,
+            onSaveText = onSaveText,
         )
     }
 }
@@ -173,7 +196,8 @@ internal fun MainJobList(
     LazyColumn(
         state = listState,
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        // Extra bottom space keeps the last card's actions clear of the floating action button.
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
@@ -219,6 +243,9 @@ private fun TranscriptionJobState.isQueuedLike(): Boolean =
 
 private const val MAIN_LIST_FIXED_HEADER_COUNT = 2
 
+// Matches the share-intent filters in the manifest.
+private const val AUDIO_MIME_TYPE_FILTER = "audio/*"
+
 @Composable
 private fun MainJobCard(
     viewModel: MainViewModel,
@@ -227,6 +254,7 @@ private fun MainJobCard(
     clipboard: Clipboard,
     scope: CoroutineScope,
     context: Context,
+    onSaveText: (TextSaveTarget, String) -> Unit,
 ) {
     TranscriptionJobCard(
         job = job,
@@ -237,6 +265,7 @@ private fun MainJobCard(
             clipboard = clipboard,
             scope = scope,
             context = context,
+            onSaveText = onSaveText,
         ),
     )
 }
@@ -372,11 +401,13 @@ private fun rememberJobActions(
     clipboard: Clipboard,
     scope: CoroutineScope,
     context: Context,
+    onSaveText: (TextSaveTarget, String) -> Unit,
 ): TranscriptionJobCardActions {
     val shareTranscriptTitle = stringResource(R.string.share_transcription_title)
     val shareSummaryTitle = stringResource(R.string.share_summary_title)
     return remember(
         job.id,
+        job.displayName,
         job.transcript,
         job.summary,
         viewModel,
@@ -385,6 +416,7 @@ private fun rememberJobActions(
         context,
         shareTranscriptTitle,
         shareSummaryTitle,
+        onSaveText,
     ) {
         TranscriptionJobCardActions(
             summarize = { viewModel.dispatch(MainMsg.SummarizeJob(job.id)) },
@@ -402,6 +434,18 @@ private fun rememberJobActions(
             },
             shareTranscript = { scope.launch { shareText(viewModel, context, job.transcript, shareTranscriptTitle) } },
             shareSummary = { scope.launch { shareText(viewModel, context, job.summary, shareSummaryTitle) } },
+            saveTranscript = {
+                onSaveText(
+                    TextSaveTarget(job.id, HistoryContentField.TRANSCRIPT),
+                    suggestedTextExportFileName(job.displayName, HistoryContentField.TRANSCRIPT),
+                )
+            },
+            saveSummary = {
+                onSaveText(
+                    TextSaveTarget(job.id, HistoryContentField.SUMMARY),
+                    suggestedTextExportFileName(job.displayName, HistoryContentField.SUMMARY),
+                )
+            },
             retryTranscription = { viewModel.dispatch(MainMsg.RetryJob(job.id)) },
             retrySummary = { viewModel.dispatch(MainMsg.SummarizeJob(job.id)) },
             cancel = { viewModel.dispatch(MainMsg.CancelJob(job.id)) },

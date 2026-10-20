@@ -8,4 +8,6 @@ data class HistoryItemCardActions(
     val delete: () -> Unit,
     val shareTranscript: () -> Unit,
     val shareSummary: () -> Unit,
+    val saveTranscript: () -> Unit,
+    val saveSummary: () -> Unit,
 )
