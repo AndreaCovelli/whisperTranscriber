@@ -277,16 +277,6 @@ class ApiKeyManager @Inject constructor(
     suspend fun getMicrosoftSpeechApiKey(): CharArray? = getApiKey(MICROSOFT_SPEECH_API_KEY_ENC)
     suspend fun getGeminiApiKey(): CharArray? = getApiKey(GEMINI_API_KEY_ENC)
 
-    val summarizerCustomGeminiModelNameFlow: Flow<String?> = store.data.map { p ->
-        p[GEMINI_SUMMARIZER_CUSTOM_MODEL_NAME]?.takeIf { it.isNotBlank() }
-    }
-
-    val summarizerProviderFlow: Flow<TranscriptionProvider> = store.data.map { p ->
-        p[SELECTED_SUMMARIZER_PROVIDER]
-            ?.let { runCatching { TranscriptionProvider.valueOf(it) }.getOrNull() }
-            ?: TranscriptionProvider.GEMINI_FLASH
-    }
-
     val summarizationSettingsFlow: Flow<SummarizationSettings> = store.data.map { prefs ->
         SummarizationSettings(
             provider = prefs[SELECTED_SUMMARIZER_PROVIDER]

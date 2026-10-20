@@ -105,10 +105,6 @@ class QueuedAudioStore @Inject constructor(
         deleteQuietly(File(path))
     }
 
-    fun deletePreparedAudio(preparedAudio: List<PreparedSharedAudio>) {
-        preparedAudio.forEach { deleteQuietly(it.stagedFile) }
-    }
-
     private data class StagedCopy(val file: File, val mimeType: String?, val bytesCopied: Long)
 
     private fun stagedAudioDir(): File = File(context.noBackupFilesDir, STAGED_AUDIO_DIR).apply { mkdirs() }
