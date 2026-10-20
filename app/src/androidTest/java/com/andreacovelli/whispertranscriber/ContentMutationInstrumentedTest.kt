@@ -36,7 +36,6 @@ class ContentMutationInstrumentedTest {
                             com.andreacovelli.whispertranscriber.settings.TranscriptionProvider.GEMINI_FLASH,
                             "",
                         ),
-                        allowResummarize = true,
                     )
                 }
                 clear to pending
@@ -76,7 +75,6 @@ class ContentMutationInstrumentedTest {
                 com.andreacovelli.whispertranscriber.security.DefaultGenAiClientFactory(http),
                 fixture.coordinator,
                 fixture.operations,
-                context,
                 kotlinx.coroutines.Dispatchers.IO,
             )
             fixture.settings.saveGeminiApiKey("test-credential")
@@ -87,9 +85,8 @@ class ContentMutationInstrumentedTest {
                         com.andreacovelli.whispertranscriber.settings.TranscriptionProvider.GEMINI_FLASH,
                         "",
                     ),
-                    allowResummarize = true,
                 )
-                assertEquals(context.getString(R.string.provider_response_truncated), result.errorMessage)
+                assertEquals(UserMessage(R.string.provider_response_truncated), result.errorMessage)
                 assertEquals("Existing summary", fixture.db.transcriptionHistoryDao().getById(historyId)?.summary)
                 assertFalse(checkNotNull(fixture.repository.getJob(jobId)).isSummarizing)
             } finally {

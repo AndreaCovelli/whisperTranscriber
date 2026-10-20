@@ -18,11 +18,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -44,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -52,18 +48,19 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.andreacovelli.whispertranscriber.R
-import com.andreacovelli.whispertranscriber.settings.ApiKeyState
+import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_RETRY_SCHEDULED
+import com.andreacovelli.whispertranscriber.ui.asString
 import com.andreacovelli.whispertranscriber.ui.components.TranscriptionJobCard
 import com.andreacovelli.whispertranscriber.ui.components.TranscriptionJobCardActions
 import com.andreacovelli.whispertranscriber.ui.components.providerDisplayLabel
 import com.andreacovelli.whispertranscriber.ui.copyTextWithFeedback
 import com.andreacovelli.whispertranscriber.ui.main.JobRevealRequest
 import com.andreacovelli.whispertranscriber.ui.main.MainMsg
+import com.andreacovelli.whispertranscriber.ui.main.MainUiState
 import com.andreacovelli.whispertranscriber.ui.main.MainViewModel
 import com.andreacovelli.whispertranscriber.ui.main.TranscriptionJobState
-import com.andreacovelli.whispertranscriber.ui.main.UiState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -82,10 +79,16 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit, onNavi
                 title = { Text(stringResource(R.string.main_title)) },
                 actions = {
                     IconButton(onClick = onNavigateToHistory) {
-                        Icon(Icons.Default.History, contentDescription = stringResource(R.string.main_open_history))
+                        Icon(
+                            painterResource(R.drawable.ic_history),
+                            contentDescription = stringResource(R.string.main_open_history),
+                        )
                     }
                     IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.main_open_settings))
+                        Icon(
+                            painterResource(R.drawable.ic_settings),
+                            contentDescription = stringResource(R.string.main_open_settings),
+                        )
                     }
                 },
             )
@@ -112,7 +115,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit, onNavi
 private fun MainScreenContent(
     viewModel: MainViewModel,
     paddingValues: PaddingValues,
-    uiState: UiState,
+    uiState: MainUiState,
     onNavigateToSettings: () -> Unit,
     onClearCompleted: () -> Unit,
     clipboard: Clipboard,
@@ -132,7 +135,7 @@ private fun MainScreenContent(
         MainJobCard(
             viewModel = viewModel,
             job = job,
-            canSummarize = uiState.geminiApiKeyState is ApiKeyState.Present,
+            canSummarize = uiState.providerSummary.canSummarize,
             clipboard = clipboard,
             scope = scope,
             context = context,
@@ -142,7 +145,7 @@ private fun MainScreenContent(
 
 @Composable
 internal fun MainJobList(
-    uiState: UiState,
+    uiState: MainUiState,
     listState: LazyListState,
     modifier: Modifier = Modifier,
     onNavigateToSettings: () -> Unit,
@@ -150,9 +153,11 @@ internal fun MainJobList(
     onJobRevealHandled: (Long) -> Unit,
     jobContent: @Composable (TranscriptionJobState) -> Unit,
 ) {
-    val transcriptionProviderLabel = providerDisplayLabel(uiState.provider, uiState.transcriptionCustomGeminiModelName)
+    val providers = uiState.providerSummary
+    val transcriptionProviderLabel =
+        providerDisplayLabel(providers.transcriptionProvider, providers.transcriptionCustomModelName)
     val summarizerProviderLabel =
-        providerDisplayLabel(uiState.summarizerProvider, uiState.summarizerCustomGeminiModelName)
+        providerDisplayLabel(providers.summarizerProvider, providers.summarizerCustomModelName)
     val lifecycleOwner = LocalLifecycleOwner.current
     val revealRequest = uiState.jobRevealRequest as? JobRevealRequest.Ready
     val revealItemIndex = revealRequest?.let { resolveMainJobItemIndex(uiState, it.jobId) }
@@ -195,7 +200,7 @@ internal fun MainJobList(
     }
 }
 
-internal fun resolveMainJobItemIndex(uiState: UiState, jobId: Int): Int? {
+internal fun resolveMainJobItemIndex(uiState: MainUiState, jobId: Int): Int? {
     val jobIndex = uiState.jobs.indexOfFirst { it.id == jobId }
     if (jobIndex == -1) return null
 
@@ -270,7 +275,7 @@ private fun ProviderSummaryCard(
             }
             Spacer(Modifier.width(8.dp))
             Icon(
-                Icons.AutoMirrored.Filled.ArrowForward,
+                painterResource(R.drawable.ic_arrow_forward),
                 contentDescription = stringResource(R.string.main_go_to_settings),
                 modifier = Modifier.size(16.dp),
                 tint = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -280,7 +285,7 @@ private fun ProviderSummaryCard(
 }
 
 @Composable
-private fun StatusCard(status: String) {
+private fun StatusCard(status: UserMessage) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -291,7 +296,7 @@ private fun StatusCard(status: String) {
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(status, style = MaterialTheme.typography.bodyMedium)
+            Text(status.asString(), style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
@@ -337,7 +342,7 @@ private fun EmptyJobsState() {
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Icon(
-                imageVector = Icons.Default.Mic,
+                painter = painterResource(R.drawable.ic_mic),
                 contentDescription = null,
                 modifier = Modifier.size(48.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -24,7 +24,8 @@ The app uses:
 
 - Kotlin and Jetpack Compose. `MainActivity` owns the app UI and navigation;
   `ShareReceiverActivity` is a transient entry point for Android share intents.
-- ViewModels, `StateFlow`, and small MVU-style reducers/messages for UI state.
+- ViewModels and `StateFlow` with unidirectional data flow: screens send messages to
+  `dispatch`, pure reducers compute the next state, and the ViewModel runs side effects.
 - Hilt for dependency injection.
 - Room for transcription history, FTS search, and persistent queue state.
 - WorkManager and an Android `JobService` for background execution paths.
@@ -50,7 +51,8 @@ The app uses:
   - `transcription/`: providers, MIME rules, execution runner, status constants,
     and transcription persistence.
   - `ui/components/`: reusable Compose components.
-  - `ui/main/` and `ui/history/`: ViewModels, messages, reducers, and UI models.
+  - `ui/main/`, `ui/settings/`, and `ui/history/`: ViewModels, messages, reducers,
+    and UI models.
   - `ui/screens/`: screen composition and navigation-level callbacks.
   - `ui/theme/`: Material 3 theme definitions.
 - `app/src/main/AndroidManifest.xml`: components, share-intent filters, and permissions.
@@ -72,7 +74,7 @@ The app uses:
 - Use the checked-in Gradle wrapper, never a system Gradle installation.
 - The project requires JDK 21 through `kotlin.jvmToolchain(21)`.
 - The app currently has `minSdk = 26`, `targetSdk = 36`, and `compileSdk = 37`.
-- The current Room database schema version is 15.
+- The current Room database schema version is 16.
 - Android instrumentation work needs an installed Android SDK and the appropriate
   emulator system image.
 - On Windows, Android Studio's bundled JBR is commonly located at:
@@ -149,7 +151,8 @@ toolchain or incremental-build settings.
 - Keep composables driven by immutable state and callbacks. Put persistence,
   network, queue, and conversion work outside composables.
 - Route user actions through the existing ViewModel message/action patterns.
-  Preserve reducer purity when editing `MainMvu.kt` or `HistoryMvu.kt`.
+  Keep reducers in `MainState.kt` and `SettingsState.kt` pure; side effects belong
+  in the ViewModel's `dispatch` handling.
 - Collect observable state with lifecycle-aware APIs and avoid starting duplicate
   long-running work from recomposition.
 - Put user-visible text in `res/values/strings.xml`; do not hard-code it in Kotlin
@@ -167,6 +170,9 @@ toolchain or incremental-build settings.
   state is involved. A job must not be executed or summarized twice.
 - Reuse centralized job and summary status constants. Stored status values are
   database data; changing them can require a migration.
+- Pass user-visible text below the UI as `UserMessage`, not resolved strings.
+  Persist job messages through `StoredMessages`, and never rename or remove a
+  code in `StoredMessageRegistry` that existing rows may contain.
 
 ### Audio, Queue, and Background Work
 

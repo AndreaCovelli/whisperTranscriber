@@ -14,9 +14,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -39,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -47,17 +45,18 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.andreacovelli.whispertranscriber.BuildConfig
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.ui.asString
 import com.andreacovelli.whispertranscriber.ui.components.ApiKeyCard
 import com.andreacovelli.whispertranscriber.ui.components.ProviderSelector
-import com.andreacovelli.whispertranscriber.ui.main.MainMsg
-import com.andreacovelli.whispertranscriber.ui.main.MainViewModel
-import com.andreacovelli.whispertranscriber.ui.main.RegionValidationState
-import com.andreacovelli.whispertranscriber.ui.main.UiState
+import com.andreacovelli.whispertranscriber.ui.settings.RegionValidationState
+import com.andreacovelli.whispertranscriber.ui.settings.SettingsMsg
+import com.andreacovelli.whispertranscriber.ui.settings.SettingsUiState
+import com.andreacovelli.whispertranscriber.ui.settings.SettingsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    viewModel: MainViewModel,
+    viewModel: SettingsViewModel,
     onNavigateBack: () -> Unit,
     onBackgroundShareSummaryNotificationsChange: (Boolean) -> Unit,
 ) {
@@ -71,7 +70,7 @@ fun SettingsScreen(
                 title = { Text(stringResource(R.string.settings_title)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
+                        Icon(painterResource(R.drawable.ic_arrow_back), stringResource(R.string.back))
                     }
                 },
             )
@@ -107,9 +106,9 @@ fun SettingsScreen(
                 apiKeyState = uiState.microsoftSpeechApiKeyState,
                 keyValidationState = uiState.microsoftSpeechKeyValidation,
                 onLoadSavedKey = viewModel::loadMicrosoftSpeechKeyForDisplay,
-                onSave = { viewModel.dispatch(MainMsg.SaveMicrosoftSpeechKey(it)) },
-                onForget = { viewModel.dispatch(MainMsg.ForgetMicrosoftSpeechKey) },
-                onResetValidation = { viewModel.dispatch(MainMsg.ResetMicrosoftSpeechKeyValidation) },
+                onSave = { viewModel.dispatch(SettingsMsg.SaveMicrosoftSpeechKey(it)) },
+                onForget = { viewModel.dispatch(SettingsMsg.ForgetMicrosoftSpeechKey) },
+                onResetValidation = { viewModel.dispatch(SettingsMsg.ResetMicrosoftSpeechKeyValidation) },
             )
             MicrosoftSpeechRegionCard(uiState = uiState, dispatch = viewModel::dispatch)
 
@@ -120,9 +119,9 @@ fun SettingsScreen(
                 apiKeyState = uiState.geminiApiKeyState,
                 keyValidationState = uiState.geminiKeyValidation,
                 onLoadSavedKey = viewModel::loadGeminiKeyForDisplay,
-                onSave = { viewModel.dispatch(MainMsg.SaveGeminiKey(it)) },
-                onForget = { viewModel.dispatch(MainMsg.ForgetGeminiKey) },
-                onResetValidation = { viewModel.dispatch(MainMsg.ResetGeminiKeyValidation) },
+                onSave = { viewModel.dispatch(SettingsMsg.SaveGeminiKey(it)) },
+                onForget = { viewModel.dispatch(SettingsMsg.ForgetGeminiKey) },
+                onResetValidation = { viewModel.dispatch(SettingsMsg.ResetGeminiKeyValidation) },
             )
 
             SettingsSectionHeader(stringResource(R.string.settings_section_about))
@@ -142,7 +141,7 @@ private fun SettingsSectionHeader(title: String) {
 }
 
 @Composable
-private fun TranscriptionProviderCard(uiState: UiState, dispatch: (MainMsg) -> Unit) {
+private fun TranscriptionProviderCard(uiState: SettingsUiState, dispatch: (SettingsMsg) -> Unit) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -151,28 +150,28 @@ private fun TranscriptionProviderCard(uiState: UiState, dispatch: (MainMsg) -> U
             Text(stringResource(R.string.settings_transcription_provider), style = MaterialTheme.typography.titleMedium)
             ProviderSelector(
                 selected = uiState.provider,
-                onSelect = { dispatch(MainMsg.SetProvider(it)) },
+                onSelect = { dispatch(SettingsMsg.SetProvider(it)) },
                 customModelName = uiState.transcriptionCustomGeminiModelName,
                 customModelValidation = uiState.transcriptionCustomModelValidation,
-                onValidateCustomModel = { dispatch(MainMsg.ValidateTranscriptionModel(it)) },
-                onResetValidation = { dispatch(MainMsg.ResetTranscriptionModelValidation) },
+                onValidateCustomModel = { dispatch(SettingsMsg.ValidateTranscriptionModel(it)) },
+                onResetValidation = { dispatch(SettingsMsg.ResetTranscriptionModelValidation) },
             )
         }
     }
 }
 
 @Composable
-private fun SpeakerDiarizationCard(uiState: UiState, dispatch: (MainMsg) -> Unit) {
+private fun SpeakerDiarizationCard(uiState: SettingsUiState, dispatch: (SettingsMsg) -> Unit) {
     SettingsToggleCard(
         title = stringResource(R.string.settings_speaker_diarization),
         body = stringResource(R.string.settings_speaker_diarization_body),
         checked = uiState.speakerDiarizationEnabled,
-        onCheckedChange = { dispatch(MainMsg.SetSpeakerDiarization(it)) },
+        onCheckedChange = { dispatch(SettingsMsg.SetSpeakerDiarization(it)) },
     )
 }
 
 @Composable
-private fun MicrosoftSpeechRegionCard(uiState: UiState, dispatch: (MainMsg) -> Unit) {
+private fun MicrosoftSpeechRegionCard(uiState: SettingsUiState, dispatch: (SettingsMsg) -> Unit) {
     var regionInput by remember(uiState.microsoftSpeechRegion) { mutableStateOf(uiState.microsoftSpeechRegion) }
     var fieldHadFocus by remember(uiState.microsoftSpeechRegion) { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
@@ -195,7 +194,7 @@ private fun MicrosoftSpeechRegionCard(uiState: UiState, dispatch: (MainMsg) -> U
                 value = regionInput,
                 onValueChange = {
                     regionInput = it
-                    dispatch(MainMsg.ResetMicrosoftSpeechRegionValidation)
+                    dispatch(SettingsMsg.ResetMicrosoftSpeechRegionValidation)
                 },
                 label = {
                     Text(stringResource(R.string.settings_microsoft_speech_region_label))
@@ -206,7 +205,7 @@ private fun MicrosoftSpeechRegionCard(uiState: UiState, dispatch: (MainMsg) -> U
                         if (focusState.isFocused) {
                             fieldHadFocus = true
                         } else if (fieldHadFocus && regionInput != uiState.microsoftSpeechRegion) {
-                            dispatch(MainMsg.SetMicrosoftSpeechRegion(regionInput))
+                            dispatch(SettingsMsg.SetMicrosoftSpeechRegion(regionInput))
                         }
                     },
                 singleLine = true,
@@ -236,7 +235,7 @@ private fun MicrosoftSpeechRegionCard(uiState: UiState, dispatch: (MainMsg) -> U
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Icon(
-                            Icons.Default.Check,
+                            painterResource(R.drawable.ic_check),
                             contentDescription = null,
                             modifier = Modifier.height(14.dp).width(14.dp),
                             tint = MaterialTheme.colorScheme.primary,
@@ -250,7 +249,7 @@ private fun MicrosoftSpeechRegionCard(uiState: UiState, dispatch: (MainMsg) -> U
                 }
                 is RegionValidationState.Error -> {
                     Text(
-                        validation.message,
+                        validation.message.asString(),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -262,7 +261,7 @@ private fun MicrosoftSpeechRegionCard(uiState: UiState, dispatch: (MainMsg) -> U
 }
 
 @Composable
-private fun SummarizerProviderCard(uiState: UiState, dispatch: (MainMsg) -> Unit) {
+private fun SummarizerProviderCard(uiState: SettingsUiState, dispatch: (SettingsMsg) -> Unit) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -271,11 +270,11 @@ private fun SummarizerProviderCard(uiState: UiState, dispatch: (MainMsg) -> Unit
             Text(stringResource(R.string.settings_summarizer_model), style = MaterialTheme.typography.titleMedium)
             ProviderSelector(
                 selected = uiState.summarizerProvider,
-                onSelect = { dispatch(MainMsg.SetSummarizerProvider(it)) },
+                onSelect = { dispatch(SettingsMsg.SetSummarizerProvider(it)) },
                 customModelName = uiState.summarizerCustomGeminiModelName,
                 customModelValidation = uiState.summarizerCustomModelValidation,
-                onValidateCustomModel = { dispatch(MainMsg.ValidateSummarizerModel(it)) },
-                onResetValidation = { dispatch(MainMsg.ResetSummarizerModelValidation) },
+                onValidateCustomModel = { dispatch(SettingsMsg.ValidateSummarizerModel(it)) },
+                onResetValidation = { dispatch(SettingsMsg.ResetSummarizerModelValidation) },
                 showMicrosoftSpeech = false,
             )
         }
@@ -283,17 +282,17 @@ private fun SummarizerProviderCard(uiState: UiState, dispatch: (MainMsg) -> Unit
 }
 
 @Composable
-private fun AutomaticSummarizationCard(uiState: UiState, dispatch: (MainMsg) -> Unit) {
+private fun AutomaticSummarizationCard(uiState: SettingsUiState, dispatch: (SettingsMsg) -> Unit) {
     SettingsToggleCard(
         title = stringResource(R.string.settings_automatic_summarization),
         body = stringResource(R.string.settings_automatic_summarization_body),
         checked = uiState.automaticSummarizationEnabled,
-        onCheckedChange = { dispatch(MainMsg.SetAutomaticSummarization(it)) },
+        onCheckedChange = { dispatch(SettingsMsg.SetAutomaticSummarization(it)) },
     )
 }
 
 @Composable
-private fun BackgroundShareSummaryNotificationsCard(uiState: UiState, onCheckedChange: (Boolean) -> Unit) {
+private fun BackgroundShareSummaryNotificationsCard(uiState: SettingsUiState, onCheckedChange: (Boolean) -> Unit) {
     SettingsToggleCard(
         title = stringResource(R.string.settings_background_share_summary_notifications),
         body = stringResource(R.string.settings_background_share_summary_notifications_body),

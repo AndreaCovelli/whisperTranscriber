@@ -1,6 +1,5 @@
 package com.andreacovelli.whispertranscriber.transcription
 
-import android.app.Application
 import android.content.Context
 import android.database.SQLException
 import android.net.Uri
@@ -8,7 +7,7 @@ import android.util.Log
 import androidx.core.net.toUri
 import com.andreacovelli.whispertranscriber.QuantityText
 import com.andreacovelli.whispertranscriber.R
-import com.andreacovelli.whispertranscriber.UserFacingIllegalStateException
+import com.andreacovelli.whispertranscriber.UserFacingException
 import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.background.BackgroundShareNotifier
 import com.andreacovelli.whispertranscriber.background.BackgroundShareResultKind
@@ -16,16 +15,10 @@ import com.andreacovelli.whispertranscriber.background.PostTranscriptionWorkSpec
 import com.andreacovelli.whispertranscriber.background.StoredResultPublisher
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
-import com.andreacovelli.whispertranscriber.media.HardwareAudioConverter
 import com.andreacovelli.whispertranscriber.queue.QueueExecutionCoordinator
 import com.andreacovelli.whispertranscriber.queue.QueuedAudioStore
 import com.andreacovelli.whispertranscriber.queue.postTranscriptionWorkSpec
-import com.andreacovelli.whispertranscriber.security.GenAiClientFactory
 import com.andreacovelli.whispertranscriber.services.SummarizationService
-import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
-import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
-import com.andreacovelli.whispertranscriber.settings.decodeTranscriptionProvider
-import com.andreacovelli.whispertranscriber.userMessageOr
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.IOException
@@ -34,9 +27,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 
 internal sealed interface JobRunOutcome {
     data object Success : JobRunOutcome
@@ -48,45 +39,24 @@ internal sealed interface JobRunOutcome {
 
 private class SupersededExecutionException : Exception()
 
-private sealed interface ProviderExecution {
-    data class MicrosoftSpeech(val modelName: String) : ProviderExecution
-
-    data class Gemini(val modelName: String) : ProviderExecution
-}
-
 internal sealed interface QueuedAudioInputResolution {
     data class Ready(val uri: Uri) : QueuedAudioInputResolution
 
     data object MissingStagedFile : QueuedAudioInputResolution
 }
 
-private sealed interface PreparedAudioInput {
-    val tempFileToClean: File?
-
-    data class MicrosoftSpeech(
-        val file: File,
-        val mimeType: String,
-        val inspection: AudioInspection,
-        override val tempFileToClean: File?,
-    ) : PreparedAudioInput
-
-    data class Gemini(val file: File, val mimeType: String, override val tempFileToClean: File?) : PreparedAudioInput
-}
-
+// Owns a claimed job's lifecycle: preparation and provider calls are delegated, persistence stays here.
 @Singleton
-// One lifecycle coordinator owns preparation, provider execution, persistence, and follow-up cleanup.
-@Suppress("LargeClass")
 class TranscriptionExecutionRunner @Inject constructor(
     @param:ApplicationContext private val applicationContext: Context,
-    private val settings: ApiKeyManager,
     private val repository: TranscriptionRepository,
     private val executionCoordinator: QueueExecutionCoordinator,
     private val summarizationService: SummarizationService,
     private val backgroundShareNotifier: BackgroundShareNotifier,
     private val storedResultPublisher: StoredResultPublisher,
     private val queuedAudioStore: QueuedAudioStore,
-    private val genAiClientFactory: GenAiClientFactory,
-    private val okHttpClient: OkHttpClient,
+    private val audioPreparer: TranscriptionAudioPreparer,
+    private val transcriberFactory: ProviderTranscriberFactory,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
     companion object {
@@ -98,7 +68,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         jobId: Int,
         executionOwnerId: String,
         speakerLabelPrefix: String,
-        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
+        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: UserMessage) -> Unit,
     ): JobRunOutcome = executionCoordinator.runSerialized(jobId) {
         val ownerId = executionCoordinator.ownerId(executionOwnerId)
         try {
@@ -118,7 +88,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         jobId: Int,
         executionOwnerId: String,
         speakerLabelPrefix: String,
-        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
+        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: UserMessage) -> Unit,
     ): JobRunOutcome {
         backgroundShareNotifier.cancelRetryScheduled(jobId)
         backgroundShareNotifier.cancelBackgroundProcessing(jobId)
@@ -126,7 +96,7 @@ class TranscriptionExecutionRunner @Inject constructor(
             repository.claimJobForExecution(
                 jobId,
                 executionOwnerId,
-                applicationContext.getString(R.string.transcription_status_starting),
+                UserMessage(R.string.transcription_status_starting),
             )
                 ?: return when (val current = repository.getJob(jobId)) {
                     null -> JobRunOutcome.Failure
@@ -160,12 +130,11 @@ class TranscriptionExecutionRunner @Inject constructor(
                 val exhaustedMessage = UserMessage(
                     R.string.transcription_retries_exhausted,
                     listOf(QuantityText(R.plurals.transcription_attempt_count, job.retryCount + 1), e.userMessage),
-                ).resolve(applicationContext)
+                )
                 handleTerminalFailure(jobId, executionOwnerId, displayName, postTranscriptionWorkSpec, exhaustedMessage)
                 JobRunOutcome.Failure
             } else {
                 val retryMessage = UserMessage(R.string.transcription_retry_notification_body, listOf(e.userMessage))
-                    .resolve(applicationContext)
                 withContext(NonCancellable + ioDispatcher) {
                     requireOwnedUpdate(repository.markRetryScheduled(jobId, executionOwnerId))
                 }
@@ -182,33 +151,32 @@ class TranscriptionExecutionRunner @Inject constructor(
                 executionOwnerId,
                 displayName,
                 postTranscriptionWorkSpec,
-                terminalFailureMessage(e).resolve(applicationContext),
+                terminalFailureMessage(e),
             )
             JobRunOutcome.Failure
         }
     }
 
     /** Shows app-written messages as is; other exception text may come from a provider or the platform. */
-    private fun terminalFailureMessage(error: Exception): UserMessage = error.userMessageOr(
-        when (error) {
-            is IOException -> R.string.transcription_audio_processing_failed
-            is SecurityException -> R.string.transcription_audio_access_denied
-            is SQLException -> R.string.transcription_storage_failed
-            else -> R.string.transcription_failed_unexpected
-        },
-    )
+    private fun terminalFailureMessage(error: Exception): UserMessage =
+        (error as? UserFacingException)?.userMessage ?: when (error) {
+            is IOException -> UserMessage(R.string.transcription_audio_processing_failed)
+            is SecurityException -> UserMessage(R.string.transcription_audio_access_denied)
+            is SQLException -> UserMessage(R.string.transcription_storage_failed)
+            else -> UserMessage(R.string.transcription_failed_unexpected)
+        }
 
     private suspend fun executeClaimedJob(
         job: TranscriptionJob,
         executionOwnerId: String,
         speakerLabelPrefix: String,
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec?,
-        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
+        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: UserMessage) -> Unit,
     ): JobRunOutcome {
         onProgressNotification(
             job.id,
             job.displayName,
-            applicationContext.getString(R.string.transcription_notification_processing, job.displayName),
+            UserMessage(R.string.transcription_notification_processing, listOf(job.displayName)),
         )
 
         val durableTranscript = if (job.historyId != null) {
@@ -223,21 +191,20 @@ class TranscriptionExecutionRunner @Inject constructor(
                 jobId = job.id,
                 executionOwnerId = executionOwnerId,
                 displayName = job.displayName,
-                postTranscriptionWorkSpec = postTranscriptionWorkSpec,
                 onProgressNotification = onProgressNotification,
             )
             backgroundShareNotifier.cancelBackgroundProcessing(job.id)
             return JobRunOutcome.Success
         }
 
-        val providerExecution = resolveProviderExecution(job.providerName, job.requestedModel)
+        val providerExecution = transcriberFactory.resolveProviderExecution(job.providerName, job.requestedModel)
         if (providerExecution is ProviderExecution.MicrosoftSpeech) {
-            validatePersistedMicrosoftSpeechEndpoint()
+            transcriberFactory.validatePersistedMicrosoftSpeechEndpoint()
         }
         val stagedUri = when (val resolution = QueuedAudioInputResolver.resolve(job)) {
             is QueuedAudioInputResolution.Ready -> resolution.uri
             QueuedAudioInputResolution.MissingStagedFile -> {
-                val message = applicationContext.getString(R.string.queued_audio_unavailable)
+                val message = UserMessage(R.string.queued_audio_unavailable)
                 requireOwnedUpdate(
                     repository.updateError(
                         job.id,
@@ -265,7 +232,6 @@ class TranscriptionExecutionRunner @Inject constructor(
             providerExecution = providerExecution,
             speakerDiarizationEnabled = job.speakerDiarizationEnabled,
             speakerLabelPrefix = speakerLabelPrefix,
-            postTranscriptionWorkSpec = postTranscriptionWorkSpec,
             stagedFilePath = job.stagedFilePath,
             onProgressNotification = onProgressNotification,
         )
@@ -278,7 +244,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         executionOwnerId: String,
         displayName: String,
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec?,
-        message: String,
+        message: UserMessage,
     ) {
         backgroundShareNotifier.cancelBackgroundProcessing(jobId)
         if (repository.updateError(jobId, executionOwnerId, message, JOB_STATUS_ERROR)) {
@@ -295,21 +261,32 @@ class TranscriptionExecutionRunner @Inject constructor(
         providerExecution: ProviderExecution,
         speakerDiarizationEnabled: Boolean,
         speakerLabelPrefix: String,
-        postTranscriptionWorkSpec: PostTranscriptionWorkSpec?,
         stagedFilePath: String?,
-        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
+        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: UserMessage) -> Unit,
     ) {
         val usingMicrosoftSpeech = providerExecution is ProviderExecution.MicrosoftSpeech
         var preparedInput: PreparedAudioInput? = null
         try {
-            preparedInput = prepareAudioInput(
+            preparedInput = audioPreparer.prepare(
                 jobId = jobId,
-                executionOwnerId = executionOwnerId,
                 uri = uri,
                 inputMimeType = inputMimeType,
                 usingMicrosoftSpeech = usingMicrosoftSpeech,
-                displayName = displayName,
-                onProgressNotification = onProgressNotification,
+                listener = object : AudioPreparationListener {
+                    override suspend fun onStatus(status: UserMessage, progress: Float?) {
+                        requireOwnedUpdate(
+                            if (progress == null) {
+                                repository.updateStatus(jobId, executionOwnerId, status)
+                            } else {
+                                repository.updateStatusAndProgress(jobId, executionOwnerId, status, progress)
+                            },
+                        )
+                    }
+
+                    override suspend fun onNotification(text: UserMessage) {
+                        onProgressNotification(jobId, displayName, text)
+                    }
+                },
             )
             val result = runProviderTranscription(
                 jobId = jobId,
@@ -333,312 +310,11 @@ class TranscriptionExecutionRunner @Inject constructor(
                 jobId = jobId,
                 executionOwnerId = executionOwnerId,
                 displayName = displayName,
-                postTranscriptionWorkSpec = postTranscriptionWorkSpec,
                 onProgressNotification = onProgressNotification,
             )
         } finally {
-            preparedInput?.tempFileToClean?.let { file ->
-                deleteTemporaryFile(file)
-            }
+            preparedInput?.tempFileToClean?.let(audioPreparer::deleteTemporaryFile)
         }
-    }
-
-    private suspend fun prepareAudioInput(
-        jobId: Int,
-        executionOwnerId: String,
-        uri: Uri,
-        inputMimeType: String?,
-        usingMicrosoftSpeech: Boolean,
-        displayName: String,
-        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
-    ): PreparedAudioInput {
-        val app = applicationContext as Application
-        val conversionNeeded = inputMimeType == null ||
-            (usingMicrosoftSpeech && shouldConvertForMicrosoftSpeech(inputMimeType)) ||
-            (!usingMicrosoftSpeech && inputMimeType !in TranscriptionMimeSupport.geminiNativeUploadMimeTypes)
-        return if (conversionNeeded) {
-            prepareConvertedAudio(
-                app = app,
-                jobId = jobId,
-                executionOwnerId = executionOwnerId,
-                uri = uri,
-                inputMimeType = inputMimeType,
-                usingMicrosoftSpeech = usingMicrosoftSpeech,
-                displayName = displayName,
-                onProgressNotification = onProgressNotification,
-            )
-        } else {
-            prepareNativeAudio(
-                app = app,
-                jobId = jobId,
-                executionOwnerId = executionOwnerId,
-                uri = uri,
-                inputMimeType = inputMimeType,
-                usingMicrosoftSpeech = usingMicrosoftSpeech,
-                displayName = displayName,
-                onProgressNotification = onProgressNotification,
-            )
-        }
-    }
-
-    private fun shouldConvertForMicrosoftSpeech(inputMimeType: String): Boolean =
-        inputMimeType !in TranscriptionMimeSupport.microsoftSpeechNativeUploadMimeTypes ||
-            inputMimeType in TranscriptionMimeSupport.microsoftSpeechWavReencodeMimeTypes
-
-    private suspend fun prepareConvertedAudio(
-        app: Application,
-        jobId: Int,
-        executionOwnerId: String,
-        uri: Uri,
-        inputMimeType: String?,
-        usingMicrosoftSpeech: Boolean,
-        displayName: String,
-        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
-    ): PreparedAudioInput {
-        val reasonSuffix = inputMimeType?.let { "($it)" }
-            ?: applicationContext.getString(R.string.transcription_status_unknown_format_suffix)
-        val providerName = uploadProviderName(usingMicrosoftSpeech)
-        requireOwnedUpdate(
-            repository.updateStatusAndProgress(
-                jobId,
-                executionOwnerId,
-                applicationContext.getString(
-                    R.string.transcription_status_conversion_required,
-                    providerName,
-                    reasonSuffix,
-                ),
-                0f,
-            ),
-        )
-        onProgressNotification(
-            jobId,
-            displayName,
-            applicationContext.getString(R.string.transcription_notification_converting),
-        )
-        var createdFile: File? = null
-        var converted = false
-        var lastReportedProgressBucket = -1
-        try {
-            val outputFile = withContext(ioDispatcher) {
-                File.createTempFile("${QueuedAudioStore.CONVERTED_FILE_PREFIX}$jobId", ".wav", app.cacheDir)
-                    .also { createdFile = it }
-            }
-            val conversionResult = HardwareAudioConverter.convertTo16kMonoWav(
-                context = app,
-                inputUri = uri,
-                outputFile = outputFile,
-                maximumDurationUsExclusive = if (usingMicrosoftSpeech) {
-                    MICROSOFT_SPEECH_MAX_DURATION_US
-                } else {
-                    GEMINI_CONVERSION_DURATION_LIMIT_US_EXCLUSIVE
-                },
-                onProgress = { progress ->
-                    val normalizedProgress = progress.coerceIn(0f, 1f)
-                    val progressBucket = if (normalizedProgress >= 1f) {
-                        100
-                    } else {
-                        ((normalizedProgress * 100).toInt() / 5) * 5
-                    }
-                    if (progressBucket > lastReportedProgressBucket) {
-                        lastReportedProgressBucket = progressBucket
-                        requireOwnedUpdate(
-                            repository.updateStatusAndProgress(
-                                jobId,
-                                executionOwnerId,
-                                applicationContext.getString(
-                                    R.string.transcription_status_converting_progress,
-                                    normalizedProgress * 100,
-                                ),
-                                normalizedProgress,
-                            ),
-                        )
-                    }
-                },
-            )
-            val inspection = AudioInspection(
-                sizeBytes = outputFile.length(),
-                durationUs = conversionResult.durationUs,
-            )
-            if (usingMicrosoftSpeech) {
-                validateMicrosoftSpeechAudio(inspection)
-            }
-            val preparedInput = if (usingMicrosoftSpeech) {
-                requireOwnedUpdate(
-                    repository.updateStatus(
-                        jobId,
-                        executionOwnerId,
-                        applicationContext.getString(R.string.transcription_status_converted_ready_microsoft),
-                    ),
-                )
-                PreparedAudioInput.MicrosoftSpeech(
-                    file = outputFile,
-                    mimeType = "audio/wav",
-                    inspection = inspection,
-                    tempFileToClean = outputFile,
-                )
-            } else {
-                requireOwnedUpdate(
-                    repository.updateStatus(
-                        jobId,
-                        executionOwnerId,
-                        applicationContext.getString(R.string.transcription_status_converted_ready_gemini),
-                    ),
-                )
-                PreparedAudioInput.Gemini(file = outputFile, mimeType = "audio/wav", tempFileToClean = outputFile)
-            }
-            converted = true
-            return preparedInput
-        } finally {
-            if (!converted) {
-                withContext(NonCancellable + ioDispatcher) { createdFile?.let(::deleteTemporaryFile) }
-            }
-        }
-    }
-
-    private suspend fun prepareNativeAudio(
-        app: Application,
-        jobId: Int,
-        executionOwnerId: String,
-        uri: Uri,
-        inputMimeType: String,
-        usingMicrosoftSpeech: Boolean,
-        displayName: String,
-        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
-    ): PreparedAudioInput = if (usingMicrosoftSpeech) {
-        val reusableLocalFile = reusableLocalFileForUri(uri)
-        if (reusableLocalFile != null) {
-            requireOwnedUpdate(
-                repository.updateStatusAndProgress(
-                    jobId,
-                    executionOwnerId,
-                    applicationContext.getString(R.string.transcription_status_preparing_local_microsoft),
-                    1f,
-                ),
-            )
-            PreparedAudioInput.MicrosoftSpeech(
-                file = reusableLocalFile,
-                mimeType = inputMimeType,
-                inspection = inspectAudioFile(reusableLocalFile).also(::validateMicrosoftSpeechAudio),
-                tempFileToClean = null,
-            )
-        } else {
-            requireOwnedUpdate(
-                repository.updateStatusAndProgress(
-                    jobId,
-                    executionOwnerId,
-                    applicationContext.getString(
-                        R.string.transcription_status_copying_supported_microsoft,
-                        inputMimeType,
-                    ),
-                    0.5f,
-                ),
-            )
-            onProgressNotification(
-                jobId,
-                displayName,
-                applicationContext.getString(R.string.transcription_notification_copying),
-            )
-            val tempFile = copyInputToTempFile(app, jobId, uri)
-            requireOwnedUpdate(
-                repository.updateStatusAndProgress(
-                    jobId,
-                    executionOwnerId,
-                    applicationContext.getString(R.string.transcription_status_preparing_upload_microsoft),
-                    1f,
-                ),
-            )
-            PreparedAudioInput.MicrosoftSpeech(
-                file = tempFile,
-                mimeType = inputMimeType,
-                inspection = inspectAudioFile(tempFile).also(::validateMicrosoftSpeechAudio),
-                tempFileToClean = tempFile,
-            )
-        }
-    } else {
-        val reusableLocalFile = reusableLocalFileForUri(uri)
-        if (reusableLocalFile != null) {
-            requireOwnedUpdate(
-                repository.updateStatusAndProgress(
-                    jobId,
-                    executionOwnerId,
-                    applicationContext.getString(R.string.transcription_status_preparing_local_gemini),
-                    1f,
-                ),
-            )
-            PreparedAudioInput.Gemini(
-                file = reusableLocalFile.also(::validateMeasurableGeminiAudio),
-                mimeType = inputMimeType,
-                tempFileToClean = null,
-            )
-        } else {
-            requireOwnedUpdate(
-                repository.updateStatusAndProgress(
-                    jobId,
-                    executionOwnerId,
-                    applicationContext.getString(
-                        R.string.transcription_status_copying_supported_gemini,
-                        inputMimeType,
-                    ),
-                    0.5f,
-                ),
-            )
-            onProgressNotification(
-                jobId,
-                displayName,
-                applicationContext.getString(R.string.transcription_notification_copying),
-            )
-            val tempFile = copyInputToTempFile(app, jobId, uri)
-            requireOwnedUpdate(
-                repository.updateStatusAndProgress(
-                    jobId,
-                    executionOwnerId,
-                    applicationContext.getString(R.string.transcription_status_preparing_upload_gemini),
-                    1f,
-                ),
-            )
-            PreparedAudioInput.Gemini(
-                file = tempFile.also(::validateMeasurableGeminiAudio),
-                mimeType = inputMimeType,
-                tempFileToClean = tempFile,
-            )
-        }
-    }
-
-    private suspend fun copyInputToTempFile(app: Application, jobId: Int, uri: Uri): File = withContext(ioDispatcher) {
-        val contentResolver = app.contentResolver
-        val tempFile = File.createTempFile("${QueuedAudioStore.DIRECT_FILE_PREFIX}$jobId", ".tmp", app.cacheDir)
-        var copied = false
-        try {
-            contentResolver.openInputStream(uri)?.use { input ->
-                tempFile.outputStream().use(input::copyTo)
-            } ?: throw IOException("Failed to read input audio file.")
-            copied = true
-            tempFile
-        } finally {
-            if (!copied) {
-                deleteTemporaryFile(tempFile)
-            }
-        }
-    }
-
-    private fun deleteTemporaryFile(file: File) {
-        val deleted = try {
-            file.delete()
-        } catch (error: SecurityException) {
-            android.util.Log.w("TranscriptionExecutionRunner", "Temporary audio cleanup was denied", error)
-            false
-        }
-        if (!deleted && file.exists()) {
-            android.util.Log.w("TranscriptionExecutionRunner", "Failed to delete temporary audio")
-        }
-    }
-
-    private fun reusableLocalFileForUri(uri: Uri): File? {
-        if (!uri.scheme.equals("file", ignoreCase = true)) return null
-
-        val path = uri.path?.takeIf(String::isNotBlank) ?: return null
-        val candidate = File(path)
-        return candidate.takeIf { it.isAbsolute && it.exists() && it.canRead() }
     }
 
     private suspend fun runProviderTranscription(
@@ -649,27 +325,26 @@ class TranscriptionExecutionRunner @Inject constructor(
         providerExecution: ProviderExecution,
         speakerDiarizationEnabled: Boolean,
         speakerLabelPrefix: String,
-        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
+        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: UserMessage) -> Unit,
     ): TranscriptionData {
-        val transcriber = buildTranscriber(
+        val transcriber = transcriberFactory.buildTranscriber(
             preparedInput = preparedInput,
             providerExecution = providerExecution,
             speakerDiarizationEnabled = speakerDiarizationEnabled,
             speakerLabelPrefix = speakerLabelPrefix,
         )
         var resultData: TranscriptionData? = null
-        suspend fun reportProviderStatus(message: String) {
-            val providerMessage = applicationContext.getString(
+        suspend fun reportProviderStatus(message: UserMessage) {
+            val providerMessage = UserMessage(
                 R.string.transcription_status_provider_message,
-                providerDisplayName(providerExecution),
-                message,
+                listOf(providerExecution.displayName, message),
             )
             requireOwnedUpdate(repository.updateStatus(jobId, executionOwnerId, providerMessage))
             onProgressNotification(jobId, displayName, providerMessage)
         }
         transcriber.transcribe().collect { result ->
             when (result) {
-                is TranscriptionResult.Loading -> reportProviderStatus(result.message.resolve(applicationContext))
+                is TranscriptionResult.Loading -> reportProviderStatus(result.message)
                 is TranscriptionResult.Success -> resultData = result.data
                 is TranscriptionResult.Error -> throw result.exception
             }
@@ -677,116 +352,19 @@ class TranscriptionExecutionRunner @Inject constructor(
         return checkNotNull(resultData) { "Transcription failed without error." }
     }
 
-    private suspend fun buildTranscriber(
-        preparedInput: PreparedAudioInput,
-        providerExecution: ProviderExecution,
-        speakerDiarizationEnabled: Boolean,
-        speakerLabelPrefix: String,
-    ): ProviderTranscriber = when (providerExecution) {
-        is ProviderExecution.MicrosoftSpeech -> {
-            val microsoftSpeechInput = checkNotNull(preparedInput as? PreparedAudioInput.MicrosoftSpeech) {
-                "Internal error: Microsoft Speech audio data missing."
-            }
-            val keyChars = settings.getMicrosoftSpeechApiKey()
-                ?: throw UserFacingIllegalStateException(UserMessage(R.string.microsoft_speech_key_missing))
-            var keyOwnershipTransferred = false
-            try {
-                val endpoint = MicrosoftSpeechEndpoint.parse(settings.microsoftSpeechRegionFlow.first())
-                val transcriber = MicrosoftSpeechTranscriber(
-                    apiKey = keyChars,
-                    audioFile = microsoftSpeechInput.file,
-                    mimeType = microsoftSpeechInput.mimeType,
-                    endpoint = endpoint,
-                    modelName = providerExecution.modelName,
-                    speakerDiarizationEnabled = speakerDiarizationEnabled,
-                    speakerLabelPrefix = speakerLabelPrefix,
-                    audioInspection = microsoftSpeechInput.inspection,
-                    okHttpClient = okHttpClient,
-                    ioDispatcher = ioDispatcher,
-                )
-                keyOwnershipTransferred = true
-                transcriber
-            } finally {
-                if (!keyOwnershipTransferred) {
-                    keyChars.fill('\u0000')
-                }
-            }
-        }
-        is ProviderExecution.Gemini -> {
-            val geminiInput = checkNotNull(preparedInput as? PreparedAudioInput.Gemini) {
-                "Internal error: Gemini audio data missing."
-            }
-            val keyChars = settings.getGeminiApiKey()
-                ?: throw UserFacingIllegalStateException(UserMessage(R.string.gemini_api_key_missing))
-            var keyOwnershipTransferred = false
-            try {
-                val transcriber = GeminiTranscriber(
-                    audioFile = geminiInput.file,
-                    mimeType = geminiInput.mimeType,
-                    apiKey = keyChars,
-                    modelName = providerExecution.modelName,
-                    speakerDiarizationEnabled = speakerDiarizationEnabled,
-                    speakerLabelPrefix = speakerLabelPrefix,
-                    clientFactory = genAiClientFactory,
-                    ioDispatcher = ioDispatcher,
-                )
-                keyOwnershipTransferred = true
-                transcriber
-            } finally {
-                if (!keyOwnershipTransferred) {
-                    keyChars.fill('\u0000')
-                }
-            }
-        }
-    }
-
-    private fun resolveProviderExecution(providerName: String?, requestedModel: String?): ProviderExecution =
-        when (val provider = decodeTranscriptionProvider(providerName)) {
-            TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
-            -> ProviderExecution.MicrosoftSpeech(resolveMicrosoftSpeechExecutionModel(requestedModel))
-            TranscriptionProvider.GEMINI_FLASH_LITE,
-            TranscriptionProvider.GEMINI_FLASH,
-            TranscriptionProvider.GEMINI_PRO,
-            -> ProviderExecution.Gemini(requestedModel ?: requireNotNull(provider.modelName))
-            TranscriptionProvider.GEMINI_CUSTOM -> ProviderExecution.Gemini(
-                modelName = requestedModel?.takeIf(String::isNotBlank)
-                    ?: throw UserFacingIllegalStateException(UserMessage(R.string.gemini_model_not_specified)),
-            )
-        }
-
-    private suspend fun validatePersistedMicrosoftSpeechEndpoint(): MicrosoftSpeechEndpoint {
-        val persistedEndpoint = settings.microsoftSpeechRegionFlow.first()
-        return MicrosoftSpeechEndpoint.parseOrNull(persistedEndpoint) ?: run {
-            settings.clearInvalidMicrosoftSpeechConfiguration()
-            throw UserFacingIllegalStateException(UserMessage(R.string.microsoft_speech_configuration_cleared))
-        }
-    }
-
-    private fun uploadProviderName(usingMicrosoftSpeech: Boolean): String = if (usingMicrosoftSpeech) {
-        applicationContext.getString(R.string.provider_option_microsoft_speech)
-    } else {
-        applicationContext.getString(R.string.transcription_provider_gemini)
-    }
-
-    private fun providerDisplayName(providerExecution: ProviderExecution): String = when (providerExecution) {
-        is ProviderExecution.MicrosoftSpeech -> applicationContext.getString(R.string.provider_option_microsoft_speech)
-        is ProviderExecution.Gemini -> applicationContext.getString(R.string.transcription_provider_gemini)
-    }
-
     private suspend fun resumePostTranscriptionWork(
         jobId: Int,
         executionOwnerId: String,
         displayName: String,
-        postTranscriptionWorkSpec: PostTranscriptionWorkSpec?,
-        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
+        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: UserMessage) -> Unit,
     ) {
+        // Re-read the stored config: changing the auto-summary settings rewrites it for unfinished jobs.
+        val postTranscriptionWorkSpec = repository.getJob(jobId)?.postTranscriptionWorkSpec()
         if (postTranscriptionWorkSpec?.summarizeAfterTranscription == true) {
             val summarizationResult = summarizationService.summarize(
                 jobId = jobId,
                 settings = postTranscriptionWorkSpec.summarizationSettings,
-                allowResummarize = false,
                 executionOwnerId = executionOwnerId,
-                fallbackStatusMessage = applicationContext.getString(R.string.job_status_completed),
                 onStatusUpdate = { statusMessage ->
                     if (postTranscriptionWorkSpec.notifyResult) {
                         onProgressNotification(jobId, displayName, statusMessage)
@@ -817,7 +395,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec?,
         jobId: Int,
         displayName: String,
-        message: String,
+        message: UserMessage,
     ) {
         if (postTranscriptionWorkSpec?.notifyResult != true) return
         backgroundShareNotifier.showFailure(
@@ -831,9 +409,6 @@ class TranscriptionExecutionRunner @Inject constructor(
         if (!updated) throw SupersededExecutionException()
     }
 }
-
-internal fun resolveMicrosoftSpeechExecutionModel(requestedModel: String?): String =
-    requestedModel?.takeIf(String::isNotBlank) ?: MICROSOFT_MAI_TRANSCRIBE_MODEL
 
 internal object QueuedAudioInputResolver {
     fun resolve(job: TranscriptionJob): QueuedAudioInputResolution {

@@ -20,6 +20,7 @@ import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_COMPLETED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_ERROR
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_RETRY_SCHEDULED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_RUNNING
 import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_CANCELLED
 import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_GENERATED
 import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_SUMMARIZING
@@ -221,9 +222,9 @@ class TranscriptionRepositoryInstrumentedTest {
             ),
         ).toInt()
 
-        assertNotNull(repository.claimJobForExecution(jobId, "owner-1", "Starting"))
-        assertNull(repository.claimJobForExecution(jobId, "owner-2", "Starting"))
-        assertFalse(repository.updateStatus(jobId, "owner-2", "Stale status"))
+        assertNotNull(repository.claimJobForExecution(jobId, "owner-1", UserMessage.verbatim("Starting")))
+        assertNull(repository.claimJobForExecution(jobId, "owner-2", UserMessage.verbatim("Starting")))
+        assertFalse(repository.updateStatus(jobId, "owner-2", UserMessage.verbatim("Stale status")))
         assertFalse(
             repository.persistCompletedTranscription(
                 jobId,
@@ -244,33 +245,7 @@ class TranscriptionRepositoryInstrumentedTest {
         )
         assertEquals("", repository.getJob(jobId)?.transcript)
         assertEquals("Durable transcript", repository.getTranscriptForJob(jobId))
-        assertNull(repository.claimJobForExecution(jobId, "owner-1", "Duplicate"))
-    }
-
-    @Test
-    fun markFinishedJobsAutoSummaryAttempted_excludesOnlyJobsThatAlreadyFinished() = runBlocking {
-        val finishedId = repository.addJob(
-            TranscriptionJob(uri = "content://test/a.wav", displayName = "a.wav"),
-        ).toInt()
-        assertNotNull(repository.claimJobForExecution(finishedId, "owner-1", "Starting"))
-        assertTrue(
-            repository.persistCompletedTranscription(
-                finishedId,
-                "owner-1",
-                "a.wav",
-                TranscriptionData("Finished transcript", "en", "model"),
-            ),
-        )
-        assertTrue(repository.markRunningAsCompleted(finishedId, "owner-1"))
-        val runningId = repository.addJob(TranscriptionJob(uri = "content://test/b.wav", displayName = "b.wav")).toInt()
-        assertNotNull(repository.claimJobForExecution(runningId, "owner-2", "Starting"))
-        val queuedId = repository.addJob(TranscriptionJob(uri = "content://test/c.wav", displayName = "c.wav")).toInt()
-
-        repository.markFinishedJobsAutoSummaryAttempted()
-
-        assertTrue(repository.getJob(finishedId)!!.autoSummaryAttempted)
-        assertFalse(repository.getJob(runningId)!!.autoSummaryAttempted)
-        assertFalse(repository.getJob(queuedId)!!.autoSummaryAttempted)
+        assertNull(repository.claimJobForExecution(jobId, "owner-1", UserMessage.verbatim("Duplicate")))
     }
 
     @Test
@@ -285,7 +260,7 @@ class TranscriptionRepositoryInstrumentedTest {
         ).toInt()
 
         val ownerId = "owner-1"
-        assertNotNull(repository.claimJobForExecution(jobId, ownerId, "Starting..."))
+        assertNotNull(repository.claimJobForExecution(jobId, ownerId, UserMessage.verbatim("Starting...")))
         repository.markRetryScheduled(jobId, ownerId)
 
         val updatedJob = repository.getJob(jobId)
@@ -302,7 +277,7 @@ class TranscriptionRepositoryInstrumentedTest {
             TranscriptionJob(
                 uri = "content://test/stale.wav",
                 displayName = "stale.wav",
-                status = "Processing...",
+                status = JOB_STATUS_RUNNING,
                 isRunning = true,
                 executionOwnerId = "owner-1",
             ),
@@ -342,10 +317,14 @@ class TranscriptionRepositoryInstrumentedTest {
         assertEquals(JOB_STATUS_QUEUED, untouchedQueuedJob?.status)
         assertFalse(untouchedQueuedJob?.isRunning ?: true)
         assertEquals(0, repository.countBlockingJobs())
-        assertNotNull(repository.claimJobForExecution(staleJobId, "new-owner-1", "Starting..."))
-        assertNull(repository.claimJobForExecution(retryScheduledJobId, "new-owner-2", "Starting..."))
+        assertNotNull(repository.claimJobForExecution(staleJobId, "new-owner-1", UserMessage.verbatim("Starting...")))
+        assertNull(
+            repository.claimJobForExecution(retryScheduledJobId, "new-owner-2", UserMessage.verbatim("Starting...")),
+        )
         repository.resetRunningToQueued(staleJobId, "new-owner-1")
-        assertNotNull(repository.claimJobForExecution(retryScheduledJobId, "new-owner-2", "Starting..."))
+        assertNotNull(
+            repository.claimJobForExecution(retryScheduledJobId, "new-owner-2", UserMessage.verbatim("Starting...")),
+        )
     }
 
     @Test
@@ -397,7 +376,7 @@ class TranscriptionRepositoryInstrumentedTest {
             assertEquals(0, retried.retryCount)
             assertTrue(retried.speakerDiarizationEnabled)
             assertEquals(RetryResult.INELIGIBLE_STATUS, retryWithMicrosoft(jobId))
-            repository.cancelJob(jobId, "Cancelled")
+            repository.cancelJob(jobId, UserMessage.verbatim("Cancelled"))
             audio.delete()
             assertEquals(RetryResult.UNAVAILABLE_AUDIO, retryWithMicrosoft(jobId))
         } finally {
@@ -463,7 +442,7 @@ class TranscriptionRepositoryInstrumentedTest {
         assertEquals("", recovered.summaryAttemptId)
         assertFalse(recovered.autoSummaryAttempted)
         val owner = coordinator.ownerId("surviving-worker-id")
-        assertNotNull(repository.claimJobForExecution(jobId, owner, "Starting"))
+        assertNotNull(repository.claimJobForExecution(jobId, owner, UserMessage.verbatim("Starting")))
         coordinator.awaitRecovery()
         assertEquals(owner, repository.getJob(jobId)?.executionOwnerId)
         assertFalse(

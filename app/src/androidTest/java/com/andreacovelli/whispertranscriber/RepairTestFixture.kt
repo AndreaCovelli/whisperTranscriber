@@ -17,6 +17,8 @@ import com.andreacovelli.whispertranscriber.services.SummarizationService
 import com.andreacovelli.whispertranscriber.services.TranscriptionQueueService
 import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
 import com.andreacovelli.whispertranscriber.summary.TranscriptionSummarizationRepository
+import com.andreacovelli.whispertranscriber.transcription.ProviderTranscriberFactory
+import com.andreacovelli.whispertranscriber.transcription.TranscriptionAudioPreparer
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionExecutionRunner
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
 import kotlinx.coroutines.Dispatchers
@@ -38,7 +40,6 @@ internal class RepairTestFixture(context: Context, queryCallback: RoomDatabase.Q
     val scheduler = RecordingScheduler()
     val settings = ApiKeyManager(context)
     val queue = TranscriptionQueueService(
-        context,
         settings,
         repository,
         audioStore,
@@ -57,20 +58,18 @@ internal class RepairTestFixture(context: Context, queryCallback: RoomDatabase.Q
         clients,
         coordinator,
         operations,
-        context,
         Dispatchers.IO,
     )
     val runner = TranscriptionExecutionRunner(
         context,
-        settings,
         repository,
         coordinator,
         summaryService,
         notifier,
         publisher,
         audioStore,
-        clients,
-        httpClient,
+        TranscriptionAudioPreparer(context, Dispatchers.IO),
+        ProviderTranscriberFactory(settings, clients, httpClient, Dispatchers.IO),
         Dispatchers.IO,
     )
 

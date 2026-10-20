@@ -175,7 +175,9 @@ Select **Custom Model** in either the transcription or summarizer selector in Se
 ### Summaries, speaker labels, and background sharing
 
 Choose the **Summarizer** model separately from the transcription provider. Enable
-**Automatic Summarization** to summarize completed transcripts. **Speaker Diarization**
+**Automatic Summarization** to summarize each transcript as it finishes, including audio
+that is already queued; existing transcripts are not summarized retroactively. Automatic
+and manual summaries keep running in the background after you leave the app. **Speaker Diarization**
 is available for Microsoft MAI Transcribe 2 and Gemini transcription and labels
 speakers when they can be distinguished.
 
@@ -254,9 +256,9 @@ Configure the transcription and summarizer models, manage API keys, enter a Micr
 ## Architecture
 
 - `MainActivity` hosts Compose navigation; `ShareReceiverActivity` accepts Android share intents through a retained intake ViewModel.
-- Main and History ViewModels expose immutable state through `StateFlow` and existing MVU messages/reducers. History uses Room-backed Paging with date grouping.
+- Main, Settings, and History ViewModels expose immutable state through `StateFlow` and use unidirectional data flow: screens dispatch messages, pure reducers compute state, and ViewModels run side effects. History uses Room-backed Paging with date grouping.
 - `TranscriptionQueueService`, `QueueExecutionCoordinator`, and `TranscriptionExecutionRunner` stage, recover, serialize, and persist work across WorkManager and the Android job service.
-- Room stores history, FTS search, and persistent queue state (schema v15). Content mutations and claims are transactional; prior-process claims recover independently of surviving scheduler entries.
+- Room stores history, FTS search, and persistent queue state (schema v16). Job progress, errors, and summary errors are stored as message codes and arguments, then translated when shown. Content mutations and claims are transactional; prior-process claims recover independently of surviving scheduler entries.
 - `ApiKeyManager` and `KeystoreCrypto` encrypt credentials in DataStore. Provider transports cancel each operation independently.
 - `HardwareAudioConverter` uses MediaExtractor/MediaCodec for 16 kHz mono WAV conversion.
 

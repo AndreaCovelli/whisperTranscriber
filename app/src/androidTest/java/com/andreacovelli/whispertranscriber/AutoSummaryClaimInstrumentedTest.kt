@@ -32,30 +32,70 @@ class AutoSummaryClaimInstrumentedTest {
     }
 
     @Test
-    fun claimAutoSummary_onlySucceedsOnceForEligibleJob() = runBlocking {
+    fun claimAutoSummary_onlySucceedsOnceForOwningExecution() = runBlocking {
         val jobDao = db.transcriptionJobDao()
         val summarizationDao = db.transcriptionJobSummarizationDao()
-        val jobId = insertJob(testJob())
+        val jobId = insertJob(testJob().copy(isRunning = true, executionOwnerId = "work-owner"))
 
-        val firstClaim = summarizationDao.claimAutoSummary(
+        val otherOwnerClaim = summarizationDao.claimBackgroundAutoSummary(
             jobId,
+            "other-owner",
+            "attempt-0",
+            "GEMINI_FLASH",
+            "gemini-2.5-flash",
+        )
+        val firstClaim = summarizationDao.claimBackgroundAutoSummary(
+            jobId,
+            "work-owner",
             "attempt-1",
             "GEMINI_FLASH",
             "gemini-2.5-flash",
         )
-        val secondClaim = summarizationDao.claimAutoSummary(
+        val secondClaim = summarizationDao.claimBackgroundAutoSummary(
             jobId,
+            "work-owner",
             "attempt-2",
             "GEMINI_FLASH",
             "gemini-2.5-flash",
         )
         val storedJob = jobDao.getJobById(jobId)
 
+        assertEquals(0, otherOwnerClaim)
         assertEquals(1, firstClaim)
         assertEquals(0, secondClaim)
         assertTrue(storedJob?.isSummarizing == true)
         assertEquals("attempt-1", storedJob?.summaryAttemptId)
         assertEquals(null, storedJob?.summaryError)
+    }
+
+    @Test
+    fun updateQueuedAutoSummary_rewritesOnlyJobsThatHaveNotReachedSummarization() = runBlocking {
+        val jobDao = db.transcriptionJobDao()
+        val finishedId = insertJob(testJob(displayName = "finished.wav"))
+        val runningId = jobDao.insert(
+            testJob(displayName = "running.wav").copy(isRunning = true, executionOwnerId = "owner"),
+        ).toInt()
+        val summarizingId = insertJob(
+            testJob(displayName = "summarizing.wav", isSummarizing = true, summaryAttemptId = "attempt")
+                .copy(isRunning = true, executionOwnerId = "owner"),
+        )
+        val queuedId = jobDao.insert(testJob(displayName = "queued.wav")).toInt()
+
+        assertEquals(2, jobDao.updateQueuedAutoSummary(true, "GEMINI_CUSTOM", "custom-model"))
+
+        assertFalse(jobDao.getJobById(finishedId)!!.summarizeAfterTranscription)
+        assertFalse(jobDao.getJobById(summarizingId)!!.summarizeAfterTranscription)
+        listOf(runningId, queuedId).forEach { jobId ->
+            val job = jobDao.getJobById(jobId)!!
+            assertTrue(job.summarizeAfterTranscription)
+            assertEquals("GEMINI_CUSTOM", job.queuedSummarizerProviderName)
+            assertEquals("custom-model", job.queuedSummarizerCustomModelName)
+        }
+
+        jobDao.updateQueuedAutoSummary(false, "", "")
+
+        assertFalse(jobDao.getJobById(runningId)!!.summarizeAfterTranscription)
+        assertFalse(jobDao.getJobById(queuedId)!!.summarizeAfterTranscription)
     }
 
     @Test

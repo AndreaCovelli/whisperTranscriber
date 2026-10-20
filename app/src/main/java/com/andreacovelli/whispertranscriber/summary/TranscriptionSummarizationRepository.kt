@@ -1,6 +1,8 @@
 package com.andreacovelli.whispertranscriber.summary
 
 import androidx.room.withTransaction
+import com.andreacovelli.whispertranscriber.StoredMessages
+import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.data.AppDatabase
 import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.data.HistoryRepository
@@ -39,28 +41,25 @@ class TranscriptionSummarizationRepository @Inject constructor(
         updated
     }
 
-    suspend fun failSummarization(id: Int, attemptId: String, error: String?): Boolean =
-        jobSummarizationDao.failSummarization(id, attemptId, error) > 0
+    suspend fun failSummarization(id: Int, attemptId: String, error: UserMessage): Boolean =
+        jobSummarizationDao.failSummarization(id, attemptId, StoredMessages.encode(error)) > 0
 
     suspend fun cancelSummarization(id: Int): Boolean = jobSummarizationDao.cancelSummarization(id) > 0
 
+    /** Claims the automatic summary for the execution that owns the running job. */
     suspend fun claimAutoSummary(
         id: Int,
+        executionOwnerId: String,
         attemptId: String,
         providerName: String,
         modelName: String,
-        executionOwnerId: String?,
-    ): Boolean = if (executionOwnerId == null) {
-        jobSummarizationDao.claimAutoSummary(id, attemptId, providerName, modelName) > 0
-    } else {
-        jobSummarizationDao.claimBackgroundAutoSummary(
-            id,
-            executionOwnerId,
-            attemptId,
-            providerName,
-            modelName,
-        ) > 0
-    }
+    ): Boolean = jobSummarizationDao.claimBackgroundAutoSummary(
+        id,
+        executionOwnerId,
+        attemptId,
+        providerName,
+        modelName,
+    ) > 0
 
     suspend fun claimManualSummary(id: Int, attemptId: String, providerName: String, modelName: String): Boolean =
         jobSummarizationDao.claimManualSummary(id, attemptId, providerName, modelName) > 0

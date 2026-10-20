@@ -7,11 +7,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
@@ -31,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -40,8 +36,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.settings.ApiKeyState
-import com.andreacovelli.whispertranscriber.ui.main.KeyValidationState
+import com.andreacovelli.whispertranscriber.ui.asString
+import com.andreacovelli.whispertranscriber.ui.settings.KeyValidationState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -136,7 +134,9 @@ fun ApiKeyCard(
                         }
                     }) {
                         Icon(
-                            imageVector = if (showKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            painter = painterResource(
+                                if (showKey) R.drawable.ic_visibility_off else R.drawable.ic_visibility,
+                            ),
                             contentDescription = if (showKey) {
                                 stringResource(
                                     R.string.api_key_hide,
@@ -190,19 +190,19 @@ private fun ApiKeyValidatingState() {
 }
 
 @Composable
-private fun ApiKeyErrorState(message: String) {
+private fun ApiKeyErrorState(message: UserMessage) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Icon(
-            Icons.Default.Error,
+            painterResource(R.drawable.ic_error),
             contentDescription = null,
             modifier = Modifier.size(16.dp),
             tint = MaterialTheme.colorScheme.error,
         )
         Text(
-            message,
+            message.asString(),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.error,
         )
@@ -218,7 +218,7 @@ private fun ApiKeyIdleState(apiKeyState: ApiKeyState) {
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Icon(
-                    Icons.Default.Lock,
+                    painterResource(R.drawable.ic_lock),
                     contentDescription = null,
                     modifier = Modifier.size(12.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -236,13 +236,13 @@ private fun ApiKeyIdleState(apiKeyState: ApiKeyState) {
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Icon(
-                    Icons.Default.Error,
+                    painterResource(R.drawable.ic_error),
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
                     tint = MaterialTheme.colorScheme.error,
                 )
                 Text(
-                    stringResource(R.string.api_key_keystore_error, apiKeyState.message),
+                    stringResource(R.string.api_key_keystore_error, apiKeyState.message.asString()),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                 )

@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
 import com.andreacovelli.whispertranscriber.security.KeystoreCrypto
 import com.andreacovelli.whispertranscriber.transcription.MICROSOFT_MAI_TRANSCRIBE_MODEL
@@ -49,7 +50,7 @@ enum class TranscriptionProvider(val modelName: String? = null) {
 sealed class ApiKeyState {
     object Missing : ApiKeyState()
     object Present : ApiKeyState()
-    data class Error(val message: String) : ApiKeyState()
+    data class Error(val message: UserMessage) : ApiKeyState()
 }
 
 data class TranscriptionQueueSettings(
@@ -223,9 +224,9 @@ class ApiKeyManager @Inject constructor(
                 KeystoreCrypto.decryptFromBase64(enc).fill(0)
                 ApiKeyState.Present
             } catch (_: GeneralSecurityException) {
-                ApiKeyState.Error(context.getString(R.string.api_key_decryption_failed))
+                ApiKeyState.Error(UserMessage(R.string.api_key_decryption_failed))
             } catch (_: IllegalArgumentException) {
-                ApiKeyState.Error(context.getString(R.string.api_key_decryption_failed))
+                ApiKeyState.Error(UserMessage(R.string.api_key_decryption_failed))
             }
         }
     }.flowOn(ioDispatcher)

@@ -19,7 +19,7 @@ import java.io.FileNotFoundException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.max
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
@@ -76,9 +76,10 @@ object HardwareAudioConverter {
         context: Context,
         inputUri: Uri,
         outputFile: File,
+        ioDispatcher: CoroutineDispatcher,
         maximumDurationUsExclusive: Long? = null,
         onProgress: (suspend (Float) -> Unit)? = null,
-    ): Result = withContext(Dispatchers.IO) {
+    ): Result = withContext(ioDispatcher) {
         var extractor: MediaExtractor? = null
         var decoder: MediaCodec? = null
         var state: DecoderState? = null

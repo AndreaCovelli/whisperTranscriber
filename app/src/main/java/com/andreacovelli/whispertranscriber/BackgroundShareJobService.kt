@@ -7,6 +7,7 @@ import android.os.Build
 import android.util.Log
 import com.andreacovelli.whispertranscriber.background.BackgroundShareNotifier
 import com.andreacovelli.whispertranscriber.background.BackgroundShareRunCoordinator
+import com.andreacovelli.whispertranscriber.di.IoDispatcher
 import com.andreacovelli.whispertranscriber.queue.backgroundShareSchedulerJobId
 import com.andreacovelli.whispertranscriber.services.TranscriptionQueueService
 import com.andreacovelli.whispertranscriber.transcription.JobRunOutcome
@@ -15,10 +16,10 @@ import dagger.hilt.android.AndroidEntryPoint
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -37,12 +38,19 @@ class BackgroundShareJobService : JobService() {
     @Inject
     lateinit var backgroundShareNotifier: BackgroundShareNotifier
 
+    @Inject
+    @IoDispatcher
+    lateinit var ioDispatcher: CoroutineDispatcher
+
     // Uncaught failures must not crash the process, which would also kill unrelated queued work.
-    private val serviceScope = CoroutineScope(
-        SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, error ->
-            Log.w(TAG, "Background share job failed with ${error::class.java.name}")
-        },
-    )
+    // Lazy because Hilt injects the dispatcher in onCreate, after property initialization.
+    private val serviceScope by lazy {
+        CoroutineScope(
+            SupervisorJob() + ioDispatcher + CoroutineExceptionHandler { _, error ->
+                Log.w(TAG, "Background share job failed with ${error::class.java.name}")
+            },
+        )
+    }
     private val runCoordinator = BackgroundShareRunCoordinator()
     private val runningJobs = ConcurrentHashMap<Int, Job>()
     private val runningParams = ConcurrentHashMap<Int, JobParameters>()
@@ -68,7 +76,7 @@ class BackgroundShareJobService : JobService() {
                 backgroundShareNotifier.buildProcessingNotification(
                     jobId = jobId,
                     displayName = displayName,
-                    message = getString(R.string.background_share_waiting_to_start_notification_body),
+                    message = UserMessage(R.string.background_share_waiting_to_start_notification_body),
                 ),
                 JOB_END_NOTIFICATION_POLICY_REMOVE,
             )
@@ -151,7 +159,7 @@ class BackgroundShareJobService : JobService() {
         super.onDestroy()
     }
 
-    private fun updateNotification(jobId: Int, displayName: String, progressText: String) {
+    private fun updateNotification(jobId: Int, displayName: String, progressText: UserMessage) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
 
         val params = runningParams[jobId] ?: return

@@ -20,6 +20,7 @@ import com.andreacovelli.whispertranscriber.CancelTranscriptionNotificationRecei
 import com.andreacovelli.whispertranscriber.MainActivity
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.TranscriptionWorker
+import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.text.BreakIterator
@@ -394,7 +395,8 @@ private const val PREPARING_SHARE_NOTIFICATION_TAG = "preparing_share"
 private const val PREPARING_SHARE_NOTIFICATION_ID = 0
 
 // Earlier versions posted untagged ongoing retry, processing, and preparing notifications from 60_000
-// upwards. Foreground job notifications start at 200_000 and the worker uses 1001, so neither is affected.
+// upwards. Foreground job notifications start at 200_000, the transcription worker uses 1001, and summary
+// workers use negative IDs, so none of them is affected.
 private val LEGACY_ONGOING_NOTIFICATION_IDS = 60_000 until 200_000
 
 // Earlier versions posted untagged result notifications as 20_000 + jobId. Larger job IDs would
@@ -550,7 +552,8 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
         )
     }
 
-    fun showFailure(jobId: Int? = null, displayName: String, message: String) {
+    fun showFailure(jobId: Int? = null, displayName: String, message: UserMessage) {
+        val text = message.resolve(context)
         notify(
             tag = if (jobId != null) RESULT_NOTIFICATION_TAG else GENERIC_FAILURE_NOTIFICATION_TAG,
             id = jobId ?: Random.nextInt(),
@@ -558,34 +561,34 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
                 .setSmallIcon(R.drawable.ic_notification)
                 .setPrivateContent(context, RESULT_CHANNEL_ID, R.string.notification_public_failed)
                 .setContentTitle(context.getString(R.string.background_share_summary_failed_title, displayName))
-                .setContentText(message)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+                .setContentText(text)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
                 .setContentIntent(createOpenAppPendingIntent(context))
                 .setAutoCancel(true)
                 .setGroup(RESULT_GROUP_KEY),
         )
     }
 
-    fun showRetryScheduled(jobId: Int, displayName: String, message: String) {
+    fun showRetryScheduled(jobId: Int, displayName: String, message: UserMessage) {
         notify(
             tag = RETRY_NOTIFICATION_TAG,
             id = jobId,
             builder = processingBuilder(
                 jobId = jobId,
                 title = context.getString(R.string.transcription_retry_notification_title, displayName),
-                message = message,
+                message = message.resolve(context),
             ),
         )
     }
 
-    fun showBackgroundProcessing(jobId: Int, displayName: String, message: String) {
+    fun showBackgroundProcessing(jobId: Int, displayName: String, message: UserMessage) {
         notify(
             tag = PROCESSING_NOTIFICATION_TAG,
             id = jobId,
             builder = processingBuilder(
                 jobId = jobId,
                 title = context.getString(R.string.transcription_background_notification_title, displayName),
-                message = message,
+                message = message.resolve(context),
             ),
         )
     }
@@ -667,11 +670,12 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
         showCachedResultPage(jobId, resultKind, pageIndex)
     }
 
-    fun buildProcessingNotification(jobId: Int, displayName: String, message: String): Notification = processingBuilder(
-        jobId = jobId,
-        title = context.getString(R.string.transcription_background_notification_title, displayName),
-        message = message,
-    ).build()
+    fun buildProcessingNotification(jobId: Int, displayName: String, message: UserMessage): Notification =
+        processingBuilder(
+            jobId = jobId,
+            title = context.getString(R.string.transcription_background_notification_title, displayName),
+            message = message.resolve(context),
+        ).build()
 
     @SuppressLint("MissingPermission")
     private fun notify(tag: String, id: Int, builder: NotificationCompat.Builder) {

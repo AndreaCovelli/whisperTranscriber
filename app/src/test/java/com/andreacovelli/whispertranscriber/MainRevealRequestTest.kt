@@ -6,8 +6,8 @@ import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.ui.main.JobRevealRequest
 import com.andreacovelli.whispertranscriber.ui.main.MainMsg
 import com.andreacovelli.whispertranscriber.ui.main.MainReducer
+import com.andreacovelli.whispertranscriber.ui.main.MainUiState
 import com.andreacovelli.whispertranscriber.ui.main.TranscriptionJobState
-import com.andreacovelli.whispertranscriber.ui.main.UiState
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 import com.andreacovelli.whispertranscriber.ui.screens.resolveMainJobItemIndex
 import org.junit.Assert.assertEquals
@@ -18,7 +18,7 @@ class MainRevealRequestTest {
     @Test
     fun newerShare_supersedesOlderInFlightRevealRequest() {
         val firstShare = MainReducer.reduce(
-            UiState(),
+            MainUiState(),
             MainMsg.SharedAudioReceived(listOf(Uri.EMPTY)),
         )
         val secondShare = MainReducer.reduce(
@@ -42,7 +42,7 @@ class MainRevealRequestTest {
     @Test
     fun staleCompletionsAndAcknowledgements_cannotReplaceOrClearNewerRequests() {
         val firstRequest = MainReducer.reduce(
-            UiState(),
+            MainUiState(),
             MainMsg.SharedAudioReceived(listOf(Uri.EMPTY)),
         )
         val firstToken = requireNotNull(firstRequest.jobRevealRequest).token
@@ -84,7 +84,7 @@ class MainRevealRequestTest {
     @Test
     fun foregroundReveal_waitsForCreatedJobToAppearInPresentation() {
         val requested = MainReducer.reduce(
-            UiState(),
+            MainUiState(),
             MainMsg.SharedAudioReceived(listOf(Uri.EMPTY)),
         )
         val token = requireNotNull(requested.jobRevealRequest).token
@@ -111,7 +111,7 @@ class MainRevealRequestTest {
     @Test
     fun missingNotificationTarget_isClearedAfterJobsLoad() {
         val requested = MainReducer.reduce(
-            UiState(),
+            MainUiState(),
             MainMsg.BackgroundShareResultOpened(jobId = 404),
         )
 
@@ -137,23 +137,23 @@ class MainRevealRequestTest {
         )
         val batchProgress = BatchProgressState(currentFileNumber = 1, totalFiles = 2, completedFiles = 0)
 
-        assertEquals(3, resolveMainJobItemIndex(UiState(jobs = queuedJobs), jobId = 2))
+        assertEquals(3, resolveMainJobItemIndex(MainUiState(jobs = queuedJobs), jobId = 2))
         assertEquals(
             4,
             resolveMainJobItemIndex(
-                UiState(jobs = queuedJobs, batchProgressState = batchProgress),
+                MainUiState(jobs = queuedJobs, batchProgressState = batchProgress),
                 jobId = 2,
             ),
         )
-        assertEquals(5, resolveMainJobItemIndex(UiState(jobs = jobsWithCompleted), jobId = 2))
+        assertEquals(5, resolveMainJobItemIndex(MainUiState(jobs = jobsWithCompleted), jobId = 2))
         assertEquals(
             6,
             resolveMainJobItemIndex(
-                UiState(jobs = jobsWithCompleted, batchProgressState = batchProgress),
+                MainUiState(jobs = jobsWithCompleted, batchProgressState = batchProgress),
                 jobId = 2,
             ),
         )
-        assertNull(resolveMainJobItemIndex(UiState(jobs = queuedJobs), jobId = 404))
+        assertNull(resolveMainJobItemIndex(MainUiState(jobs = queuedJobs), jobId = 404))
     }
 
     private fun testJob(id: Int, status: String = JOB_STATUS_QUEUED): TranscriptionJobState = TranscriptionJobState(

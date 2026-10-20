@@ -50,7 +50,7 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideDatabase(@ApplicationContext context: Context): AppDatabase = AppDatabase.getDatabase(context)
+    fun provideDatabase(@ApplicationContext context: Context): AppDatabase = AppDatabase.build(context)
 
     @Provides
     fun provideTranscriptionHistoryDao(database: AppDatabase): TranscriptionHistoryDao =

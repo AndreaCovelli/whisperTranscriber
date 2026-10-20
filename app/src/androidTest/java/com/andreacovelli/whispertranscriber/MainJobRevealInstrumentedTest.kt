@@ -18,8 +18,8 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.ui.main.JobRevealRequest
+import com.andreacovelli.whispertranscriber.ui.main.MainUiState
 import com.andreacovelli.whispertranscriber.ui.main.TranscriptionJobState
-import com.andreacovelli.whispertranscriber.ui.main.UiState
 import com.andreacovelli.whispertranscriber.ui.screens.MainJobList
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -35,7 +35,7 @@ class MainJobRevealInstrumentedTest {
     fun readyTargetNearListEnd_scrollsIntoViewAndAcknowledgesOnce() {
         val jobs = testJobs()
         val uiState = mutableStateOf(
-            UiState(
+            MainUiState(
                 jobs = jobs,
                 jobRevealRequest = JobRevealRequest.Ready(token = 1L, jobId = jobs.last().id),
             ),
@@ -51,7 +51,7 @@ class MainJobRevealInstrumentedTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithText(jobs.last().displayName).assertIsDisplayed()
         composeRule.runOnIdle {
-            uiState.value = uiState.value.copy(status = "Recomposed")
+            uiState.value = uiState.value.copy(status = UserMessage.verbatim("Recomposed"))
         }
         composeRule.waitForIdle()
         assertEquals(1, acknowledgementCount)
@@ -60,7 +60,7 @@ class MainJobRevealInstrumentedTest {
     @Test
     fun targetPublishedAfterInitialComposition_scrollsIntoView() {
         val jobs = testJobs()
-        val uiState = mutableStateOf(UiState(jobs = jobs))
+        val uiState = mutableStateOf(MainUiState(jobs = jobs))
         var acknowledgedToken: Long? = null
 
         setMainJobList(uiState) { token ->
@@ -83,7 +83,7 @@ class MainJobRevealInstrumentedTest {
     @Test
     fun targetPublishedWhileMainIsAbsent_waitsForNextMainVisit() {
         val jobs = testJobs()
-        val uiState = mutableStateOf(UiState(jobs = jobs))
+        val uiState = mutableStateOf(MainUiState(jobs = jobs))
         val showMain = mutableStateOf(true)
         var acknowledgementCount = 0
 
@@ -124,13 +124,13 @@ class MainJobRevealInstrumentedTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithText(jobs.last().displayName).assertIsDisplayed()
         composeRule.runOnIdle {
-            uiState.value = uiState.value.copy(status = "Recomposed")
+            uiState.value = uiState.value.copy(status = UserMessage.verbatim("Recomposed"))
         }
         composeRule.waitForIdle()
         assertEquals(1, acknowledgementCount)
     }
 
-    private fun setMainJobList(uiState: MutableState<UiState>, onJobRevealHandled: (Long) -> Unit) {
+    private fun setMainJobList(uiState: MutableState<MainUiState>, onJobRevealHandled: (Long) -> Unit) {
         composeRule.setContent {
             MaterialTheme {
                 MainJobList(

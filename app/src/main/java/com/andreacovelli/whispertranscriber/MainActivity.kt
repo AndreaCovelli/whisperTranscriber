@@ -29,16 +29,23 @@ import com.andreacovelli.whispertranscriber.ui.main.MainViewModel
 import com.andreacovelli.whispertranscriber.ui.screens.HistoryScreen
 import com.andreacovelli.whispertranscriber.ui.screens.MainScreen
 import com.andreacovelli.whispertranscriber.ui.screens.SettingsScreen
+import com.andreacovelli.whispertranscriber.ui.settings.SettingsMsg
+import com.andreacovelli.whispertranscriber.ui.settings.SettingsViewModel
 import com.andreacovelli.whispertranscriber.ui.theme.WhisperTranscriberTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
 
-object AppRoutes {
-    const val MAIN = "main"
-    const val HISTORY = "history"
-    const val SETTINGS = "settings"
-}
+@Serializable
+data object MainRoute
+
+@Serializable
+data object HistoryRoute
+
+@Serializable
+data object SettingsRoute
 
 internal object SharedAudioIntentHandler {
     fun extractSharedUris(intent: Intent?): List<Uri> {
@@ -83,11 +90,14 @@ class MainActivity : ComponentActivity() {
     lateinit var backgroundShareNotifier: BackgroundShareNotifier
 
     private val mainViewModel: MainViewModel by viewModels()
+
+    // Activity-scoped so the notification permission result can reach it from outside the settings screen.
+    private val settingsViewModel: SettingsViewModel by viewModels()
     private var pendingEnableBackgroundShareSummaryNotifications = false
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (pendingEnableBackgroundShareSummaryNotifications) {
-                mainViewModel.dispatch(MainMsg.SetBackgroundShareSummaryNotificationsEnabled(granted))
+                settingsViewModel.dispatch(SettingsMsg.SetBackgroundShareSummaryNotificationsEnabled(granted))
                 pendingEnableBackgroundShareSummaryNotifications = false
             }
         }
@@ -99,7 +109,7 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) maybeRequestNotificationPermission()
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                mainViewModel.events.collect { messageId ->
+                merge(mainViewModel.events, settingsViewModel.events).collect { messageId ->
                     Toast.makeText(this@MainActivity, messageId, Toast.LENGTH_LONG).show()
                 }
             }
@@ -116,12 +126,11 @@ class MainActivity : ComponentActivity() {
                 val navigationRequest = uiState.mainNavigationRequest
                 LaunchedEffect(navigationRequest?.token) {
                     navigationRequest ?: return@LaunchedEffect
-                    navController.popBackStack(AppRoutes.MAIN, inclusive = false)
+                    navController.popBackStack<MainRoute>(inclusive = false)
                     mainViewModel.dispatch(MainMsg.MainNavigationHandled(navigationRequest.token))
                 }
-                NavHost(navController = navController, startDestination = AppRoutes.MAIN) {
-                    composable(
-                        route = AppRoutes.MAIN,
+                NavHost(navController = navController, startDestination = MainRoute) {
+                    composable<MainRoute>(
                         enterTransition = { null },
                         exitTransition = {
                             slideOutOfContainer(
@@ -139,13 +148,12 @@ class MainActivity : ComponentActivity() {
                     ) {
                         MainScreen(
                             viewModel = mainViewModel,
-                            onNavigateToHistory = { navController.navigate(AppRoutes.HISTORY) },
-                            onNavigateToSettings = { navController.navigate(AppRoutes.SETTINGS) },
+                            onNavigateToHistory = { navController.navigate(HistoryRoute) },
+                            onNavigateToSettings = { navController.navigate(SettingsRoute) },
                         )
                     }
 
-                    composable(
-                        route = AppRoutes.HISTORY,
+                    composable<HistoryRoute>(
                         enterTransition = {
                             slideIntoContainer(
                                 AnimatedContentTransitionScope.SlideDirection.Left,
@@ -169,8 +177,7 @@ class MainActivity : ComponentActivity() {
                         HistoryScreen(onNavigateBack = { navController.popBackStack() })
                     }
 
-                    composable(
-                        route = AppRoutes.SETTINGS,
+                    composable<SettingsRoute>(
                         enterTransition = {
                             slideIntoContainer(
                                 AnimatedContentTransitionScope.SlideDirection.Left,
@@ -192,7 +199,7 @@ class MainActivity : ComponentActivity() {
                         },
                     ) {
                         SettingsScreen(
-                            viewModel = mainViewModel,
+                            viewModel = settingsViewModel,
                             onNavigateBack = { navController.popBackStack() },
                             onBackgroundShareSummaryNotificationsChange =
                             ::handleBackgroundShareSummaryNotificationsToggle,
@@ -254,7 +261,7 @@ class MainActivity : ComponentActivity() {
     private fun handleBackgroundShareSummaryNotificationsToggle(enabled: Boolean) {
         if (!enabled) {
             pendingEnableBackgroundShareSummaryNotifications = false
-            mainViewModel.dispatch(MainMsg.SetBackgroundShareSummaryNotificationsEnabled(false))
+            settingsViewModel.dispatch(SettingsMsg.SetBackgroundShareSummaryNotificationsEnabled(false))
             return
         }
         if (
@@ -263,7 +270,7 @@ class MainActivity : ComponentActivity() {
             PackageManager.PERMISSION_GRANTED
         ) {
             pendingEnableBackgroundShareSummaryNotifications = false
-            mainViewModel.dispatch(MainMsg.SetBackgroundShareSummaryNotificationsEnabled(true))
+            settingsViewModel.dispatch(SettingsMsg.SetBackgroundShareSummaryNotificationsEnabled(true))
             return
         }
         pendingEnableBackgroundShareSummaryNotifications = true

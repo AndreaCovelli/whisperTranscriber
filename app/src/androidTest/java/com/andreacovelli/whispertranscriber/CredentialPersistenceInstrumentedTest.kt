@@ -5,23 +5,23 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.preferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.andreacovelli.whispertranscriber.services.ValidationService
 import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
 import com.andreacovelli.whispertranscriber.settings.ApiKeyState
-import com.andreacovelli.whispertranscriber.ui.main.MainSettingsDelegate
-import com.andreacovelli.whispertranscriber.ui.main.UiState
+import com.andreacovelli.whispertranscriber.ui.settings.SettingsMsg
+import com.andreacovelli.whispertranscriber.ui.settings.SettingsViewModel
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
@@ -64,20 +64,19 @@ class CredentialPersistenceInstrumentedTest {
         }.build()
         val store = ControlledStore()
         val manager = ApiKeyManager(context, Dispatchers.IO, store)
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-        val events = Channel<Int>(Channel.UNLIMITED)
-        val delegate = delegate(manager, client, scope, events)
+        val viewModelStore = ViewModelStore()
+        val viewModel = settingsViewModel(viewModelStore, manager, client)
         try {
-            withContext(Dispatchers.Main) { delegate.actions.saveGeminiKey("test-credential") }
+            withContext(Dispatchers.Main) { viewModel.dispatch(SettingsMsg.SaveGeminiKey("test-credential")) }
             withTimeout(5_000) { started.await() }
-            withContext(Dispatchers.Main) { delegate.actions.forgetGeminiKey() }
-            assertEquals(R.string.api_key_forgotten, withTimeout(5_000) { events.receive() })
+            withContext(Dispatchers.Main) { viewModel.dispatch(SettingsMsg.ForgetGeminiKey) }
+            assertEquals(R.string.api_key_forgotten, withTimeout(5_000) { viewModel.events.first() })
             assertEquals(ApiKeyState.Missing, manager.geminiApiKeyStateFlow.first())
             release.countDown()
             assertNull(manager.getGeminiApiKey())
         } finally {
             release.countDown()
-            scope.cancel()
+            withContext(Dispatchers.Main) { viewModelStore.clear() }
         }
     }
 
@@ -86,37 +85,49 @@ class CredentialPersistenceInstrumentedTest {
         val store = ControlledStore()
         val manager = ApiKeyManager(context, Dispatchers.IO, store)
         manager.saveGeminiApiKey("test-credential")
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-        val events = Channel<Int>(Channel.UNLIMITED)
-        val delegate = delegate(manager, OkHttpClient(), scope, events)
+        manager.saveMicrosoftSpeechApiKey("test-credential")
+        val viewModelStore = ViewModelStore()
+        val viewModel = settingsViewModel(viewModelStore, manager, OkHttpClient())
         try {
+            // Let the view model finish its initial settings reads before reads are gated.
+            withTimeout(5_000) {
+                viewModel.uiState.first {
+                    it.geminiApiKeyState is ApiKeyState.Present && it.microsoftSpeechApiKeyState is ApiKeyState.Present
+                }
+            }
             store.readGate = CompletableDeferred()
-            val reveal = async { delegate.actions.loadGeminiKey() }
+            val reveal = async { viewModel.loadGeminiKeyForDisplay() }
             withTimeout(5_000) { store.readStarted.await() }
-            withContext(Dispatchers.Main) { delegate.actions.forgetGeminiKey() }
-            assertEquals(R.string.api_key_forgotten, withTimeout(5_000) { events.receive() })
+            withContext(Dispatchers.Main) { viewModel.dispatch(SettingsMsg.ForgetGeminiKey) }
+            assertEquals(R.string.api_key_forgotten, withTimeout(5_000) { viewModel.events.first() })
             withTimeout(5_000) { reveal.join() }
             assertTrue(reveal.isCancelled)
             store.readGate = null
             assertEquals(ApiKeyState.Missing, manager.geminiApiKeyStateFlow.first())
             store.failWrites = true
-            withContext(Dispatchers.Main) { delegate.actions.forgetGeminiKey() }
-            assertEquals(R.string.settings_persistence_failed, withTimeout(5_000) { events.receive() })
-            assertTrue(events.tryReceive().isFailure)
+            withContext(Dispatchers.Main) { viewModel.dispatch(SettingsMsg.ForgetGeminiKey) }
+            assertEquals(R.string.settings_persistence_failed, withTimeout(5_000) { viewModel.events.first() })
+            // A later successful forget is the next event, so the failure sent no success confirmation.
+            store.failWrites = false
+            withContext(Dispatchers.Main) { viewModel.dispatch(SettingsMsg.ForgetGeminiKey) }
+            assertEquals(R.string.api_key_forgotten, withTimeout(5_000) { viewModel.events.first() })
         } finally {
-            scope.cancel()
+            withContext(Dispatchers.Main) { viewModelStore.clear() }
         }
     }
 
-    private fun delegate(manager: ApiKeyManager, client: OkHttpClient, scope: CoroutineScope, events: Channel<Int>) =
-        MainSettingsDelegate({
-            UiState()
-        }, {
-        }, manager, ValidationService(manager, client, Dispatchers.IO), scope, Dispatchers.IO, {}, {
-            it.resolve(context)
-        }) {
-            events.trySend(it)
+    private suspend fun settingsViewModel(
+        viewModelStore: ViewModelStore,
+        manager: ApiKeyManager,
+        client: OkHttpClient,
+    ): SettingsViewModel = withContext(Dispatchers.Main) {
+        val factory = viewModelFactory {
+            initializer {
+                SettingsViewModel(manager, ValidationService(manager, client, Dispatchers.IO), Dispatchers.IO)
+            }
         }
+        ViewModelProvider.create(viewModelStore, factory)[SettingsViewModel::class]
+    }
 
     private class ControlledStore(var stored: Preferences = emptyPreferences()) : DataStore<Preferences> {
         var readGate: CompletableDeferred<Unit>? = null

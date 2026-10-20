@@ -3,6 +3,7 @@ package com.andreacovelli.whispertranscriber.ui.history
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
@@ -30,25 +31,21 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 sealed interface HistoryUiEvent {
     data class LaunchExport(val format: HistoryExportFormat) : HistoryUiEvent
 
-    data class Share(val content: String, val title: String) : HistoryUiEvent
+    data class Share(val content: String, @param:StringRes val titleId: Int) : HistoryUiEvent
 
-    data class Toast(val message: String) : HistoryUiEvent
+    data class Toast(@param:StringRes val messageId: Int) : HistoryUiEvent
 }
 
 @HiltViewModel
@@ -62,11 +59,8 @@ class HistoryViewModel @Inject constructor(
     suspend fun shareText(text: String, title: String, launch: (Intent) -> Unit): Boolean =
         textTransfer.share(text, title, launch)
 
-    private val _model = MutableStateFlow(HistoryModel())
-    val model: StateFlow<HistoryModel> = _model.asStateFlow()
-    val searchQuery: StateFlow<String> = model
-        .map { it.searchQuery }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, _model.value.searchQuery)
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
     private val _uiEvents = Channel<HistoryUiEvent>()
     val uiEvents = _uiEvents.receiveAsFlow()
@@ -75,7 +69,7 @@ class HistoryViewModel @Inject constructor(
             _uiEvents.send(
                 HistoryUiEvent.Share(
                     content = item.text,
-                    title = appContext.getString(R.string.share_transcription_title),
+                    titleId = R.string.share_transcription_title,
                 ),
             )
         }
@@ -86,7 +80,7 @@ class HistoryViewModel @Inject constructor(
             _uiEvents.send(
                 HistoryUiEvent.Share(
                     content = item.summary,
-                    title = appContext.getString(R.string.share_summary_title),
+                    titleId = R.string.share_summary_title,
                 ),
             )
         }
@@ -95,7 +89,7 @@ class HistoryViewModel @Inject constructor(
     fun prepareExport(format: HistoryExportFormat) {
         viewModelScope.launch {
             if (!historyRepository.hasHistory()) {
-                _uiEvents.send(HistoryUiEvent.Toast(appContext.getString(R.string.history_export_empty)))
+                _uiEvents.send(HistoryUiEvent.Toast(R.string.history_export_empty))
                 return@launch
             }
             _uiEvents.send(HistoryUiEvent.LaunchExport(format))
@@ -112,10 +106,10 @@ class HistoryViewModel @Inject constructor(
             }
 
             result.onSuccess {
-                _uiEvents.send(HistoryUiEvent.Toast(appContext.getString(R.string.history_export_success)))
+                _uiEvents.send(HistoryUiEvent.Toast(R.string.history_export_success))
             }.onFailure {
                 if (it is CancellationException) throw it
-                _uiEvents.send(HistoryUiEvent.Toast(appContext.getString(R.string.history_export_failed)))
+                _uiEvents.send(HistoryUiEvent.Toast(R.string.history_export_failed))
             }
         }
     }
@@ -126,7 +120,7 @@ class HistoryViewModel @Inject constructor(
 
     fun dispatch(msg: HistoryMsg) {
         when (msg) {
-            is HistoryMsg.SetSearchQuery -> _model.update { HistoryReducer.reduce(it, msg) }
+            is HistoryMsg.SetSearchQuery -> _searchQuery.value = msg.query
             is HistoryMsg.PrepareShareTranscript -> prepareShareTranscript(msg.item)
             is HistoryMsg.PrepareShareSummary -> prepareShareSummary(msg.item)
             is HistoryMsg.PrepareExport -> prepareExport(msg.format)
@@ -139,8 +133,7 @@ class HistoryViewModel @Inject constructor(
     }
 
     @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
-    internal val pagedHistoryItems: Flow<PagingData<HistoryListRow>> = model
-        .map { it.searchQuery }
+    internal val pagedHistoryItems: Flow<PagingData<HistoryListRow>> = _searchQuery
         .debounce(250)
         .distinctUntilChanged()
         .flatMapLatest(historyRepository::getPagedHistory)

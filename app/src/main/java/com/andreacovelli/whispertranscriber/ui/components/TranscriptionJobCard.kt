@@ -12,9 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -28,11 +25,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.transcription.displayJobStatus
 import com.andreacovelli.whispertranscriber.transcription.displaySummaryStatus
+import com.andreacovelli.whispertranscriber.ui.asString
 import com.andreacovelli.whispertranscriber.ui.main.TranscriptionJobState
 
 @Composable
@@ -52,7 +51,7 @@ fun TranscriptionJobCard(job: TranscriptionJobState, canSummarize: Boolean, acti
             JobHeader(job = job, onDelete = actions.delete)
             JobSecondaryText(job = job, queuedProviderLabel = queuedProviderLabel)
             Text(
-                displayJobStatus(job.status)?.let { stringResource(it) } ?: job.status,
+                job.statusMessage?.asString() ?: displayJobStatus(job.status)?.let { stringResource(it) } ?: job.status,
                 style = MaterialTheme.typography.bodySmall,
             )
             JobErrorSection(job = job, onRetry = actions.retryTranscription)
@@ -81,7 +80,7 @@ private fun JobHeader(job: TranscriptionJobState, onDelete: () -> Unit) {
         if (!job.isRunning) {
             IconButton(onClick = onDelete) {
                 Icon(
-                    imageVector = Icons.Default.Delete,
+                    painter = painterResource(R.drawable.ic_delete),
                     contentDescription = stringResource(R.string.delete_job_description),
                     tint = MaterialTheme.colorScheme.error,
                 )
@@ -126,7 +125,7 @@ private fun JobErrorSection(job: TranscriptionJobState, onRetry: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = error,
+            text = error.asString(),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.error,
             modifier = Modifier.weight(1f),
@@ -134,7 +133,7 @@ private fun JobErrorSection(job: TranscriptionJobState, onRetry: () -> Unit) {
         Spacer(Modifier.width(8.dp))
         OutlinedButton(onClick = onRetry, enabled = job.canRetry) {
             Icon(
-                Icons.Default.Refresh,
+                painterResource(R.drawable.ic_refresh),
                 contentDescription = stringResource(R.string.retry_description),
                 modifier = Modifier.size(16.dp),
             )
@@ -148,7 +147,7 @@ private fun JobErrorSection(job: TranscriptionJobState, onRetry: () -> Unit) {
 private fun JobProgressSection(job: TranscriptionJobState) {
     if (job.transcript.isNotBlank() || job.error != null || !job.isRunning) return
     Spacer(Modifier.height(8.dp))
-    if (job.status.contains("Converting")) {
+    if (job.statusMessage?.id == R.string.transcription_status_converting_progress) {
         LinearProgressIndicator(
             progress = { job.progress.coerceIn(0f, 1f) },
             modifier = Modifier.fillMaxWidth(),
@@ -218,8 +217,7 @@ private fun JobPrimaryActions(
 
 @Composable
 private fun SummaryErrorSection(job: TranscriptionJobState) {
-    val summaryError = job.summaryError ?: return
-    if (summaryError.isBlank()) return
+    val summaryError = job.summaryError?.asString()?.takeIf(String::isNotBlank) ?: return
     Spacer(Modifier.height(4.dp))
     Text(
         text = stringResource(R.string.job_summarization_error, summaryError),
@@ -293,7 +291,7 @@ private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJob
                 ),
             ) {
                 Icon(
-                    Icons.Default.Refresh,
+                    painterResource(R.drawable.ic_refresh),
                     contentDescription = stringResource(R.string.resummarize_description),
                     modifier = Modifier.size(16.dp),
                 )
