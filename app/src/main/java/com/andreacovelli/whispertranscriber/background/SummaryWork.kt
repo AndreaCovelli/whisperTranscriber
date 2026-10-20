@@ -120,9 +120,6 @@ class SummaryWorkScheduler @Inject constructor(
 ) {
     /** Returns the id of the new work, or of the pending work already summarizing this job. */
     suspend fun enqueue(jobId: Int, displayName: String, settings: SummarizationSettings): UUID {
-        workManager.getWorkInfosForUniqueWorkFlow(workName(jobId)).first()
-            .firstOrNull { info -> !info.state.isFinished }
-            ?.let { pending -> return pending.id }
         val request = OneTimeWorkRequestBuilder<SummaryWorker>()
             .setInputData(summaryWorkInput(jobId, displayName, settings))
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
@@ -130,12 +127,16 @@ class SummaryWorkScheduler @Inject constructor(
             .build()
         // KEEP: a request racing a pending one would lose the summary claim anyway.
         workManager.enqueueUniqueWork(workName(jobId), ExistingWorkPolicy.KEEP, request).await()
-        return request.id
+        // KEEP drops this request when other work is pending, so report the work that was kept.
+        return retainedSummaryWorkId(request.id, workManager.getWorkInfosForUniqueWorkFlow(workName(jobId)).first())
     }
 
-    /** Emits the status message (null when there is none) once the summary work finishes, then completes. */
+    /**
+     * Emits the status message (null when there is none) once the summary work finishes, then completes.
+     * Work that no longer exists counts as finished, so the flow cannot wait forever.
+     */
     fun statusMessages(workId: UUID): Flow<UserMessage?> = workManager.getWorkInfoByIdFlow(workId)
-        .filter { info -> info?.state?.isFinished == true }
+        .filter { info -> info == null || info.state.isFinished }
         .take(1)
         .map { info ->
             info?.takeIf { it.state == WorkInfo.State.SUCCEEDED }
@@ -153,3 +154,10 @@ class SummaryWorkScheduler @Inject constructor(
 
     private fun workName(jobId: Int): String = "SummaryWork_$jobId"
 }
+
+/** The work kept for a job's unique summary name: this request if it was inserted, else the pending one. */
+internal fun retainedSummaryWorkId(requestId: UUID, uniqueWork: List<WorkInfo>): UUID =
+    uniqueWork.firstOrNull { info -> info.id == requestId }?.id
+        ?: uniqueWork.firstOrNull { info -> !info.state.isFinished }?.id
+        ?: uniqueWork.firstOrNull()?.id
+        ?: requestId
