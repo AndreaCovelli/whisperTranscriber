@@ -6,8 +6,10 @@ import android.os.Build
 import androidx.hilt.work.HiltWorker
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
+import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.ForegroundInfo
+import androidx.work.ListenableWorker
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
@@ -19,6 +21,7 @@ import androidx.work.workDataOf
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.StoredMessages
 import com.andreacovelli.whispertranscriber.UserMessage
+import com.andreacovelli.whispertranscriber.services.SummarizationResult
 import com.andreacovelli.whispertranscriber.services.SummarizationService
 import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
@@ -44,33 +47,22 @@ class SummaryWorker @AssistedInject constructor(
 
     // Only used when expedited work runs as a foreground service before Android 12.
     override suspend fun getForegroundInfo(): ForegroundInfo {
+        val jobId = inputData.getInt(JOB_ID_INPUT, -1)
         val notification = backgroundShareNotifier.buildProcessingNotification(
-            jobId = inputData.getInt(JOB_ID_INPUT, -1),
+            jobId = jobId,
             displayName = inputData.getString(DISPLAY_NAME_INPUT).orEmpty(),
             message = UserMessage(R.string.transcription_notification_summarizing),
         )
+        val notificationId = summaryNotificationId(jobId)
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            ForegroundInfo(notificationId, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         } else {
-            ForegroundInfo(NOTIFICATION_ID, notification)
+            ForegroundInfo(notificationId, notification)
         }
     }
 
-    override suspend fun doWork(): Result {
-        val jobId = inputData.getInt(JOB_ID_INPUT, -1)
-        if (jobId == -1) return Result.failure()
-        val provider = runCatching { TranscriptionProvider.valueOf(inputData.getString(PROVIDER_INPUT).orEmpty()) }
-            .getOrDefault(TranscriptionProvider.GEMINI_FLASH)
-        val result = summarizationService.summarize(
-            jobId = jobId,
-            settings = SummarizationSettings(
-                provider = provider,
-                customModelName = inputData.getString(CUSTOM_MODEL_INPUT).orEmpty(),
-            ),
-        )
-        val output = workDataOf(STATUS_MESSAGE_OUTPUT to result.statusMessage?.let(StoredMessages::encode))
-        // Failures are already stored on the job, so the work itself always completes.
-        return Result.success(output)
+    override suspend fun doWork(): Result = runSummaryWork(inputData) { jobId, settings ->
+        summarizationService.summarize(jobId = jobId, settings = settings)
     }
 
     internal companion object {
@@ -79,8 +71,45 @@ class SummaryWorker @AssistedInject constructor(
         const val PROVIDER_INPUT = "summary_provider"
         const val CUSTOM_MODEL_INPUT = "summary_custom_model"
         const val STATUS_MESSAGE_OUTPUT = "summary_status_message"
-        private const val NOTIFICATION_ID = 1002
     }
+}
+
+internal fun summaryWorkInput(jobId: Int, displayName: String, settings: SummarizationSettings): Data = workDataOf(
+    SummaryWorker.JOB_ID_INPUT to jobId,
+    SummaryWorker.DISPLAY_NAME_INPUT to displayName,
+    SummaryWorker.PROVIDER_INPUT to settings.provider.name,
+    SummaryWorker.CUSTOM_MODEL_INPUT to settings.customModelName,
+)
+
+/** Summarizes the job named in [input]; failures are already stored on the job, so the work still succeeds. */
+internal suspend fun runSummaryWork(
+    input: Data,
+    summarize: suspend (jobId: Int, settings: SummarizationSettings) -> SummarizationResult,
+): ListenableWorker.Result {
+    val jobId = input.getInt(SummaryWorker.JOB_ID_INPUT, -1)
+    if (jobId < 0) return ListenableWorker.Result.failure()
+    val provider = runCatching {
+        TranscriptionProvider.valueOf(input.getString(SummaryWorker.PROVIDER_INPUT).orEmpty())
+    }
+        .getOrDefault(TranscriptionProvider.GEMINI_FLASH)
+    val settings = SummarizationSettings(
+        provider = provider,
+        customModelName = input.getString(SummaryWorker.CUSTOM_MODEL_INPUT).orEmpty(),
+    )
+    val result = summarize(jobId, settings)
+    return ListenableWorker.Result.success(
+        workDataOf(SummaryWorker.STATUS_MESSAGE_OUTPUT to result.statusMessage?.let(StoredMessages::encode)),
+    )
+}
+
+/**
+ * Foreground notification ID for one job's summary, so concurrent summaries before Android 12 do not
+ * replace each other. Negative IDs stay clear of the transcription worker (1001), the legacy cleanup
+ * range, and the job service's 200_000 + jobId notifications.
+ */
+internal fun summaryNotificationId(jobId: Int): Int {
+    require(jobId >= 0) { "Transcription job id must be non-negative" }
+    return -1 - jobId
 }
 
 /** Enqueues and cancels user-requested summaries, one unique work entry per job. */
@@ -95,14 +124,7 @@ class SummaryWorkScheduler @Inject constructor(
             .firstOrNull { info -> !info.state.isFinished }
             ?.let { pending -> return pending.id }
         val request = OneTimeWorkRequestBuilder<SummaryWorker>()
-            .setInputData(
-                workDataOf(
-                    SummaryWorker.JOB_ID_INPUT to jobId,
-                    SummaryWorker.DISPLAY_NAME_INPUT to displayName,
-                    SummaryWorker.PROVIDER_INPUT to settings.provider.name,
-                    SummaryWorker.CUSTOM_MODEL_INPUT to settings.customModelName,
-                ),
-            )
+            .setInputData(summaryWorkInput(jobId, displayName, settings))
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
             .build()

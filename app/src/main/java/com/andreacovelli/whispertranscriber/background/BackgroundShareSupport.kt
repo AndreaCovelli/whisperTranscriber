@@ -395,7 +395,8 @@ private const val PREPARING_SHARE_NOTIFICATION_TAG = "preparing_share"
 private const val PREPARING_SHARE_NOTIFICATION_ID = 0
 
 // Earlier versions posted untagged ongoing retry, processing, and preparing notifications from 60_000
-// upwards. Foreground job notifications start at 200_000 and the worker uses 1001, so neither is affected.
+// upwards. Foreground job notifications start at 200_000, the transcription worker uses 1001, and summary
+// workers use negative IDs, so none of them is affected.
 private val LEGACY_ONGOING_NOTIFICATION_IDS = 60_000 until 200_000
 
 // Earlier versions posted untagged result notifications as 20_000 + jobId. Larger job IDs would
