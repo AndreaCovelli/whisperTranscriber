@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.annotation.StringRes
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -381,21 +382,44 @@ private fun createResultDismissPendingIntent(context: Context, jobId: Int): Pend
     )
 }
 
-private const val RESULT_CHANNEL_NAME = "Shared audio results"
 private const val PROCESSING_GROUP_KEY = "background_share_processing_group"
-private const val RESULT_NOTIFICATION_OFFSET = 20_000
-private const val GENERIC_FAILURE_NOTIFICATION_OFFSET = 40_000
-private const val RETRY_NOTIFICATION_OFFSET = 60_000
-private const val PROCESSING_NOTIFICATION_OFFSET = 80_000
-private const val PREPARING_SHARE_NOTIFICATION_ID = 100_000
 
-private fun genericFailureNotificationId(): Int = GENERIC_FAILURE_NOTIFICATION_OFFSET + Random.nextInt(10_000)
+// Each notification kind has its own tag and uses the job ID as its ID, so kinds can never collide
+// however large job IDs grow. Foreground-service notifications are untagged and unaffected.
+private const val RESULT_NOTIFICATION_TAG = "result"
+private const val GENERIC_FAILURE_NOTIFICATION_TAG = "generic_failure"
+private const val RETRY_NOTIFICATION_TAG = "retry"
+private const val PROCESSING_NOTIFICATION_TAG = "processing"
+private const val PREPARING_SHARE_NOTIFICATION_TAG = "preparing_share"
+private const val PREPARING_SHARE_NOTIFICATION_ID = 0
 
-private fun retryNotificationId(jobId: Int): Int = RETRY_NOTIFICATION_OFFSET + jobId
+// Earlier versions posted untagged ongoing retry, processing, and preparing notifications from 60_000
+// upwards. Foreground job notifications start at 200_000 and the worker uses 1001, so neither is affected.
+private val LEGACY_ONGOING_NOTIFICATION_IDS = 60_000 until 200_000
 
-private fun processingNotificationId(jobId: Int): Int = PROCESSING_NOTIFICATION_OFFSET + jobId
+// Earlier versions posted untagged result notifications as 20_000 + jobId. Larger job IDs would
+// reach the untagged foreground job notifications, so they are left alone.
+private const val LEGACY_RESULT_NOTIFICATION_OFFSET = 20_000
 
-private fun resultNotificationId(jobId: Int): Int = RESULT_NOTIFICATION_OFFSET + jobId
+private fun legacyResultNotificationId(jobId: Int): Int? =
+    if (jobId in 1..LEGACY_ONGOING_NOTIFICATION_IDS.last - LEGACY_RESULT_NOTIFICATION_OFFSET) {
+        LEGACY_RESULT_NOTIFICATION_OFFSET + jobId
+    } else {
+        null
+    }
+
+/** Redacts the notification on secure lock screens when the user hides sensitive content. */
+private fun NotificationCompat.Builder.setPrivateContent(
+    context: Context,
+    channelId: String,
+    @StringRes publicTitle: Int,
+): NotificationCompat.Builder = setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+    .setPublicVersion(
+        NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(context.getString(publicTitle))
+            .build(),
+    )
 
 private fun createOpenAppPendingIntent(context: Context): PendingIntent {
     val intent = Intent(context, MainActivity::class.java).apply {
@@ -430,8 +454,13 @@ private fun buildResultNotification(
     jobId: Int,
 ): NotificationCompat.Builder {
     val pageLabel = buildResultPageLabel(context, page)
+    val publicTitle = when (resultKind) {
+        BackgroundShareResultKind.TRANSCRIPTION -> R.string.notification_public_transcription_ready
+        BackgroundShareResultKind.SUMMARY -> R.string.notification_public_summary_ready
+    }
     return NotificationCompat.Builder(context, BackgroundShareNotifier.RESULT_CHANNEL_ID)
         .setSmallIcon(R.drawable.ic_notification)
+        .setPrivateContent(context, BackgroundShareNotifier.RESULT_CHANNEL_ID, publicTitle)
         .setContentTitle(buildResultNotificationTitle(context, displayName, resultKind))
         .setContentText(page.text.trim())
         .setSubText(pageLabel)
@@ -493,6 +522,10 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
     init {
         ensureResultChannel()
         ensureTranscriptionChannel()
+        cancelLegacyOngoingNotifications()
+        // No share is being prepared before the notifier exists, so this only removes one left
+        // behind by a process that died while staging.
+        cancelPreparingShare()
     }
 
     fun canPostNotifications(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
@@ -519,9 +552,11 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
 
     fun showFailure(jobId: Int? = null, displayName: String, message: String) {
         notify(
-            id = jobId?.let { RESULT_NOTIFICATION_OFFSET + it } ?: genericFailureNotificationId(),
+            tag = if (jobId != null) RESULT_NOTIFICATION_TAG else GENERIC_FAILURE_NOTIFICATION_TAG,
+            id = jobId ?: Random.nextInt(),
             builder = NotificationCompat.Builder(context, RESULT_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
+                .setPrivateContent(context, RESULT_CHANNEL_ID, R.string.notification_public_failed)
                 .setContentTitle(context.getString(R.string.background_share_summary_failed_title, displayName))
                 .setContentText(message)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(message))
@@ -533,7 +568,8 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
 
     fun showRetryScheduled(jobId: Int, displayName: String, message: String) {
         notify(
-            id = retryNotificationId(jobId),
+            tag = RETRY_NOTIFICATION_TAG,
+            id = jobId,
             builder = processingBuilder(
                 jobId = jobId,
                 title = context.getString(R.string.transcription_retry_notification_title, displayName),
@@ -544,7 +580,8 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
 
     fun showBackgroundProcessing(jobId: Int, displayName: String, message: String) {
         notify(
-            id = processingNotificationId(jobId),
+            tag = PROCESSING_NOTIFICATION_TAG,
+            id = jobId,
             builder = processingBuilder(
                 jobId = jobId,
                 title = context.getString(R.string.transcription_background_notification_title, displayName),
@@ -557,6 +594,7 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
         val displayName = context.getString(R.string.background_share_generic_audio_label)
         val message = context.getString(R.string.background_share_preparing_notification_body)
         notify(
+            tag = PREPARING_SHARE_NOTIFICATION_TAG,
             id = PREPARING_SHARE_NOTIFICATION_ID,
             builder = processingBuilder(
                 jobId = null,
@@ -567,20 +605,21 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
     }
 
     fun cancelRetryScheduled(jobId: Int) {
-        NotificationManagerCompat.from(context).cancel(retryNotificationId(jobId))
+        NotificationManagerCompat.from(context).cancel(RETRY_NOTIFICATION_TAG, jobId)
     }
 
     fun cancelBackgroundProcessing(jobId: Int) {
-        NotificationManagerCompat.from(context).cancel(processingNotificationId(jobId))
+        NotificationManagerCompat.from(context).cancel(PROCESSING_NOTIFICATION_TAG, jobId)
     }
 
     fun cancelPreparingShare() {
-        NotificationManagerCompat.from(context).cancel(PREPARING_SHARE_NOTIFICATION_ID)
+        notificationManager.cancel(PREPARING_SHARE_NOTIFICATION_TAG, PREPARING_SHARE_NOTIFICATION_ID)
     }
 
     fun cancelResult(jobId: Int) {
         clearCache(jobId)
-        NotificationManagerCompat.from(context).cancel(resultNotificationId(jobId))
+        NotificationManagerCompat.from(context).cancel(RESULT_NOTIFICATION_TAG, jobId)
+        legacyResultNotificationId(jobId)?.let { legacyId -> notificationManager.cancel(legacyId) }
     }
 
     internal fun clearCache(jobId: Int) {
@@ -596,7 +635,8 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
             total = cached.pages.size,
         )
         notify(
-            id = resultNotificationId(jobId),
+            tag = RESULT_NOTIFICATION_TAG,
+            id = jobId,
             builder = buildResultNotification(
                 context = context,
                 displayName = cached.displayName,
@@ -634,10 +674,10 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
     ).build()
 
     @SuppressLint("MissingPermission")
-    private fun notify(id: Int, builder: NotificationCompat.Builder) {
+    private fun notify(tag: String, id: Int, builder: NotificationCompat.Builder) {
         if (!canPostNotifications()) return
         try {
-            NotificationManagerCompat.from(context).notify(id, builder.build())
+            NotificationManagerCompat.from(context).notify(tag, id, builder.build())
         } catch (_: SecurityException) {
             // Notification permission may be revoked after the permission check.
         } catch (_: RuntimeException) {
@@ -649,7 +689,7 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
         notificationManager.createNotificationChannel(
             NotificationChannel(
                 RESULT_CHANNEL_ID,
-                RESULT_CHANNEL_NAME,
+                context.getString(R.string.notification_channel_results),
                 NotificationManager.IMPORTANCE_DEFAULT,
             ),
         )
@@ -659,15 +699,30 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
         notificationManager.createNotificationChannel(
             NotificationChannel(
                 TranscriptionWorker.CHANNEL_ID,
-                "Transcription Service",
+                context.getString(R.string.notification_channel_transcription),
                 NotificationManager.IMPORTANCE_LOW,
             ),
         )
     }
 
+    private fun cancelLegacyOngoingNotifications() {
+        try {
+            notificationManager.activeNotifications
+                .filter { notification ->
+                    notification.tag == null &&
+                        notification.id in LEGACY_ONGOING_NOTIFICATION_IDS &&
+                        notification.notification.flags and Notification.FLAG_ONGOING_EVENT != 0
+                }
+                .forEach { notification -> notificationManager.cancel(notification.id) }
+        } catch (_: RuntimeException) {
+            // Best-effort cleanup must not block notifier construction.
+        }
+    }
+
     private fun processingBuilder(jobId: Int?, title: String, message: String): NotificationCompat.Builder =
         NotificationCompat.Builder(context, TranscriptionWorker.CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
+            .setPrivateContent(context, TranscriptionWorker.CHANNEL_ID, R.string.notification_public_processing)
             .setContentTitle(title)
             .setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))

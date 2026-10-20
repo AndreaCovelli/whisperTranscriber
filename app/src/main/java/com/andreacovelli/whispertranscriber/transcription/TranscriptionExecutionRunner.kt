@@ -4,8 +4,12 @@ import android.app.Application
 import android.content.Context
 import android.database.SQLException
 import android.net.Uri
+import android.util.Log
 import androidx.core.net.toUri
+import com.andreacovelli.whispertranscriber.QuantityText
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.UserFacingIllegalStateException
+import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.background.BackgroundShareNotifier
 import com.andreacovelli.whispertranscriber.background.BackgroundShareResultKind
 import com.andreacovelli.whispertranscriber.background.PostTranscriptionWorkSpec
@@ -21,6 +25,7 @@ import com.andreacovelli.whispertranscriber.services.SummarizationService
 import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.settings.decodeTranscriptionProvider
+import com.andreacovelli.whispertranscriber.userMessageOr
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.IOException
@@ -52,7 +57,7 @@ private sealed interface ProviderExecution {
 internal sealed interface QueuedAudioInputResolution {
     data class Ready(val uri: Uri) : QueuedAudioInputResolution
 
-    data class MissingStagedFile(val message: String) : QueuedAudioInputResolution
+    data object MissingStagedFile : QueuedAudioInputResolution
 }
 
 private sealed interface PreparedAudioInput {
@@ -85,6 +90,7 @@ class TranscriptionExecutionRunner @Inject constructor(
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
     companion object {
+        private const val TAG = "TranscriptionExecutionRunner"
         private const val MAX_AUTOMATIC_RETRY_ATTEMPTS = 3
     }
 
@@ -106,6 +112,8 @@ class TranscriptionExecutionRunner @Inject constructor(
         }
     }
 
+    // The final catch-all is deliberate; see the comment there.
+    @Suppress("TooGenericExceptionCaught")
     private suspend fun runAttempt(
         jobId: Int,
         executionOwnerId: String,
@@ -147,15 +155,17 @@ class TranscriptionExecutionRunner @Inject constructor(
             throw e
         } catch (_: SupersededExecutionException) {
             JobRunOutcome.Superseded
-        } catch (_: TransientWorkException) {
-            val message = applicationContext.getString(R.string.provider_request_failed)
+        } catch (e: TransientWorkException) {
             if (job.retryCount >= MAX_AUTOMATIC_RETRY_ATTEMPTS) {
-                val exhaustedMessage =
-                    "Automatic retries exhausted after $MAX_AUTOMATIC_RETRY_ATTEMPTS attempts. $message"
+                val exhaustedMessage = UserMessage(
+                    R.string.transcription_retries_exhausted,
+                    listOf(QuantityText(R.plurals.transcription_attempt_count, job.retryCount + 1), e.userMessage),
+                ).resolve(applicationContext)
                 handleTerminalFailure(jobId, executionOwnerId, displayName, postTranscriptionWorkSpec, exhaustedMessage)
                 JobRunOutcome.Failure
             } else {
-                val retryMessage = applicationContext.getString(R.string.transcription_retry_notification_body, message)
+                val retryMessage = UserMessage(R.string.transcription_retry_notification_body, listOf(e.userMessage))
+                    .resolve(applicationContext)
                 withContext(NonCancellable + ioDispatcher) {
                     requireOwnedUpdate(repository.markRetryScheduled(jobId, executionOwnerId))
                 }
@@ -163,55 +173,30 @@ class TranscriptionExecutionRunner @Inject constructor(
                 backgroundShareNotifier.showRetryScheduled(jobId, displayName, retryMessage)
                 JobRunOutcome.Retry
             }
-        } catch (e: IOException) {
+        } catch (e: Exception) {
+            // Every other failure is terminal. The claim must be released here: stale claims are only
+            // recovered for previous processes, so a held claim would stall the queue until process death.
+            Log.w(TAG, "Transcription failed with ${e::class.java.name}")
             handleTerminalFailure(
                 jobId,
                 executionOwnerId,
                 displayName,
                 postTranscriptionWorkSpec,
-                e.message ?: e::class.java.simpleName,
-            )
-            JobRunOutcome.Failure
-        } catch (e: SecurityException) {
-            handleTerminalFailure(
-                jobId,
-                executionOwnerId,
-                displayName,
-                postTranscriptionWorkSpec,
-                e.message ?: e::class.java.simpleName,
-            )
-            JobRunOutcome.Failure
-        } catch (e: IllegalStateException) {
-            handleTerminalFailure(
-                jobId,
-                executionOwnerId,
-                displayName,
-                postTranscriptionWorkSpec,
-                applicationContext.getString(
-                    (e as? ProviderResponseException)?.messageId ?: R.string.provider_request_failed,
-                ),
-            )
-            JobRunOutcome.Failure
-        } catch (e: IllegalArgumentException) {
-            handleTerminalFailure(
-                jobId,
-                executionOwnerId,
-                displayName,
-                postTranscriptionWorkSpec,
-                e.message ?: e::class.java.simpleName,
-            )
-            JobRunOutcome.Failure
-        } catch (e: SQLException) {
-            handleTerminalFailure(
-                jobId,
-                executionOwnerId,
-                displayName,
-                postTranscriptionWorkSpec,
-                e.message ?: e::class.java.simpleName,
+                terminalFailureMessage(e).resolve(applicationContext),
             )
             JobRunOutcome.Failure
         }
     }
+
+    /** Shows app-written messages as is; other exception text may come from a provider or the platform. */
+    private fun terminalFailureMessage(error: Exception): UserMessage = error.userMessageOr(
+        when (error) {
+            is IOException -> R.string.transcription_audio_processing_failed
+            is SecurityException -> R.string.transcription_audio_access_denied
+            is SQLException -> R.string.transcription_storage_failed
+            else -> R.string.transcription_failed_unexpected
+        },
+    )
 
     private suspend fun executeClaimedJob(
         job: TranscriptionJob,
@@ -251,12 +236,13 @@ class TranscriptionExecutionRunner @Inject constructor(
         }
         val stagedUri = when (val resolution = QueuedAudioInputResolver.resolve(job)) {
             is QueuedAudioInputResolution.Ready -> resolution.uri
-            is QueuedAudioInputResolution.MissingStagedFile -> {
+            QueuedAudioInputResolution.MissingStagedFile -> {
+                val message = applicationContext.getString(R.string.queued_audio_unavailable)
                 requireOwnedUpdate(
                     repository.updateError(
                         job.id,
                         executionOwnerId,
-                        resolution.message,
+                        message,
                         JOB_STATUS_ERROR,
                     ),
                 )
@@ -264,7 +250,7 @@ class TranscriptionExecutionRunner @Inject constructor(
                     postTranscriptionWorkSpec = postTranscriptionWorkSpec,
                     jobId = job.id,
                     displayName = job.displayName,
-                    message = resolution.message,
+                    message = message,
                 )
                 return JobRunOutcome.Failure
             }
@@ -335,7 +321,12 @@ class TranscriptionExecutionRunner @Inject constructor(
                 speakerLabelPrefix = speakerLabelPrefix,
                 onProgressNotification = onProgressNotification,
             )
-            requireOwnedUpdate(repository.persistCompletedTranscription(jobId, executionOwnerId, displayName, result))
+            val transcript = result.copy(
+                text = result.text.ifBlank { applicationContext.getString(R.string.transcription_no_text_found) },
+            )
+            requireOwnedUpdate(
+                repository.persistCompletedTranscription(jobId, executionOwnerId, displayName, transcript),
+            )
             queuedAudioStore.deleteStagedFile(stagedFilePath)
             requireOwnedUpdate(repository.clearStagedFilePath(jobId, executionOwnerId))
             resumePostTranscriptionWork(
@@ -404,7 +395,8 @@ class TranscriptionExecutionRunner @Inject constructor(
         displayName: String,
         onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
     ): PreparedAudioInput {
-        val reasonSuffix = inputMimeType?.let { "($it)" } ?: "(Unknown format)"
+        val reasonSuffix = inputMimeType?.let { "($it)" }
+            ?: applicationContext.getString(R.string.transcription_status_unknown_format_suffix)
         val providerName = uploadProviderName(usingMicrosoftSpeech)
         requireOwnedUpdate(
             repository.updateStatusAndProgress(
@@ -677,9 +669,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         }
         transcriber.transcribe().collect { result ->
             when (result) {
-                is TranscriptionResult.Loading -> reportProviderStatus(result.message)
-                is TranscriptionResult.LocalizedLoading ->
-                    reportProviderStatus(applicationContext.getString(result.messageId))
+                is TranscriptionResult.Loading -> reportProviderStatus(result.message.resolve(applicationContext))
                 is TranscriptionResult.Success -> resultData = result.data
                 is TranscriptionResult.Error -> throw result.exception
             }
@@ -697,9 +687,8 @@ class TranscriptionExecutionRunner @Inject constructor(
             val microsoftSpeechInput = checkNotNull(preparedInput as? PreparedAudioInput.MicrosoftSpeech) {
                 "Internal error: Microsoft Speech audio data missing."
             }
-            val keyChars = requireNotNull(settings.getMicrosoftSpeechApiKey()) {
-                "Azure Speech key for Microsoft MAI Transcribe missing or corrupted."
-            }
+            val keyChars = settings.getMicrosoftSpeechApiKey()
+                ?: throw UserFacingIllegalStateException(UserMessage(R.string.microsoft_speech_key_missing))
             var keyOwnershipTransferred = false
             try {
                 val endpoint = MicrosoftSpeechEndpoint.parse(settings.microsoftSpeechRegionFlow.first())
@@ -727,7 +716,8 @@ class TranscriptionExecutionRunner @Inject constructor(
             val geminiInput = checkNotNull(preparedInput as? PreparedAudioInput.Gemini) {
                 "Internal error: Gemini audio data missing."
             }
-            val keyChars = requireNotNull(settings.getGeminiApiKey()) { "API key missing or corrupted" }
+            val keyChars = settings.getGeminiApiKey()
+                ?: throw UserFacingIllegalStateException(UserMessage(R.string.gemini_api_key_missing))
             var keyOwnershipTransferred = false
             try {
                 val transcriber = GeminiTranscriber(
@@ -760,7 +750,7 @@ class TranscriptionExecutionRunner @Inject constructor(
             -> ProviderExecution.Gemini(requestedModel ?: requireNotNull(provider.modelName))
             TranscriptionProvider.GEMINI_CUSTOM -> ProviderExecution.Gemini(
                 modelName = requestedModel?.takeIf(String::isNotBlank)
-                    ?: error("Gemini model not specified."),
+                    ?: throw UserFacingIllegalStateException(UserMessage(R.string.gemini_model_not_specified)),
             )
         }
 
@@ -768,10 +758,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         val persistedEndpoint = settings.microsoftSpeechRegionFlow.first()
         return MicrosoftSpeechEndpoint.parseOrNull(persistedEndpoint) ?: run {
             settings.clearInvalidMicrosoftSpeechConfiguration()
-            error(
-                "The saved Azure Speech region or endpoint was invalid. " +
-                    "Reconfigure Microsoft Speech and rotate its API key.",
-            )
+            throw UserFacingIllegalStateException(UserMessage(R.string.microsoft_speech_configuration_cleared))
         }
     }
 
@@ -799,7 +786,7 @@ class TranscriptionExecutionRunner @Inject constructor(
                 settings = postTranscriptionWorkSpec.summarizationSettings,
                 allowResummarize = false,
                 executionOwnerId = executionOwnerId,
-                fallbackStatusMessage = displayJobStatus(JOB_STATUS_COMPLETED),
+                fallbackStatusMessage = applicationContext.getString(R.string.job_status_completed),
                 onStatusUpdate = { statusMessage ->
                     if (postTranscriptionWorkSpec.notifyResult) {
                         onProgressNotification(jobId, displayName, statusMessage)
@@ -851,19 +838,13 @@ internal fun resolveMicrosoftSpeechExecutionModel(requestedModel: String?): Stri
 internal object QueuedAudioInputResolver {
     fun resolve(job: TranscriptionJob): QueuedAudioInputResolution {
         val stagedPath = job.stagedFilePath?.takeIf { it.isNotBlank() }
-        if (stagedPath == null) {
-            return QueuedAudioInputResolution.MissingStagedFile(
-                "Queued audio is no longer available. Please share it again.",
-            )
-        }
+            ?: return QueuedAudioInputResolution.MissingStagedFile
 
         val stagedFile = File(stagedPath)
         return if (stagedFile.isFile && stagedFile.canRead() && stagedFile.length() > 0) {
             QueuedAudioInputResolution.Ready(stagedFile.toUri())
         } else {
-            QueuedAudioInputResolution.MissingStagedFile(
-                "Queued audio is no longer available. Please share it again.",
-            )
+            QueuedAudioInputResolution.MissingStagedFile
         }
     }
 }

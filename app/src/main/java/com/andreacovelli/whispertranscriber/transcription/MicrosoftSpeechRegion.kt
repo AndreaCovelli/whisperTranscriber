@@ -1,5 +1,9 @@
 package com.andreacovelli.whispertranscriber.transcription
 
+import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.UserFacingIllegalArgumentException
+import com.andreacovelli.whispertranscriber.UserMessage
+import com.andreacovelli.whispertranscriber.requireUserFacing
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
@@ -21,7 +25,7 @@ class MicrosoftSpeechEndpoint private constructor(val value: String, private val
 
         fun parse(rawEndpoint: String): MicrosoftSpeechEndpoint {
             val endpoint = rawEndpoint.trim()
-            require(endpoint.isNotEmpty()) { "Enter an Azure Speech region or HTTPS endpoint." }
+            requireUserFacing(endpoint.isNotEmpty()) { UserMessage(R.string.microsoft_speech_endpoint_required) }
 
             if (!endpoint.contains("://")) {
                 val region = MicrosoftSpeechRegion.parse(endpoint)
@@ -33,16 +37,16 @@ class MicrosoftSpeechEndpoint private constructor(val value: String, private val
             }
 
             val baseUrl = endpoint.toHttpUrlOrNull()
-                ?: throw IllegalArgumentException("Enter a valid Azure Speech HTTPS endpoint.")
-            require(baseUrl.scheme == "https") { "The Azure Speech endpoint must use HTTPS." }
-            require(baseUrl.username.isEmpty() && baseUrl.password.isEmpty()) {
-                "The Azure Speech endpoint must not include credentials."
+                ?: throw UserFacingIllegalArgumentException(UserMessage(R.string.microsoft_speech_endpoint_invalid))
+            requireUserFacing(baseUrl.scheme == "https") { UserMessage(R.string.microsoft_speech_endpoint_https) }
+            requireUserFacing(baseUrl.username.isEmpty() && baseUrl.password.isEmpty()) {
+                UserMessage(R.string.microsoft_speech_endpoint_credentials)
             }
-            require(AZURE_SPEECH_HOST_SUFFIXES.any(baseUrl.host::endsWith)) {
-                "Enter an Azure Speech resource endpoint."
+            requireUserFacing(AZURE_SPEECH_HOST_SUFFIXES.any(baseUrl.host::endsWith)) {
+                UserMessage(R.string.microsoft_speech_endpoint_not_azure)
             }
-            require(baseUrl.encodedPath == "/" && baseUrl.query == null && baseUrl.fragment == null) {
-                "Enter only the Azure Speech base endpoint, without a path, query, or fragment."
+            requireUserFacing(baseUrl.encodedPath == "/" && baseUrl.query == null && baseUrl.fragment == null) {
+                UserMessage(R.string.microsoft_speech_endpoint_base_only)
             }
             return MicrosoftSpeechEndpoint(
                 value = baseUrl.toString().removeSuffix("/"),
@@ -75,8 +79,8 @@ value class MicrosoftSpeechRegion private constructor(val value: String) {
 
         fun parse(rawRegion: String): MicrosoftSpeechRegion {
             val region = rawRegion.trim()
-            require(REGION_PATTERN.matches(region)) {
-                "Enter a lowercase Azure Speech region such as eastus or westus."
+            requireUserFacing(REGION_PATTERN.matches(region)) {
+                UserMessage(R.string.microsoft_speech_region_invalid)
             }
             return MicrosoftSpeechRegion(region)
         }

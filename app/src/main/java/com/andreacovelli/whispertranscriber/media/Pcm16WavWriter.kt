@@ -1,5 +1,8 @@
 package com.andreacovelli.whispertranscriber.media
 
+import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.UserFacingIOException
+import com.andreacovelli.whispertranscriber.UserMessage
 import java.io.File
 import java.io.FileDescriptor
 import java.io.IOException
@@ -93,7 +96,7 @@ internal class Pcm16WavWriter(file: File, private val maximumDataBytes: Long = M
     fun finish(): Long {
         check(!closed) { "WAV output is already closed." }
         if (dataBytesWritten == 0L) {
-            throw IOException("Decoded audio did not contain any PCM samples.")
+            throw UserFacingIOException(UserMessage(R.string.conversion_no_samples))
         }
 
         val durationUs = dataBytesWritten / PCM16_BYTES_PER_SAMPLE *
@@ -120,9 +123,7 @@ internal class Pcm16WavWriter(file: File, private val maximumDataBytes: Long = M
 
     private fun ensureWriteFits(byteCount: Int) {
         if (dataBytesWritten > maximumDataBytes - byteCount) {
-            throw IOException(
-                "Converted WAV exceeds its duration or classic RIFF size limit.",
-            )
+            throw UserFacingIOException(UserMessage(R.string.conversion_output_too_large))
         }
     }
 

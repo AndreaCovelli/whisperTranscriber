@@ -16,7 +16,7 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_QUEUED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.ui.main.JobRevealRequest
 import com.andreacovelli.whispertranscriber.ui.main.TranscriptionJobState
 import com.andreacovelli.whispertranscriber.ui.main.UiState
@@ -150,7 +150,7 @@ class MainJobRevealInstrumentedTest {
         TranscriptionJobState(
             id = id,
             displayName = "audio-$id.wav",
-            status = DISPLAY_JOB_STATUS_QUEUED,
+            status = JOB_STATUS_QUEUED,
         )
     }
 }

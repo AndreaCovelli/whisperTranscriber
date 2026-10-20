@@ -1,7 +1,7 @@
 package com.andreacovelli.whispertranscriber.ui.screens
 
-import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_QUEUED
-import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_RETRY_SCHEDULED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_RETRY_SCHEDULED
 import com.andreacovelli.whispertranscriber.ui.main.TranscriptionJobState
 
 data class BatchProgressState(val currentFileNumber: Int, val totalFiles: Int, val completedFiles: Int)
@@ -39,4 +39,4 @@ internal fun buildBatchProgressState(jobs: List<TranscriptionJobState>): BatchPr
 }
 
 private fun TranscriptionJobState.isQueuedLike(): Boolean =
-    status == DISPLAY_JOB_STATUS_QUEUED || status == DISPLAY_JOB_STATUS_RETRY_SCHEDULED
+    status == JOB_STATUS_QUEUED || status == JOB_STATUS_RETRY_SCHEDULED

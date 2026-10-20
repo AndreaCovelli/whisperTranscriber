@@ -1,5 +1,7 @@
 package com.andreacovelli.whispertranscriber.services
 
+import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
 import java.net.UnknownHostException
 import java.util.Collections
@@ -12,6 +14,7 @@ import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -33,6 +36,34 @@ class ValidationServiceTest {
             okHttpClient = client,
             ioDispatcher = Dispatchers.Unconfined,
         )
+    }
+
+    @Test
+    fun normalizeGeminiModelName_acceptsModelIdsWithOrWithoutModelsPrefix() {
+        assertEquals("gemini-2.5-flash", normalizeGeminiModelName(" models/gemini-2.5-flash "))
+        assertEquals("gemini-2.5-flash", normalizeGeminiModelName("gemini-2.5-flash"))
+        assertEquals("gemini-2.0-flash-001", normalizeGeminiModelName("gemini-2.0-flash-001"))
+    }
+
+    @Test
+    fun normalizeGeminiModelName_rejectsTextThatWouldChangeTheRequestPath() {
+        listOf("", "models/", "../files", "gemini/flash", "gemini?alt=x", "gemini#x", "gemini..x", "gemini flash", "-x")
+            .forEach { name -> assertNull(name, normalizeGeminiModelName(name)) }
+    }
+
+    @Test
+    fun validateCustomModel_rejectsInvalidNameWithoutNetworkCall() = runBlocking {
+        var networkCalled = false
+        val service = createValidationService { chain ->
+            networkCalled = true
+            chain.proceed(chain.request())
+        }
+
+        val result = service.validateCustomModel("../files")
+
+        assertFalse(result.isValid)
+        assertFalse(networkCalled)
+        assertEquals(UserMessage(R.string.gemini_model_name_invalid, listOf("../files")), result.errorMessage)
     }
 
     @Test
@@ -61,9 +92,7 @@ class ValidationServiceTest {
 
         val result = service.validateMicrosoftSpeechRegion("dydy")
         assertFalse(result.isValid)
-        assertTrue(
-            result.errorMessage?.contains("Could not reach Azure Speech for region \"dydy\"") == true,
-        )
+        assertEquals(UserMessage(R.string.microsoft_speech_region_unreachable, listOf("dydy")), result.errorMessage)
     }
 
     @Test
@@ -83,7 +112,7 @@ class ValidationServiceTest {
         val result = service.validateMicrosoftSpeechRegion("INVALID_REGION!")
         assertFalse(result.isValid)
         assertFalse(networkCalled)
-        assertTrue(result.errorMessage?.contains("lowercase Azure Speech region") == true)
+        assertEquals(UserMessage(R.string.microsoft_speech_region_invalid), result.errorMessage)
     }
 
     @Test
@@ -137,7 +166,10 @@ class ValidationServiceTest {
         )
 
         assertFalse(result.isValid)
-        assertTrue(result.errorMessage?.contains("HTTP 404") == true)
+        assertEquals(
+            UserMessage(R.string.microsoft_speech_region_validation_failed_http, listOf(404)),
+            result.errorMessage,
+        )
     }
 
     @Test
@@ -193,6 +225,6 @@ class ValidationServiceTest {
 
         val result = service.validateMicrosoftSpeechKey("wrong-key", "swedencentral")
         assertFalse(result.isValid)
-        assertTrue(result.errorMessage?.contains("Use the Speech resource key from your Foundry resource") == true)
+        assertEquals(UserMessage(R.string.microsoft_speech_key_invalid), result.errorMessage)
     }
 }

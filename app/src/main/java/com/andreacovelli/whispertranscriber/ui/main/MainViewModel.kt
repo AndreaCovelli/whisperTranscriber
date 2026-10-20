@@ -23,15 +23,14 @@ import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.settings.TranscriptionQueueSettings
 import com.andreacovelli.whispertranscriber.settings.decodeHistoricalSummarizerProvider
 import com.andreacovelli.whispertranscriber.settings.decodeTranscriptionProvider
-import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_CANCELLED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_ERROR
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
-import com.andreacovelli.whispertranscriber.transcription.displayJobStatus
-import com.andreacovelli.whispertranscriber.transcription.displaySummaryStatus
 import com.andreacovelli.whispertranscriber.ui.TextTransfer
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 import com.andreacovelli.whispertranscriber.ui.screens.buildBatchProgressState
+import com.andreacovelli.whispertranscriber.userMessageOr
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
@@ -43,7 +42,10 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
@@ -101,7 +103,8 @@ data class TranscriptionJobState(
     val displayName: String = "",
     val provider: TranscriptionProvider = TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
     val requestedModel: String = "",
-    val status: String = DISPLAY_JOB_STATUS_QUEUED,
+    // Stored status: a JOB_STATUS_* code or provider progress text. The job card resolves the label.
+    val status: String = JOB_STATUS_QUEUED,
     val progress: Float = 0f, // 0..1 conversion progress
     val transcript: String = "",
     val language: String = "",
@@ -127,7 +130,7 @@ fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     displayName = displayName,
     provider = decodeTranscriptionProvider(providerName),
     requestedModel = requestedModel.orEmpty(),
-    status = displayJobStatus(status),
+    status = status,
     progress = progress,
     transcript = transcript,
     language = language,
@@ -137,7 +140,7 @@ fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
         .takeIf(String::isNotBlank)
         ?.let(::decodeHistoricalSummarizerProvider),
     summaryModel = summaryModel,
-    summaryStatus = displaySummaryStatus(summaryStatus),
+    summaryStatus = summaryStatus,
     autoSummaryAttempted = autoSummaryAttempted,
     batchId = batchId.orEmpty(),
     historyId = historyId,
@@ -164,6 +167,9 @@ internal fun buildJobPresentationState(jobs: List<TranscriptionJob>): JobPresent
 
 private val TranscriptionJob.hasSummaryBlockingState: Boolean
     get() = isRunning || isSummarizing || error != null || summaryError != null
+
+private val UiState.isAutoSummaryActive: Boolean
+    get() = automaticSummarizationEnabled && geminiApiKeyState is ApiKeyState.Present
 
 private val TranscriptionJob.isReadyForAutoSummary: Boolean
     get() = !hasSummaryBlockingState && transcript.isNotBlank() && summary.isBlank() && !autoSummaryAttempted
@@ -220,6 +226,11 @@ class MainViewModel @Inject constructor(
     private val _events = Channel<Int>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
     private val summaryJobs = ConcurrentHashMap<Int, Job>()
+
+    // Automatic summaries run one at a time. Both are only touched on the main dispatcher.
+    private val autoSummaryRequests = Channel<Int>(Channel.UNLIMITED)
+    private val pendingAutoSummaries = mutableSetOf<Int>()
+    private val latestJobs = MutableStateFlow<List<TranscriptionJob>>(emptyList())
     private val transcriptionSettingsHydrated = MutableStateFlow(false)
     private val settingsDelegate = MainSettingsDelegate(
         getState = { _uiState.value },
@@ -228,6 +239,8 @@ class MainViewModel @Inject constructor(
         validationService = validationService,
         scope = viewModelScope,
         ioDispatcher = ioDispatcher,
+        markFinishedJobsAutoSummaryAttempted = repository::markFinishedJobsAutoSummaryAttempted,
+        resolveMessage = { message -> message.resolve(appContext) },
         notify = { _events.trySend(it) },
     )
 
@@ -285,16 +298,32 @@ class MainViewModel @Inject constructor(
                             batchProgressState = presentationState.batchProgressState,
                         ),
                     )
-
-                    // Auto-summarization logic
-                    if (_uiState.value.automaticSummarizationEnabled &&
-                        _uiState.value.geminiApiKeyState is ApiKeyState.Present
-                    ) {
+                    latestJobs.value = jobsList
+                }
+            }
+            launch {
+                // Rescan when auto-summary becomes active as well, so a completion observed while the
+                // setting or key was still propagating is not missed. Already-marked jobs fail the claim.
+                combine(
+                    latestJobs,
+                    _uiState.map { state -> state.isAutoSummaryActive }.distinctUntilChanged(),
+                ) { jobsList, isActive -> if (isActive) jobsList else emptyList() }
+                    .collect { jobsList ->
                         jobsList.forEach { job ->
-                            if (job.isReadyForAutoSummary) {
-                                runSummarization(job.id, allowResummarize = false)
+                            if (job.isReadyForAutoSummary && pendingAutoSummaries.add(job.id)) {
+                                autoSummaryRequests.trySend(job.id)
                             }
                         }
+                    }
+            }
+            launch {
+                for (jobId in autoSummaryRequests) {
+                    try {
+                        if (_uiState.value.isAutoSummaryActive) {
+                            runSummarization(jobId, allowResummarize = false).join()
+                        }
+                    } finally {
+                        pendingAutoSummaries.remove(jobId)
                     }
                 }
             }
@@ -386,43 +415,24 @@ class MainViewModel @Inject constructor(
                 reduce(MainMsg.StatusChanged(result.statusMessage))
                 result.firstCreatedJobId
             } catch (e: IOException) {
-                reduce(
-                    MainMsg.StatusChanged(
-                        e.message ?: appContext.getString(R.string.background_share_queue_failed_body),
-                    ),
-                )
-                null
+                reportShareQueueFailure(e)
             } catch (e: SecurityException) {
-                reduce(
-                    MainMsg.StatusChanged(
-                        e.message ?: appContext.getString(R.string.background_share_queue_failed_body),
-                    ),
-                )
-                null
+                reportShareQueueFailure(e)
             } catch (e: SQLException) {
-                reduce(
-                    MainMsg.StatusChanged(
-                        e.message ?: appContext.getString(R.string.background_share_queue_failed_body),
-                    ),
-                )
-                null
+                reportShareQueueFailure(e)
             } catch (e: IllegalArgumentException) {
-                reduce(
-                    MainMsg.StatusChanged(
-                        e.message ?: appContext.getString(R.string.background_share_queue_failed_body),
-                    ),
-                )
-                null
+                reportShareQueueFailure(e)
             } catch (e: IllegalStateException) {
-                reduce(
-                    MainMsg.StatusChanged(
-                        e.message ?: appContext.getString(R.string.background_share_queue_failed_body),
-                    ),
-                )
-                null
+                reportShareQueueFailure(e)
             }
             reduce(MainMsg.SharedAudioQueueFinished(requestToken, firstCreatedJobId))
         }
+    }
+
+    private fun reportShareQueueFailure(error: Exception): Int? {
+        val message = error.userMessageOr(R.string.background_share_queue_failed_body).resolve(appContext)
+        reduce(MainMsg.StatusChanged(message))
+        return null
     }
 
     private fun retryJob(jobId: Int) {
@@ -440,9 +450,9 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    private fun runSummarization(jobId: Int, allowResummarize: Boolean) {
+    private fun runSummarization(jobId: Int, allowResummarize: Boolean): Job {
         val previousSummaryJob = summaryJobs.remove(jobId)
-        summaryJobs[jobId] = viewModelScope.launch {
+        return viewModelScope.launch {
             operations.track(jobId) {
                 previousSummaryJob?.cancelAndJoin()
                 val currentState = _uiState.value
@@ -455,6 +465,7 @@ class MainViewModel @Inject constructor(
                 reduce(MainMsg.StatusChanged(result.statusMessage))
             }
         }.also { job ->
+            summaryJobs[jobId] = job
             job.invokeOnCompletion {
                 summaryJobs.remove(jobId, job)
             }

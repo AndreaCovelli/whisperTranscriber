@@ -102,7 +102,7 @@ class TranscriptionProvidersTest {
         assertFalse(requestBodies[1].contains("diarization"))
         assertTrue(
             results.contains(
-                TranscriptionResult.LocalizedLoading(R.string.transcription_status_diarization_fallback),
+                TranscriptionResult.Loading(UserMessage(R.string.transcription_status_diarization_fallback)),
             ),
         )
         val success = results.filterIsInstance<TranscriptionResult.Success>().single()

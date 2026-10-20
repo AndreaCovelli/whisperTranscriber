@@ -1,6 +1,10 @@
 package com.andreacovelli.whispertranscriber.queue
 
-import java.io.IOException
+import com.andreacovelli.whispertranscriber.QuantityText
+import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.UserFacingIOException
+import com.andreacovelli.whispertranscriber.UserMessage
+import com.andreacovelli.whispertranscriber.requireUserFacing
 import java.io.InputStream
 import java.io.OutputStream
 
@@ -35,17 +39,20 @@ internal fun requireAcceptedSharedAudio(mimeType: String?, displayName: String, 
     val acceptedExtension = declaredExtension in acceptedAudioExtensions
     val genericMimeType = normalizedMimeType == null || normalizedMimeType == "application/octet-stream"
     val audioMimeType = normalizedMimeType?.startsWith("audio/") == true
-    require(
+    requireUserFacing(
         (audioMimeType && (declaredExtension.isBlank() || acceptedExtension)) ||
             (genericMimeType && acceptedExtension),
     ) {
-        "\"$displayName\" is not a supported audio share."
+        UserMessage(R.string.share_unsupported_audio, listOf(displayName))
     }
 }
 
 internal fun requireShareCount(fileCount: Int) {
-    require(fileCount in 1..MAX_SHARED_FILES_PER_INTENT) {
-        "Share at most $MAX_SHARED_FILES_PER_INTENT audio files at a time."
+    requireUserFacing(fileCount in 1..MAX_SHARED_FILES_PER_INTENT) {
+        UserMessage(
+            R.string.share_too_many_files,
+            listOf(QuantityText(R.plurals.share_audio_file_count, MAX_SHARED_FILES_PER_INTENT)),
+        )
     }
 }
 
@@ -69,20 +76,20 @@ internal fun copySharedAudioWithLimits(
         if (count > 0) {
             fileBytes += count
             if (fileBytes > maxFileBytes) {
-                throw IOException("Each shared audio file must be 250 MB or smaller.")
+                throw UserFacingIOException(UserMessage(R.string.share_file_too_large))
             }
             if (batchBytesBeforeCopy + fileBytes > maxBatchBytes) {
-                throw IOException("A shared audio batch must be 500 MB or smaller.")
+                throw UserFacingIOException(UserMessage(R.string.share_batch_too_large))
             }
             checkCancellation()
             output.write(buffer, 0, count)
             if (availableBytes() < minFreeBytes) {
-                throw IOException("Not enough storage. Keep at least 64 MiB free after queuing audio.")
+                throw UserFacingIOException(UserMessage(R.string.share_insufficient_storage))
             }
         }
     }
     if (fileBytes == 0L) {
-        throw IOException("The shared audio file is empty.")
+        throw UserFacingIOException(UserMessage(R.string.share_file_empty))
     }
     return fileBytes
 }

@@ -31,11 +31,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.transcription.displayJobStatus
+import com.andreacovelli.whispertranscriber.transcription.displaySummaryStatus
 import com.andreacovelli.whispertranscriber.ui.main.TranscriptionJobState
 
 @Composable
 fun TranscriptionJobCard(job: TranscriptionJobState, canSummarize: Boolean, actions: TranscriptionJobCardActions) {
-    val queuedProviderLabel = providerFamilyLabel(job.provider)
+    val queuedProviderLabel = stringResource(providerFamilyLabel(job.provider))
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
@@ -49,7 +51,10 @@ fun TranscriptionJobCard(job: TranscriptionJobState, canSummarize: Boolean, acti
         ) {
             JobHeader(job = job, onDelete = actions.delete)
             JobSecondaryText(job = job, queuedProviderLabel = queuedProviderLabel)
-            Text(job.status, style = MaterialTheme.typography.bodySmall)
+            Text(
+                displayJobStatus(job.status)?.let { stringResource(it) } ?: job.status,
+                style = MaterialTheme.typography.bodySmall,
+            )
             JobErrorSection(job = job, onRetry = actions.retryTranscription)
             JobProgressSection(job = job)
             TranscriptSection(job = job, actions = actions)
@@ -247,7 +252,7 @@ private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJob
     )
     if (job.summaryModel.isNotBlank()) {
         Spacer(Modifier.height(4.dp))
-        val providerLabel = providerFamilyLabel(job.summaryProvider, job.summaryModel)
+        val providerLabel = stringResource(providerFamilyLabel(job.summaryProvider, job.summaryModel))
         Text(
             text = stringResource(R.string.job_summary_provider_model, providerLabel, job.summaryModel),
             style = MaterialTheme.typography.labelMedium,
@@ -257,7 +262,7 @@ private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJob
     if (job.isSummarizing || job.summaryStatus.isNotBlank()) {
         Spacer(Modifier.height(2.dp))
         Text(
-            text = job.summaryStatus,
+            text = displaySummaryStatus(job.summaryStatus)?.let { stringResource(it) } ?: job.summaryStatus,
             style = MaterialTheme.typography.bodySmall,
         )
     }

@@ -112,7 +112,9 @@ class CredentialPersistenceInstrumentedTest {
         MainSettingsDelegate({
             UiState()
         }, {
-        }, manager, ValidationService(manager, client, Dispatchers.IO), scope, Dispatchers.IO) {
+        }, manager, ValidationService(manager, client, Dispatchers.IO), scope, Dispatchers.IO, {}, {
+            it.resolve(context)
+        }) {
             events.trySend(it)
         }
 

@@ -11,6 +11,7 @@ import com.andreacovelli.whispertranscriber.background.BackgroundShareNotifier
 import com.andreacovelli.whispertranscriber.background.PostTranscriptionWorkSpec
 import com.andreacovelli.whispertranscriber.services.TranscriptionQueueService
 import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
+import com.andreacovelli.whispertranscriber.userMessageOr
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
@@ -63,6 +64,7 @@ class ShareIntakeViewModel @Inject constructor(
         }
 
         backgroundShareNotifier.showPreparingShare()
+        var jobsCommitted = false
         try {
             val queueSettings = settings.getTranscriptionQueueSettings()
             val automaticSummarizationEnabled = settings.automaticSummarizationFlow.first()
@@ -78,28 +80,39 @@ class ShareIntakeViewModel @Inject constructor(
                     notifyResult = true,
                     summarizationSettings = summarizationSettings,
                 ),
+                onJobsCommitted = { jobsCommitted = true },
             )
         } catch (e: CancellationException) {
+            // The share receiver was closed (for example with Back) before the audio was queued.
+            if (!jobsCommitted) {
+                showBackgroundShareQueueFailure(context.getString(R.string.background_share_interrupted_body))
+            }
             throw e
-        } catch (_: IOException) {
-            showBackgroundShareQueueFailure()
-        } catch (_: IllegalArgumentException) {
-            showBackgroundShareQueueFailure()
-        } catch (_: IllegalStateException) {
-            showBackgroundShareQueueFailure()
-        } catch (_: SecurityException) {
-            showBackgroundShareQueueFailure()
-        } catch (_: SQLException) {
-            showBackgroundShareQueueFailure()
+        } catch (e: IOException) {
+            showBackgroundShareQueueFailure(e)
+        } catch (e: IllegalArgumentException) {
+            showBackgroundShareQueueFailure(e)
+        } catch (e: IllegalStateException) {
+            showBackgroundShareQueueFailure(e)
+        } catch (e: SecurityException) {
+            showBackgroundShareQueueFailure(e)
+        } catch (e: SQLException) {
+            showBackgroundShareQueueFailure(e)
         } finally {
             backgroundShareNotifier.cancelPreparingShare()
         }
     }
 
-    private fun showBackgroundShareQueueFailure() {
+    private fun showBackgroundShareQueueFailure(error: Exception) {
+        showBackgroundShareQueueFailure(
+            error.userMessageOr(R.string.background_share_queue_failed_body).resolve(context),
+        )
+    }
+
+    private fun showBackgroundShareQueueFailure(message: String) {
         backgroundShareNotifier.showFailure(
             displayName = context.getString(R.string.background_share_generic_audio_label),
-            message = context.getString(R.string.background_share_queue_failed_body),
+            message = message,
         )
     }
 }

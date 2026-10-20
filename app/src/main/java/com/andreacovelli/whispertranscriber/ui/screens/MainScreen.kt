@@ -53,8 +53,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.settings.ApiKeyState
-import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_QUEUED
-import com.andreacovelli.whispertranscriber.transcription.DISPLAY_JOB_STATUS_RETRY_SCHEDULED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_RETRY_SCHEDULED
 import com.andreacovelli.whispertranscriber.ui.components.TranscriptionJobCard
 import com.andreacovelli.whispertranscriber.ui.components.TranscriptionJobCardActions
 import com.andreacovelli.whispertranscriber.ui.components.providerDisplayLabel
@@ -210,7 +210,7 @@ internal fun resolveMainJobItemIndex(uiState: UiState, jobId: Int): Int? {
 }
 
 private fun TranscriptionJobState.isQueuedLike(): Boolean =
-    status == DISPLAY_JOB_STATUS_QUEUED || status == DISPLAY_JOB_STATUS_RETRY_SCHEDULED
+    status == JOB_STATUS_QUEUED || status == JOB_STATUS_RETRY_SCHEDULED
 
 private const val MAIN_LIST_FIXED_HEADER_COUNT = 2
 

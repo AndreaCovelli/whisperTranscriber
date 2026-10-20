@@ -3,6 +3,8 @@ package com.andreacovelli.whispertranscriber.services
 import android.content.Context
 import android.net.Uri
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.UserFacingIllegalStateException
+import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.background.BackgroundShareNotifier
 import com.andreacovelli.whispertranscriber.background.PostTranscriptionWorkSpec
 import com.andreacovelli.whispertranscriber.data.HistoryContentField
@@ -29,11 +31,11 @@ import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.summary.TranscriptionSummarizationRepository
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.transcription.MicrosoftSpeechEndpoint
-import com.andreacovelli.whispertranscriber.transcription.ProviderResponseException
 import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_SUMMARIZING
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
 import com.andreacovelli.whispertranscriber.transcription.awaitResult
 import com.andreacovelli.whispertranscriber.transcription.validatedGeminiText
+import com.andreacovelli.whispertranscriber.userMessageOr
 import com.google.genai.errors.ApiException
 import com.google.genai.errors.GenAiIOException
 import com.google.genai.types.Content
@@ -57,6 +59,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONException
@@ -91,6 +94,7 @@ class TranscriptionQueueService @Inject constructor(
         speakerDiarizationEnabled: Boolean,
         preferImmediateBackgroundStart: Boolean = false,
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec? = null,
+        onJobsCommitted: () -> Unit = {},
     ): QueuedShareResult {
         repository.requireQueueCapacity(uris.size)
         return queuedAudioStore.withPreparedAudio(uris) { intake ->
@@ -101,6 +105,7 @@ class TranscriptionQueueService @Inject constructor(
                 speakerDiarizationEnabled,
                 preferImmediateBackgroundStart,
                 postTranscriptionWorkSpec,
+                onJobsCommitted,
             )
         }
     }
@@ -112,6 +117,7 @@ class TranscriptionQueueService @Inject constructor(
         speakerDiarizationEnabled: Boolean,
         preferImmediateBackgroundStart: Boolean = false,
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec? = null,
+        onJobsCommitted: () -> Unit = {},
     ): QueuedShareResult {
         val preparedAudio = intake.preparedAudio
         if (preparedAudio.isEmpty()) {
@@ -159,6 +165,8 @@ class TranscriptionQueueService @Inject constructor(
         return withContext(NonCancellable) {
             val jobIds = repository.addJobsWithinCapacity(jobs)
             intake.transferOwnership()
+            // The caller may still observe cancellation after this point, but the jobs exist.
+            onJobsCommitted()
             preparedAudio.zip(jobIds).forEach { (prepared, rawJobId) ->
                 try {
                     backgroundShareNotifier.showBackgroundProcessing(
@@ -185,7 +193,7 @@ class TranscriptionQueueService @Inject constructor(
 
     suspend fun cancelJob(jobId: Int) {
         val job = repository.getJob(jobId)
-        repository.cancelJob(jobId)
+        repository.cancelJob(jobId, context.getString(R.string.job_cancelled_error))
         operations.cancel(jobId)
         cancelScheduledExecution(job)
         backgroundShareNotifier.cancelResult(jobId)
@@ -308,7 +316,7 @@ class TranscriptionQueueService @Inject constructor(
     suspend fun cancelBackgroundSummaryIfRunning(jobId: Int): Boolean {
         val job = repository.getJob(jobId) ?: return false
         if (!job.isRunning || !job.isSummarizing) return false
-        repository.cancelJob(jobId)
+        repository.cancelJob(jobId, context.getString(R.string.job_cancelled_error))
         operations.cancel(jobId)
         cancelScheduledExecution(job)
         backgroundShareNotifier.cancelBackgroundProcessing(jobId)
@@ -417,31 +425,41 @@ class TranscriptionQueueService @Inject constructor(
     private suspend fun cancelScheduledExecution(jobId: Int) = scheduler.cancel(jobId)
 }
 
-data class KeyValidationResult(val errorMessage: String? = null) {
+data class KeyValidationResult(val errorMessage: UserMessage? = null) {
     val isValid: Boolean get() = errorMessage == null
 }
 
-data class RegionValidationResult(val normalizedRegion: String? = null, val errorMessage: String? = null) {
+data class RegionValidationResult(val normalizedRegion: String? = null, val errorMessage: UserMessage? = null) {
     val isValid: Boolean get() = errorMessage == null
 }
 
-data class CustomModelValidationResult(val displayName: String? = null, val errorMessage: String? = null) {
+data class CustomModelValidationResult(
+    val displayName: String? = null,
+    val normalizedModelName: String? = null,
+    val errorMessage: UserMessage? = null,
+) {
     val isValid: Boolean get() = errorMessage == null
 }
+
+private val GEMINI_MODEL_ID_PATTERN = Regex("[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?")
+
+/**
+ * Returns the bare Gemini model ID, accepting the `models/` resource prefix the SDK also accepts,
+ * or null when the name could change the request path or query.
+ */
+internal fun normalizeGeminiModelName(modelName: String): String? = modelName.trim()
+    .removePrefix("models/")
+    .takeIf { name -> GEMINI_MODEL_ID_PATTERN.matches(name) && ".." !in name }
 
 internal fun resolveMicrosoftSpeechKeyValidationResult(code: Int): KeyValidationResult = when (code) {
     200 -> KeyValidationResult()
-    401, 403 -> KeyValidationResult(
-        "Invalid key for Microsoft MAI Transcribe. Use the Speech resource key from your Foundry resource, not a project API key.",
-    )
-    404 -> KeyValidationResult(
-        "Microsoft MAI Transcribe endpoint not found. Check the configured Speech region or custom endpoint.",
-    )
-    else -> KeyValidationResult("Validation failed: HTTP $code")
+    401, 403 -> KeyValidationResult(UserMessage(R.string.microsoft_speech_key_invalid))
+    404 -> KeyValidationResult(UserMessage(R.string.microsoft_speech_endpoint_not_found))
+    else -> KeyValidationResult(UserMessage(R.string.validation_failed_http, listOf(code)))
 }
 
 internal fun resolveMicrosoftSpeechKeyValidationResults(codes: List<Int>): KeyValidationResult {
-    if (codes.isEmpty()) return KeyValidationResult("Validation failed")
+    if (codes.isEmpty()) return KeyValidationResult(UserMessage(R.string.validation_failed))
     if (codes.any { it == 200 }) return KeyValidationResult()
 
     val authCode = codes.firstOrNull { it == 401 || it == 403 }
@@ -449,7 +467,7 @@ internal fun resolveMicrosoftSpeechKeyValidationResults(codes: List<Int>): KeyVa
 
     val reportedCode = codes.firstOrNull { it == 404 || it == 405 || it == 400 || it == 429 || it in 500..599 }
         ?: codes.first()
-    return KeyValidationResult("Validation failed: HTTP $reportedCode")
+    return KeyValidationResult(UserMessage(R.string.validation_failed_http, listOf(reportedCode)))
 }
 
 internal fun resolveMicrosoftSpeechRegionValidationResults(
@@ -462,23 +480,22 @@ internal fun resolveMicrosoftSpeechRegionValidationResults(
 
     val reportedCode = codes.firstOrNull { it == 404 || it == 405 || it == 400 || it == 429 || it in 500..599 }
         ?: codes.firstOrNull()
-        ?: return RegionValidationResult(errorMessage = "Validation failed")
+        ?: return RegionValidationResult(errorMessage = UserMessage(R.string.validation_failed))
     return RegionValidationResult(
-        errorMessage = "Could not validate Azure Speech region or endpoint: HTTP $reportedCode",
+        errorMessage = UserMessage(R.string.microsoft_speech_region_validation_failed_http, listOf(reportedCode)),
     )
 }
 
-internal fun resolveMicrosoftSpeechRegionIOExceptionMessage(normalizedRegion: String, error: IOException): String {
+internal fun resolveMicrosoftSpeechRegionIOExceptionMessage(normalizedRegion: String, error: IOException): UserMessage {
     val message = error.message.orEmpty()
     return if (error is UnknownHostException || message.contains("Unable to resolve host", ignoreCase = true)) {
         if (normalizedRegion.startsWith("https://")) {
-            "Could not reach Azure Speech endpoint \"$normalizedRegion\". Check the endpoint URL."
+            UserMessage(R.string.microsoft_speech_endpoint_unreachable, listOf(normalizedRegion))
         } else {
-            "Could not reach Azure Speech for region \"$normalizedRegion\". " +
-                "Check that the region name is correct, for example eastus or westus."
+            UserMessage(R.string.microsoft_speech_region_unreachable, listOf(normalizedRegion))
         }
     } else {
-        error.message ?: "Validation failed"
+        UserMessage(R.string.validation_network_failed)
     }
 }
 
@@ -491,7 +508,6 @@ class ValidationService @Inject constructor(
     companion object {
         private const val GEMINI_MODELS_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
         private const val GEMINI_API_KEY_HEADER = "x-goog-api-key"
-        private const val ERR_ENTER_GEMINI_KEY = "Enter your Gemini API key first"
         private const val MICROSOFT_SPEECH_KEY_HEADER = "Ocp-Apim-Subscription-Key"
         private const val MICROSOFT_SPEECH_LOCALES_API_VERSION = "2025-10-15"
         private const val MICROSOFT_SPEECH_LOCALES_FALLBACK_API_VERSION = "2024-11-15"
@@ -511,29 +527,36 @@ class ValidationService @Inject constructor(
             KeyValidationResult()
         } else {
             KeyValidationResult(
-                if (result.second == 400) "Invalid API key" else "Validation failed: HTTP ${result.second}",
+                if (result.second == 400) {
+                    UserMessage(R.string.gemini_key_invalid)
+                } else {
+                    UserMessage(R.string.validation_failed_http, listOf(result.second))
+                },
             )
         }
-    } catch (e: IOException) {
-        KeyValidationResult(e.message ?: "Validation failed")
+    } catch (_: IOException) {
+        KeyValidationResult(UserMessage(R.string.validation_network_failed))
     }
 
     suspend fun validateCustomModel(modelName: String): CustomModelValidationResult {
-        val trimmed = modelName.trim()
+        val normalizedModelName = normalizeGeminiModelName(modelName)
+            ?: return CustomModelValidationResult(
+                errorMessage = UserMessage(R.string.gemini_model_name_invalid, listOf(modelName.trim())),
+            )
         val keyChars = settings.getGeminiApiKey()
         if (keyChars == null || keyChars.isEmpty()) {
             val keyState = settings.geminiApiKeyStateFlow.first()
             val error = if (keyState is ApiKeyState.Error) {
-                "Keystore error: ${keyState.message}. Please re-enter your key."
+                UserMessage(R.string.api_key_keystore_error, listOf(keyState.message))
             } else {
-                ERR_ENTER_GEMINI_KEY
+                UserMessage(R.string.gemini_key_required)
             }
             return CustomModelValidationResult(errorMessage = error)
         }
 
         return try {
             val request = Request.Builder()
-                .url("$GEMINI_MODELS_BASE_URL/$trimmed")
+                .url(GEMINI_MODELS_BASE_URL.toHttpUrl().newBuilder().addPathSegment(normalizedModelName).build())
                 .header(GEMINI_API_KEY_HEADER, String(keyChars))
                 .build()
             val (isSuccess, code, bodyText) = withContext(ioDispatcher) {
@@ -548,18 +571,21 @@ class ValidationService @Inject constructor(
             if (!isSuccess) {
                 CustomModelValidationResult(
                     errorMessage = if (code == 404) {
-                        "Model \"$trimmed\" not found"
+                        UserMessage(R.string.gemini_model_not_found, listOf(normalizedModelName))
                     } else {
-                        "HTTP $code: could not verify model"
+                        UserMessage(R.string.gemini_model_validation_failed_http, listOf(code))
                     },
                 )
             } else {
-                CustomModelValidationResult(displayName = parseDisplayName(bodyText, trimmed))
+                CustomModelValidationResult(
+                    displayName = parseDisplayName(bodyText, normalizedModelName),
+                    normalizedModelName = normalizedModelName,
+                )
             }
         } catch (e: CancellationException) {
             throw e
-        } catch (e: IOException) {
-            CustomModelValidationResult(errorMessage = e.message ?: "Validation failed")
+        } catch (_: IOException) {
+            CustomModelValidationResult(errorMessage = UserMessage(R.string.validation_network_failed))
         } finally {
             keyChars.fill('\u0000')
         }
@@ -573,7 +599,7 @@ class ValidationService @Inject constructor(
 
     suspend fun validateMicrosoftSpeechKey(rawKey: String, region: String): KeyValidationResult {
         val validatedEndpoint = MicrosoftSpeechEndpoint.parseOrNull(region)
-            ?: return KeyValidationResult("Enter a valid Azure Speech region or HTTPS endpoint first")
+            ?: return KeyValidationResult(UserMessage(R.string.microsoft_speech_endpoint_required_first))
 
         return try {
             val codes = probeMicrosoftSpeechKey(validatedEndpoint, rawKey)
@@ -590,7 +616,7 @@ class ValidationService @Inject constructor(
             MicrosoftSpeechEndpoint.parse(region)
         } catch (error: IllegalArgumentException) {
             return RegionValidationResult(
-                errorMessage = error.message ?: "Enter a valid Azure Speech region or HTTPS endpoint",
+                errorMessage = error.userMessageOr(R.string.microsoft_speech_endpoint_required),
             )
         }
 
@@ -680,7 +706,8 @@ class SummarizationService @Inject constructor(
         val summarizerSelection = try {
             resolveSummarizerSelection(settings)
         } catch (e: IllegalStateException) {
-            return SummarizationResult(statusMessage = "Error: ${e.message}", errorMessage = e.message)
+            val message = e.userMessageOr(R.string.provider_request_failed).resolve(applicationContext)
+            return SummarizationResult(statusMessage = message, errorMessage = message)
         }
 
         executionCoordinator.awaitRecovery()
@@ -759,21 +786,19 @@ class SummarizationService @Inject constructor(
             val message = applicationContext.getString(R.string.provider_request_failed)
             summarizationRepository.failSummarization(jobId, attemptId, message)
             summarizingCleared = true
-            SummarizationResult("Summarization error: $message", message)
+            SummarizationResult(applicationContext.getString(R.string.summarization_status_error, message), message)
         } catch (_: GenAiIOException) {
             val message = applicationContext.getString(R.string.provider_request_failed)
             summarizationRepository.failSummarization(jobId, attemptId, message)
             summarizingCleared = true
-            SummarizationResult("Summarization error: $message", message)
+            SummarizationResult(applicationContext.getString(R.string.summarization_status_error, message), message)
         } catch (_: IOException) {
             val message = applicationContext.getString(R.string.provider_request_failed)
             summarizationRepository.failSummarization(jobId, attemptId, message)
             summarizingCleared = true
             SummarizationResult(message, message)
         } catch (e: IllegalStateException) {
-            val message = applicationContext.getString(
-                (e as? ProviderResponseException)?.messageId ?: R.string.provider_request_failed,
-            )
+            val message = e.userMessageOr(R.string.provider_request_failed).resolve(applicationContext)
             summarizationRepository.failSummarization(jobId, attemptId, message)
             summarizingCleared = true
             SummarizationResult(message, message)
@@ -799,7 +824,7 @@ class SummarizationService @Inject constructor(
     private suspend fun requireGeminiApiKey(): CharArray {
         val keyChars = settings.getGeminiApiKey()
         if (keyChars == null || keyChars.isEmpty()) {
-            error("Gemini API Key is not set (Settings) or Keystore error.")
+            throw UserFacingIllegalStateException(UserMessage(R.string.gemini_api_key_missing))
         }
         return keyChars
     }
@@ -809,7 +834,7 @@ class SummarizationService @Inject constructor(
         return when {
             provider == TranscriptionProvider.GEMINI_CUSTOM -> {
                 val modelName = settings.customModelName.ifBlank {
-                    throw IllegalStateException("No custom Gemini model set for summarization.")
+                    throw UserFacingIllegalStateException(UserMessage(R.string.summarizer_model_not_specified))
                 }
                 SummarizerSelection(provider = provider, modelName = modelName)
             }

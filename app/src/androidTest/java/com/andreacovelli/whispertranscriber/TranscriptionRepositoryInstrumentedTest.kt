@@ -248,6 +248,32 @@ class TranscriptionRepositoryInstrumentedTest {
     }
 
     @Test
+    fun markFinishedJobsAutoSummaryAttempted_excludesOnlyJobsThatAlreadyFinished() = runBlocking {
+        val finishedId = repository.addJob(
+            TranscriptionJob(uri = "content://test/a.wav", displayName = "a.wav"),
+        ).toInt()
+        assertNotNull(repository.claimJobForExecution(finishedId, "owner-1", "Starting"))
+        assertTrue(
+            repository.persistCompletedTranscription(
+                finishedId,
+                "owner-1",
+                "a.wav",
+                TranscriptionData("Finished transcript", "en", "model"),
+            ),
+        )
+        assertTrue(repository.markRunningAsCompleted(finishedId, "owner-1"))
+        val runningId = repository.addJob(TranscriptionJob(uri = "content://test/b.wav", displayName = "b.wav")).toInt()
+        assertNotNull(repository.claimJobForExecution(runningId, "owner-2", "Starting"))
+        val queuedId = repository.addJob(TranscriptionJob(uri = "content://test/c.wav", displayName = "c.wav")).toInt()
+
+        repository.markFinishedJobsAutoSummaryAttempted()
+
+        assertTrue(repository.getJob(finishedId)!!.autoSummaryAttempted)
+        assertFalse(repository.getJob(runningId)!!.autoSummaryAttempted)
+        assertFalse(repository.getJob(queuedId)!!.autoSummaryAttempted)
+    }
+
+    @Test
     fun markRetryScheduled_keepsRetryStateBlockingSequentialQueue() = runBlocking {
         val jobId = repository.addJob(
             TranscriptionJob(
@@ -371,7 +397,7 @@ class TranscriptionRepositoryInstrumentedTest {
             assertEquals(0, retried.retryCount)
             assertTrue(retried.speakerDiarizationEnabled)
             assertEquals(RetryResult.INELIGIBLE_STATUS, retryWithMicrosoft(jobId))
-            repository.cancelJob(jobId)
+            repository.cancelJob(jobId, "Cancelled")
             audio.delete()
             assertEquals(RetryResult.UNAVAILABLE_AUDIO, retryWithMicrosoft(jobId))
         } finally {
