@@ -14,6 +14,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.PI
 import kotlin.math.sin
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -49,6 +50,7 @@ class HardwareAudioConverterInstrumentedTest {
                 context = context,
                 inputUri = inputFile.toUri(),
                 outputFile = outputFile,
+                ioDispatcher = Dispatchers.IO,
             )
             val wavInfo = readWavInfo(outputFile)
 
@@ -79,6 +81,7 @@ class HardwareAudioConverterInstrumentedTest {
                 context = context,
                 inputUri = inputFile.toUri(),
                 outputFile = outputFile,
+                ioDispatcher = Dispatchers.IO,
             )
             val wavInfo = readWavInfo(outputFile)
 

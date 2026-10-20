@@ -17,10 +17,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -47,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -212,7 +209,7 @@ private fun HistoryTopBar(
         title = { Text(stringResource(R.string.history_title)) },
         navigationIcon = {
             IconButton(onClick = onNavigateBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
+                Icon(painterResource(R.drawable.ic_arrow_back), stringResource(R.string.back))
             }
         },
         actions = {
@@ -221,7 +218,10 @@ private fun HistoryTopBar(
             }
             if (canDeleteAll) {
                 IconButton(onClick = onDeleteAll) {
-                    Icon(Icons.Default.DeleteSweep, stringResource(R.string.history_delete_all_description))
+                    Icon(
+                        painterResource(R.drawable.ic_delete_sweep),
+                        stringResource(R.string.history_delete_all_description),
+                    )
                 }
             }
         },
@@ -324,7 +324,7 @@ private fun HistorySearchField(visible: Boolean, searchQuery: String, onSearchCh
         trailingIcon = if (searchQuery.isNotEmpty()) {
             {
                 IconButton(onClick = { onSearchChange("") }) {
-                    Icon(Icons.Default.Delete, stringResource(R.string.history_clear_search))
+                    Icon(painterResource(R.drawable.ic_delete), stringResource(R.string.history_clear_search))
                 }
             }
         } else {

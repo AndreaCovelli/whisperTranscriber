@@ -109,6 +109,7 @@ class TranscriptionAudioPreparer @Inject constructor(
                 context = applicationContext,
                 inputUri = uri,
                 outputFile = outputFile,
+                ioDispatcher = ioDispatcher,
                 maximumDurationUsExclusive = if (usingMicrosoftSpeech) {
                     MICROSOFT_SPEECH_MAX_DURATION_US
                 } else {

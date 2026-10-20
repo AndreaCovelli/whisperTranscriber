@@ -33,12 +33,16 @@ import com.andreacovelli.whispertranscriber.ui.theme.WhisperTranscriberTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
 
-object AppRoutes {
-    const val MAIN = "main"
-    const val HISTORY = "history"
-    const val SETTINGS = "settings"
-}
+@Serializable
+data object MainRoute
+
+@Serializable
+data object HistoryRoute
+
+@Serializable
+data object SettingsRoute
 
 internal object SharedAudioIntentHandler {
     fun extractSharedUris(intent: Intent?): List<Uri> {
@@ -116,12 +120,11 @@ class MainActivity : ComponentActivity() {
                 val navigationRequest = uiState.mainNavigationRequest
                 LaunchedEffect(navigationRequest?.token) {
                     navigationRequest ?: return@LaunchedEffect
-                    navController.popBackStack(AppRoutes.MAIN, inclusive = false)
+                    navController.popBackStack<MainRoute>(inclusive = false)
                     mainViewModel.dispatch(MainMsg.MainNavigationHandled(navigationRequest.token))
                 }
-                NavHost(navController = navController, startDestination = AppRoutes.MAIN) {
-                    composable(
-                        route = AppRoutes.MAIN,
+                NavHost(navController = navController, startDestination = MainRoute) {
+                    composable<MainRoute>(
                         enterTransition = { null },
                         exitTransition = {
                             slideOutOfContainer(
@@ -139,13 +142,12 @@ class MainActivity : ComponentActivity() {
                     ) {
                         MainScreen(
                             viewModel = mainViewModel,
-                            onNavigateToHistory = { navController.navigate(AppRoutes.HISTORY) },
-                            onNavigateToSettings = { navController.navigate(AppRoutes.SETTINGS) },
+                            onNavigateToHistory = { navController.navigate(HistoryRoute) },
+                            onNavigateToSettings = { navController.navigate(SettingsRoute) },
                         )
                     }
 
-                    composable(
-                        route = AppRoutes.HISTORY,
+                    composable<HistoryRoute>(
                         enterTransition = {
                             slideIntoContainer(
                                 AnimatedContentTransitionScope.SlideDirection.Left,
@@ -169,8 +171,7 @@ class MainActivity : ComponentActivity() {
                         HistoryScreen(onNavigateBack = { navController.popBackStack() })
                     }
 
-                    composable(
-                        route = AppRoutes.SETTINGS,
+                    composable<SettingsRoute>(
                         enterTransition = {
                             slideIntoContainer(
                                 AnimatedContentTransitionScope.SlideDirection.Left,

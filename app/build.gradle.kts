@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.detekt)
     alias(libs.plugins.spotless)
@@ -221,16 +222,16 @@ dependencies {
     // DataStore - use a single, consistent artifact
     implementation(libs.androidx.datastore.preferences)
 
-    // Used by HistoryExportFormat for JSON export serialization.
+    // JSON: production code uses the platform org.json for provider payloads.
+    // Gson and Jackson already ship transitively with google-genai and google-auth-library; they are
+    // declared directly only where the app depends on them itself.
+    // Gson's streaming JsonWriter writes the JSON history export.
     implementation(libs.gson)
     // Required to satisfy the google-genai runtime service entry and avoid release-time R8 warnings.
     implementation(libs.jackson.module.kotlin)
     implementation(libs.okhttp)
 
-    implementation(libs.androidx.material.icons.core)
-    implementation(libs.androidx.material.icons.extended)
-
-    // Google ML Kit
+    // Google Gen AI SDK for Gemini transcription and summarization.
     implementation(libs.google.genai)
     implementation(libs.hilt.android)
     implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)
@@ -246,11 +247,13 @@ dependencies {
     implementation(libs.androidx.paging.compose)
     ksp(libs.androidx.room.compiler)
 
-    // Navigation
+    // Navigation with type-safe @Serializable routes.
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.kotlinx.serialization.core)
     // WorkManager
     implementation(libs.androidx.work.runtime.ktx)
     testImplementation(libs.junit)
+    // JVM stand-in for the platform org.json API, which is stubbed in local unit tests.
     testImplementation(libs.org.json)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.test.runner)

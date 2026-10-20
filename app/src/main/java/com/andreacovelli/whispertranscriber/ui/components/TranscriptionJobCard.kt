@@ -12,9 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -28,6 +25,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.andreacovelli.whispertranscriber.R
@@ -81,7 +79,7 @@ private fun JobHeader(job: TranscriptionJobState, onDelete: () -> Unit) {
         if (!job.isRunning) {
             IconButton(onClick = onDelete) {
                 Icon(
-                    imageVector = Icons.Default.Delete,
+                    painter = painterResource(R.drawable.ic_delete),
                     contentDescription = stringResource(R.string.delete_job_description),
                     tint = MaterialTheme.colorScheme.error,
                 )
@@ -134,7 +132,7 @@ private fun JobErrorSection(job: TranscriptionJobState, onRetry: () -> Unit) {
         Spacer(Modifier.width(8.dp))
         OutlinedButton(onClick = onRetry, enabled = job.canRetry) {
             Icon(
-                Icons.Default.Refresh,
+                painterResource(R.drawable.ic_refresh),
                 contentDescription = stringResource(R.string.retry_description),
                 modifier = Modifier.size(16.dp),
             )
@@ -293,7 +291,7 @@ private fun SummarySection(job: TranscriptionJobState, actions: TranscriptionJob
                 ),
             ) {
                 Icon(
-                    Icons.Default.Refresh,
+                    painterResource(R.drawable.ic_refresh),
                     contentDescription = stringResource(R.string.resummarize_description),
                     modifier = Modifier.size(16.dp),
                 )
