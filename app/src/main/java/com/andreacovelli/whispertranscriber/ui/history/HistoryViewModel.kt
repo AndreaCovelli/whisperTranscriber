@@ -3,6 +3,7 @@ package com.andreacovelli.whispertranscriber.ui.history
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
@@ -42,9 +43,9 @@ import kotlinx.coroutines.launch
 sealed interface HistoryUiEvent {
     data class LaunchExport(val format: HistoryExportFormat) : HistoryUiEvent
 
-    data class Share(val content: String, val title: String) : HistoryUiEvent
+    data class Share(val content: String, @param:StringRes val titleId: Int) : HistoryUiEvent
 
-    data class Toast(val message: String) : HistoryUiEvent
+    data class Toast(@param:StringRes val messageId: Int) : HistoryUiEvent
 }
 
 @HiltViewModel
@@ -68,7 +69,7 @@ class HistoryViewModel @Inject constructor(
             _uiEvents.send(
                 HistoryUiEvent.Share(
                     content = item.text,
-                    title = appContext.getString(R.string.share_transcription_title),
+                    titleId = R.string.share_transcription_title,
                 ),
             )
         }
@@ -79,7 +80,7 @@ class HistoryViewModel @Inject constructor(
             _uiEvents.send(
                 HistoryUiEvent.Share(
                     content = item.summary,
-                    title = appContext.getString(R.string.share_summary_title),
+                    titleId = R.string.share_summary_title,
                 ),
             )
         }
@@ -88,7 +89,7 @@ class HistoryViewModel @Inject constructor(
     fun prepareExport(format: HistoryExportFormat) {
         viewModelScope.launch {
             if (!historyRepository.hasHistory()) {
-                _uiEvents.send(HistoryUiEvent.Toast(appContext.getString(R.string.history_export_empty)))
+                _uiEvents.send(HistoryUiEvent.Toast(R.string.history_export_empty))
                 return@launch
             }
             _uiEvents.send(HistoryUiEvent.LaunchExport(format))
@@ -105,10 +106,10 @@ class HistoryViewModel @Inject constructor(
             }
 
             result.onSuccess {
-                _uiEvents.send(HistoryUiEvent.Toast(appContext.getString(R.string.history_export_success)))
+                _uiEvents.send(HistoryUiEvent.Toast(R.string.history_export_success))
             }.onFailure {
                 if (it is CancellationException) throw it
-                _uiEvents.send(HistoryUiEvent.Toast(appContext.getString(R.string.history_export_failed)))
+                _uiEvents.send(HistoryUiEvent.Toast(R.string.history_export_failed))
             }
         }
     }

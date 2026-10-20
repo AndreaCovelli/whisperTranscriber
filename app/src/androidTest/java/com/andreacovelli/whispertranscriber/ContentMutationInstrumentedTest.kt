@@ -75,7 +75,6 @@ class ContentMutationInstrumentedTest {
                 com.andreacovelli.whispertranscriber.security.DefaultGenAiClientFactory(http),
                 fixture.coordinator,
                 fixture.operations,
-                context,
                 kotlinx.coroutines.Dispatchers.IO,
             )
             fixture.settings.saveGeminiApiKey("test-credential")

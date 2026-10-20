@@ -17,6 +17,11 @@ data class UserMessage(@param:StringRes val id: Int, val args: List<Any> = empty
     } else {
         context.getString(id, *args.map { arg -> resolveArgument(context, arg) }.toTypedArray())
     }
+
+    companion object {
+        /** Text shown as is: stored text that predates encoded messages, or a lone [QuantityText]. */
+        fun verbatim(text: Any): UserMessage = UserMessage(R.string.verbatim_text, listOf(text))
+    }
 }
 
 /** A plural resource formatted with its own [quantity], for use as a [UserMessage] argument. */

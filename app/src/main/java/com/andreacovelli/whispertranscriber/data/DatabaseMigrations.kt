@@ -1,13 +1,17 @@
 package com.andreacovelli.whispertranscriber.data
 
+import android.content.ContentValues
+import android.database.sqlite.SQLiteDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.andreacovelli.whispertranscriber.StoredMessages
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_CANCELLED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_CLEARED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_COMPLETED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_ERROR
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_RETRY_SCHEDULED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_RUNNING
 import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_CANCELLED
 import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_ERROR
 import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_GENERATED
@@ -209,6 +213,43 @@ private val MIGRATION_14_15 = object : Migration(14, 15) {
     }
 }
 
+// Stored text becomes encoded messages: progress text moves out of status into statusMessage, and
+// legacy error text is wrapped as literal text so it is still shown as written.
+private val MIGRATION_15_16 = object : Migration(15, 16) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE active_jobs ADD COLUMN statusMessage TEXT")
+        val version15Statuses = setOf(
+            JOB_STATUS_QUEUED,
+            JOB_STATUS_RETRY_SCHEDULED,
+            JOB_STATUS_COMPLETED,
+            JOB_STATUS_CLEARED,
+            JOB_STATUS_ERROR,
+            JOB_STATUS_CANCELLED,
+        )
+        // Read everything first so the table is not changed while its cursor is open.
+        val updates = db.query("SELECT id, status, error, summaryError FROM active_jobs").use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    val values = ContentValues()
+                    val status = cursor.getString(1)
+                    if (status !in version15Statuses) {
+                        values.put("status", JOB_STATUS_RUNNING)
+                        values.put("statusMessage", StoredMessages.encodeLiteral(status))
+                    }
+                    if (!cursor.isNull(2)) values.put("error", StoredMessages.encodeLiteral(cursor.getString(2)))
+                    if (!cursor.isNull(3)) {
+                        values.put("summaryError", StoredMessages.encodeLiteral(cursor.getString(3)))
+                    }
+                    if (values.size() > 0) add(cursor.getInt(0) to values)
+                }
+            }
+        }
+        updates.forEach { (id, values) ->
+            db.update("active_jobs", SQLiteDatabase.CONFLICT_NONE, values, "id = ?", arrayOf<Any>(id))
+        }
+    }
+}
+
 internal val DATABASE_MIGRATIONS = arrayOf(
     MIGRATION_1_2,
     MIGRATION_2_3,
@@ -224,4 +265,5 @@ internal val DATABASE_MIGRATIONS = arrayOf(
     MIGRATION_12_13,
     MIGRATION_13_14,
     MIGRATION_14_15,
+    MIGRATION_15_16,
 )

@@ -1,6 +1,5 @@
 package com.andreacovelli.whispertranscriber.ui.settings
 
-import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.andreacovelli.whispertranscriber.R
@@ -10,7 +9,6 @@ import com.andreacovelli.whispertranscriber.security.CredentialOperations
 import com.andreacovelli.whispertranscriber.services.ValidationService
 import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -31,7 +29,6 @@ private fun validationError(message: UserMessage?): UserMessage = message ?: Use
 /** Owns the settings screen: persisted preferences, API keys, and their validation. */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    @param:ApplicationContext private val appContext: Context,
     private val settings: ApiKeyManager,
     private val validationService: ValidationService,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
@@ -131,7 +128,7 @@ class SettingsViewModel @Inject constructor(
                 } else {
                     updateApiKeyValidationState(
                         isGemini,
-                        KeyValidationState.Error(validationError(result.errorMessage).resolve(appContext)),
+                        KeyValidationState.Error(validationError(result.errorMessage)),
                     )
                 }
             }
@@ -159,7 +156,7 @@ class SettingsViewModel @Inject constructor(
             } else {
                 reduce(
                     SettingsMsg.RegionValidationStateChanged(
-                        RegionValidationState.Error(validationError(result.errorMessage).resolve(appContext)),
+                        RegionValidationState.Error(validationError(result.errorMessage)),
                     ),
                 )
             }
@@ -192,7 +189,7 @@ class SettingsViewModel @Inject constructor(
         if (trimmed.isBlank()) {
             updateModelValidationState(
                 isSummarizer,
-                CustomModelValidation.Error(UserMessage(R.string.custom_model_name_required).resolve(appContext)),
+                CustomModelValidation.Error(UserMessage(R.string.custom_model_name_required)),
             )
             return
         }
@@ -211,7 +208,7 @@ class SettingsViewModel @Inject constructor(
             } else {
                 updateModelValidationState(
                     isSummarizer,
-                    CustomModelValidation.Error(validationError(result.errorMessage).resolve(appContext)),
+                    CustomModelValidation.Error(validationError(result.errorMessage)),
                 )
             }
         }

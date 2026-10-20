@@ -17,6 +17,8 @@ import androidx.work.WorkerParameters
 import androidx.work.await
 import androidx.work.workDataOf
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.StoredMessages
+import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.services.SummarizationService
 import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
@@ -45,7 +47,7 @@ class SummaryWorker @AssistedInject constructor(
         val notification = backgroundShareNotifier.buildProcessingNotification(
             jobId = inputData.getInt(JOB_ID_INPUT, -1),
             displayName = inputData.getString(DISPLAY_NAME_INPUT).orEmpty(),
-            message = applicationContext.getString(R.string.transcription_notification_summarizing),
+            message = UserMessage(R.string.transcription_notification_summarizing),
         )
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
@@ -66,7 +68,7 @@ class SummaryWorker @AssistedInject constructor(
                 customModelName = inputData.getString(CUSTOM_MODEL_INPUT).orEmpty(),
             ),
         )
-        val output = workDataOf(STATUS_MESSAGE_OUTPUT to result.statusMessage)
+        val output = workDataOf(STATUS_MESSAGE_OUTPUT to result.statusMessage?.let(StoredMessages::encode))
         // Failures are already stored on the job, so the work itself always completes.
         return Result.success(output)
     }
@@ -109,19 +111,19 @@ class SummaryWorkScheduler @Inject constructor(
         return request.id
     }
 
-    /** Emits the status message once the given summary work finishes, then completes. */
-    fun statusMessages(workId: UUID): Flow<String> = workManager.getWorkInfoByIdFlow(workId)
+    /** Emits the status message (null when there is none) once the summary work finishes, then completes. */
+    fun statusMessages(workId: UUID): Flow<UserMessage?> = workManager.getWorkInfoByIdFlow(workId)
         .filter { info -> info?.state?.isFinished == true }
         .take(1)
         .map { info ->
             info?.takeIf { it.state == WorkInfo.State.SUCCEEDED }
                 ?.outputData
                 ?.getString(SummaryWorker.STATUS_MESSAGE_OUTPUT)
-                .orEmpty()
+                .let(StoredMessages::decode)
         }
 
     /** Cancels the stored attempt first so a late provider response cannot be saved. */
-    suspend fun cancel(jobId: Int): String {
+    suspend fun cancel(jobId: Int): UserMessage {
         val statusMessage = summarizationService.cancelSummary(jobId)
         workManager.cancelUniqueWork(workName(jobId)).await()
         return statusMessage

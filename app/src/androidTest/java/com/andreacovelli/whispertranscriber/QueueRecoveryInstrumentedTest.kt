@@ -38,7 +38,11 @@ class QueueRecoveryInstrumentedTest {
             fixture.queue.recoverAndMaintainQueue()
             assertFalse(checkNotNull(fixture.repository.getJob(id)).isRunning)
             assertTrue(fixture.scheduler.scheduled.isEmpty())
-            val claimed = fixture.repository.claimJobForExecution(id, fixture.coordinator.ownerId(), "Starting")
+            val claimed = fixture.repository.claimJobForExecution(
+                id,
+                fixture.coordinator.ownerId(),
+                UserMessage(R.string.transcription_status_starting),
+            )
             assertTrue(claimed != null)
         }
     }
@@ -119,7 +123,11 @@ class QueueRecoveryInstrumentedTest {
     @Test
     fun processingNotification_includesOpenAndCancelActions() {
         RepairTestFixture(context).use { fixture ->
-            val notification = fixture.notifier.buildProcessingNotification(7, "audio.wav", "Starting")
+            val notification = fixture.notifier.buildProcessingNotification(
+                7,
+                "audio.wav",
+                UserMessage(R.string.transcription_status_starting),
+            )
             assertTrue(notification.contentIntent != null)
             assertTrue(notification.actions.any { it.title == context.getString(R.string.stop_transcription) })
         }

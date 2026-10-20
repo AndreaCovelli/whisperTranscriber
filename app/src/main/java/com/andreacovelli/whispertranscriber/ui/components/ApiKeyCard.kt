@@ -36,7 +36,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.settings.ApiKeyState
+import com.andreacovelli.whispertranscriber.ui.asString
 import com.andreacovelli.whispertranscriber.ui.settings.KeyValidationState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -188,7 +190,7 @@ private fun ApiKeyValidatingState() {
 }
 
 @Composable
-private fun ApiKeyErrorState(message: String) {
+private fun ApiKeyErrorState(message: UserMessage) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -200,7 +202,7 @@ private fun ApiKeyErrorState(message: String) {
             tint = MaterialTheme.colorScheme.error,
         )
         Text(
-            message,
+            message.asString(),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.error,
         )
@@ -240,7 +242,7 @@ private fun ApiKeyIdleState(apiKeyState: ApiKeyState) {
                     tint = MaterialTheme.colorScheme.error,
                 )
                 Text(
-                    stringResource(R.string.api_key_keystore_error, apiKeyState.message),
+                    stringResource(R.string.api_key_keystore_error, apiKeyState.message.asString()),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                 )

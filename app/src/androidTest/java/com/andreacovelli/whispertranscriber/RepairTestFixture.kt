@@ -40,7 +40,6 @@ internal class RepairTestFixture(context: Context, queryCallback: RoomDatabase.Q
     val scheduler = RecordingScheduler()
     val settings = ApiKeyManager(context)
     val queue = TranscriptionQueueService(
-        context,
         settings,
         repository,
         audioStore,
@@ -59,7 +58,6 @@ internal class RepairTestFixture(context: Context, queryCallback: RoomDatabase.Q
         clients,
         coordinator,
         operations,
-        context,
         Dispatchers.IO,
     )
     val runner = TranscriptionExecutionRunner(

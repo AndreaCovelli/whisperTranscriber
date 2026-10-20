@@ -74,7 +74,7 @@ The app uses:
 - Use the checked-in Gradle wrapper, never a system Gradle installation.
 - The project requires JDK 21 through `kotlin.jvmToolchain(21)`.
 - The app currently has `minSdk = 26`, `targetSdk = 36`, and `compileSdk = 37`.
-- The current Room database schema version is 15.
+- The current Room database schema version is 16.
 - Android instrumentation work needs an installed Android SDK and the appropriate
   emulator system image.
 - On Windows, Android Studio's bundled JBR is commonly located at:
@@ -170,6 +170,9 @@ toolchain or incremental-build settings.
   state is involved. A job must not be executed or summarized twice.
 - Reuse centralized job and summary status constants. Stored status values are
   database data; changing them can require a migration.
+- Pass user-visible text below the UI as `UserMessage`, not resolved strings.
+  Persist job messages through `StoredMessages`, and never rename or remove a
+  code in `StoredMessageRegistry` that existing rows may contain.
 
 ### Audio, Queue, and Background Work
 

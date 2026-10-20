@@ -1,8 +1,9 @@
 package com.andreacovelli.whispertranscriber.services
 
-import android.content.Context
 import android.net.Uri
+import com.andreacovelli.whispertranscriber.QuantityText
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.background.BackgroundShareNotifier
 import com.andreacovelli.whispertranscriber.background.PostTranscriptionWorkSpec
 import com.andreacovelli.whispertranscriber.data.HistoryContentField
@@ -24,7 +25,6 @@ import com.andreacovelli.whispertranscriber.settings.ApiKeyState
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
-import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -39,11 +39,10 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-data class QueuedShareResult(val jobsCreated: Int, val statusMessage: String, val firstCreatedJobId: Int? = null)
+data class QueuedShareResult(val jobsCreated: Int, val statusMessage: UserMessage, val firstCreatedJobId: Int? = null)
 
 @Singleton
 class TranscriptionQueueService @Inject constructor(
-    @param:ApplicationContext private val context: Context,
     private val settings: ApiKeyManager,
     private val repository: TranscriptionRepository,
     private val queuedAudioStore: QueuedAudioStore,
@@ -97,7 +96,7 @@ class TranscriptionQueueService @Inject constructor(
         if (preparedAudio.isEmpty()) {
             return QueuedShareResult(
                 jobsCreated = 0,
-                statusMessage = context.getString(R.string.main_waiting_for_audios),
+                statusMessage = UserMessage(R.string.main_waiting_for_audios),
             )
         }
 
@@ -146,7 +145,7 @@ class TranscriptionQueueService @Inject constructor(
                     backgroundShareNotifier.showBackgroundProcessing(
                         jobId = rawJobId.toInt(),
                         displayName = prepared.displayName,
-                        message = context.getString(R.string.background_share_waiting_to_start_notification_body),
+                        message = UserMessage(R.string.background_share_waiting_to_start_notification_body),
                     )
                 } catch (_: RuntimeException) {
                     // Notification failures must not prevent scheduling committed jobs.
@@ -155,11 +154,7 @@ class TranscriptionQueueService @Inject constructor(
             scheduleNextQueuedJobIfIdle()
             QueuedShareResult(
                 jobsCreated = preparedAudio.size,
-                statusMessage = context.resources.getQuantityString(
-                    R.plurals.main_queued_files,
-                    preparedAudio.size,
-                    preparedAudio.size,
-                ),
+                statusMessage = UserMessage.verbatim(QuantityText(R.plurals.main_queued_files, preparedAudio.size)),
                 firstCreatedJobId = jobIds.firstOrNull()?.toInt(),
             )
         }
@@ -167,7 +162,7 @@ class TranscriptionQueueService @Inject constructor(
 
     suspend fun cancelJob(jobId: Int) {
         val job = repository.getJob(jobId)
-        repository.cancelJob(jobId, context.getString(R.string.job_cancelled_error))
+        repository.cancelJob(jobId, UserMessage(R.string.job_cancelled_error))
         operations.cancel(jobId)
         cancelScheduledExecution(job)
         backgroundShareNotifier.cancelResult(jobId)
@@ -306,7 +301,7 @@ class TranscriptionQueueService @Inject constructor(
     suspend fun cancelBackgroundSummaryIfRunning(jobId: Int): Boolean {
         val job = repository.getJob(jobId) ?: return false
         if (!job.isRunning || !job.isSummarizing) return false
-        repository.cancelJob(jobId, context.getString(R.string.job_cancelled_error))
+        repository.cancelJob(jobId, UserMessage(R.string.job_cancelled_error))
         operations.cancel(jobId)
         cancelScheduledExecution(job)
         backgroundShareNotifier.cancelBackgroundProcessing(jobId)
@@ -325,7 +320,7 @@ class TranscriptionQueueService @Inject constructor(
                 backgroundShareNotifier.showBackgroundProcessing(
                     jobId,
                     job.displayName,
-                    context.getString(R.string.transcription_foreground_denied_switching_backend),
+                    UserMessage(R.string.transcription_foreground_denied_switching_backend),
                 )
                 return true
             }
@@ -338,18 +333,14 @@ class TranscriptionQueueService @Inject constructor(
     suspend fun failBackgroundStart(jobId: Int) {
         executionCoordinator.awaitRecovery()
         val job = repository.getJob(jobId) ?: return
-        if (!repository.failUnstartedJob(
-                jobId,
-                context.getString(R.string.transcription_foreground_denied_reopen),
-            )
-        ) {
+        if (!repository.failUnstartedJob(jobId, UserMessage(R.string.transcription_foreground_denied_reopen))) {
             return
         }
         backgroundShareNotifier.cancelBackgroundProcessing(jobId)
         backgroundShareNotifier.showFailure(
             jobId = jobId,
             displayName = job.displayName,
-            message = context.getString(R.string.transcription_foreground_denied_reopen),
+            message = UserMessage(R.string.transcription_foreground_denied_reopen),
         )
         scheduleNextQueuedJobIfIdle()
     }

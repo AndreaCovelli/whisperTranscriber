@@ -376,9 +376,9 @@ class HistoryFtsSyncInstrumentedTest {
     }
 
     @Test
-    fun everyExportedSchemaUpgradesToVersion15() {
-        (7..14).forEach { version ->
-            val databaseName = "exported-schema-$version-to-15.db"
+    fun everyExportedSchemaUpgradesToVersion16() {
+        (7..15).forEach { version ->
+            val databaseName = "exported-schema-$version-to-16.db"
             migrationHelper.createDatabase(databaseName, version).close()
             openMigratedDatabase(databaseName).close()
             context.deleteDatabase(databaseName)
@@ -435,9 +435,9 @@ class HistoryFtsSyncInstrumentedTest {
     }
 
     @Test
-    fun everyLegacyRawSchemaUpgradesToVersion15() {
+    fun everyLegacyRawSchemaUpgradesToVersion16() {
         (1..6).forEach { version ->
-            val databaseName = "raw-schema-$version-to-15.db"
+            val databaseName = "raw-schema-$version-to-16.db"
             createLegacyRawDatabase(databaseName, version)
             openMigratedDatabase(databaseName).close()
             context.deleteDatabase(databaseName)

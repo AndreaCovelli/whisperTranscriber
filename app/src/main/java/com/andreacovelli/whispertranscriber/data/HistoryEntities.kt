@@ -46,6 +46,8 @@ data class TranscriptionJob(
     val queuedSummarizerProviderName: String = "",
     val queuedSummarizerCustomModelName: String = "",
     val status: String = JOB_STATUS_QUEUED,
+    // Encoded progress text while running (see StoredMessages); error and summaryError are encoded too.
+    val statusMessage: String? = null,
     val progress: Float = 0f,
     val transcript: String = "",
     val language: String = "",

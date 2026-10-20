@@ -258,7 +258,7 @@ Configure the transcription and summarizer models, manage API keys, enter a Micr
 - `MainActivity` hosts Compose navigation; `ShareReceiverActivity` accepts Android share intents through a retained intake ViewModel.
 - Main, Settings, and History ViewModels expose immutable state through `StateFlow` and use unidirectional data flow: screens dispatch messages, pure reducers compute state, and ViewModels run side effects. History uses Room-backed Paging with date grouping.
 - `TranscriptionQueueService`, `QueueExecutionCoordinator`, and `TranscriptionExecutionRunner` stage, recover, serialize, and persist work across WorkManager and the Android job service.
-- Room stores history, FTS search, and persistent queue state (schema v15). Content mutations and claims are transactional; prior-process claims recover independently of surviving scheduler entries.
+- Room stores history, FTS search, and persistent queue state (schema v16). Job progress, errors, and summary errors are stored as message codes and arguments, then translated when shown. Content mutations and claims are transactional; prior-process claims recover independently of surviving scheduler entries.
 - `ApiKeyManager` and `KeystoreCrypto` encrypt credentials in DataStore. Provider transports cancel each operation independently.
 - `HardwareAudioConverter` uses MediaExtractor/MediaCodec for 16 kHz mono WAV conversion.
 

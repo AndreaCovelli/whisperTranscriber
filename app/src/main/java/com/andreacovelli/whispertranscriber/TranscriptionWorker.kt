@@ -29,9 +29,9 @@ class TranscriptionWorker @AssistedInject constructor(
     }
 
     override suspend fun getForegroundInfo(): ForegroundInfo =
-        createForegroundInfo(applicationContext.getString(R.string.transcription_status_starting))
+        createForegroundInfo(UserMessage(R.string.transcription_status_starting))
 
-    private fun createForegroundInfo(progressText: String): ForegroundInfo {
+    private fun createForegroundInfo(progressText: UserMessage): ForegroundInfo {
         val jobId = inputData.getInt(TranscriptionQueueService.QUEUED_JOB_ID_INPUT, -1)
         val displayName = inputData.getString(TranscriptionQueueService.QUEUED_JOB_DISPLAY_NAME_INPUT)
             ?: applicationContext.getString(R.string.background_share_generic_audio_label)
@@ -44,7 +44,7 @@ class TranscriptionWorker @AssistedInject constructor(
         }
     }
 
-    private suspend fun promoteToForeground(progressText: String): Boolean = try {
+    private suspend fun promoteToForeground(progressText: UserMessage): Boolean = try {
         setForeground(createForegroundInfo(progressText))
         true
     } catch (error: IllegalStateException) {
@@ -54,7 +54,7 @@ class TranscriptionWorker @AssistedInject constructor(
         false
     }
 
-    private suspend fun updateNotification(jobId: Int, progressText: String) {
+    private suspend fun updateNotification(jobId: Int, progressText: UserMessage) {
         if (!promoteToForeground(progressText)) {
             throw com.andreacovelli.whispertranscriber.transcription.ProviderResponseException(
                 R.string.transcription_foreground_denied_reopen,
@@ -67,7 +67,7 @@ class TranscriptionWorker @AssistedInject constructor(
         val jobId = inputData.getInt(TranscriptionQueueService.QUEUED_JOB_ID_INPUT, -1)
         if (jobId == -1) return Result.failure()
         val speakerLabelPrefix = inputData.getString(TranscriptionQueueService.SPEAKER_LABEL_PREFIX_INPUT).orEmpty()
-        if (!promoteToForeground(applicationContext.getString(R.string.transcription_status_starting))) {
+        if (!promoteToForeground(UserMessage(R.string.transcription_status_starting))) {
             return if (queueService.onForegroundPromotionDenied(jobId)) {
                 Result.success()
             } else {

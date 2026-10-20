@@ -39,7 +39,7 @@ class SettingsReducerTest {
     @Test
     fun changingTheRegion_clearsTheMicrosoftKeyValidation() {
         val state = SettingsReducer.reduce(
-            SettingsUiState(microsoftSpeechKeyValidation = KeyValidationState.Error("bad key")),
+            SettingsUiState(microsoftSpeechKeyValidation = KeyValidationState.Error(UserMessage.verbatim("bad key"))),
             SettingsMsg.SetMicrosoftSpeechRegion("westeurope"),
         )
 
@@ -65,13 +65,13 @@ class SettingsReducerTest {
     fun forgettingAKey_clearsItsValidationError() {
         val state = SettingsReducer.reduce(
             SettingsUiState(
-                geminiKeyValidation = KeyValidationState.Error("bad key"),
-                microsoftSpeechKeyValidation = KeyValidationState.Error("other key"),
+                geminiKeyValidation = KeyValidationState.Error(UserMessage.verbatim("bad key")),
+                microsoftSpeechKeyValidation = KeyValidationState.Error(UserMessage.verbatim("other key")),
             ),
             SettingsMsg.ForgetGeminiKey,
         )
 
         assertEquals(KeyValidationState.Idle, state.geminiKeyValidation)
-        assertEquals(KeyValidationState.Error("other key"), state.microsoftSpeechKeyValidation)
+        assertEquals(KeyValidationState.Error(UserMessage.verbatim("other key")), state.microsoftSpeechKeyValidation)
     }
 }

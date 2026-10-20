@@ -10,6 +10,7 @@ import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_COMPLETED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_ERROR
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_RETRY_SCHEDULED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_RUNNING
 import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_CANCELLED
 import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_SUMMARIZING
 import kotlinx.coroutines.flow.Flow
@@ -27,13 +28,14 @@ interface TranscriptionJobDao {
     @Query(
         """
         UPDATE active_jobs
-        SET status = :status,
+        SET status = '$JOB_STATUS_RUNNING',
+            statusMessage = :statusMessage,
             progress = :progress
         WHERE id = :id
           AND executionOwnerId = :ownerId
         """,
     )
-    suspend fun updateStatusAndProgress(id: Int, ownerId: String, status: String, progress: Float): Int
+    suspend fun updateStatusAndProgress(id: Int, ownerId: String, statusMessage: String, progress: Float): Int
 
     @Query(
         """
@@ -85,12 +87,13 @@ interface TranscriptionJobDao {
     @Query(
         """
         UPDATE active_jobs
-        SET status = :status
+        SET status = '$JOB_STATUS_RUNNING',
+            statusMessage = :statusMessage
         WHERE id = :id
           AND executionOwnerId = :ownerId
         """,
     )
-    suspend fun updateStatus(id: Int, ownerId: String, status: String): Int
+    suspend fun updateStatus(id: Int, ownerId: String, statusMessage: String): Int
 
     @Query("UPDATE active_jobs SET executionBackend = :executionBackend WHERE id = :id")
     suspend fun updateExecutionBackend(id: Int, executionBackend: String)
@@ -242,6 +245,7 @@ interface TranscriptionJobDao {
             j.queuedSummarizerProviderName,
             j.queuedSummarizerCustomModelName,
             j.status,
+            j.statusMessage,
             j.progress,
             COALESCE(h.text, j.transcript) AS transcript,
             COALESCE(h.language, j.language) AS language,
@@ -346,14 +350,15 @@ interface TranscriptionJobDao {
         UPDATE active_jobs
         SET isRunning = 1,
             executionOwnerId = :ownerId,
-            status = :status
+            status = '$JOB_STATUS_RUNNING',
+            statusMessage = :statusMessage
         WHERE id = :jobId
           AND isRunning = 0
           AND status IN ('$JOB_STATUS_QUEUED', '$JOB_STATUS_RETRY_SCHEDULED')
           AND NOT EXISTS (SELECT 1 FROM active_jobs WHERE id != :jobId AND isRunning = 1)
         """,
     )
-    suspend fun claimJobForExecution(jobId: Int, ownerId: String, status: String): Int
+    suspend fun claimJobForExecution(jobId: Int, ownerId: String, statusMessage: String): Int
 
     @Query(
         """

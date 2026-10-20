@@ -76,7 +76,7 @@ class BackgroundShareJobService : JobService() {
                 backgroundShareNotifier.buildProcessingNotification(
                     jobId = jobId,
                     displayName = displayName,
-                    message = getString(R.string.background_share_waiting_to_start_notification_body),
+                    message = UserMessage(R.string.background_share_waiting_to_start_notification_body),
                 ),
                 JOB_END_NOTIFICATION_POLICY_REMOVE,
             )
@@ -159,7 +159,7 @@ class BackgroundShareJobService : JobService() {
         super.onDestroy()
     }
 
-    private fun updateNotification(jobId: Int, displayName: String, progressText: String) {
+    private fun updateNotification(jobId: Int, displayName: String, progressText: UserMessage) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
 
         val params = runningParams[jobId] ?: return

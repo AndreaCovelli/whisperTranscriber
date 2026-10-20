@@ -171,6 +171,7 @@
     <!-- Job and summary status labels; the stored status codes are database data. -->
     <string name="job_status_queued">Queued</string>
     <string name="job_status_retry_scheduled">Retry scheduled</string>
+    <string name="job_status_running">Running…</string>
     <string name="job_status_completed">Completed</string>
     <string name="job_status_cleared">Cleared</string>
     <string name="job_status_error">Error</string>
@@ -283,4 +284,6 @@
     <string name="notification_public_summary_ready">Summary ready</string>
     <string name="notification_public_failed">Transcription needs attention</string>
     <string name="notification_public_processing">Transcribing audio</string>
+    <string name="verbatim_text" translatable="false">%1$s</string>
+    <string name="stored_message_unavailable">Details are unavailable.</string>
 </resources>

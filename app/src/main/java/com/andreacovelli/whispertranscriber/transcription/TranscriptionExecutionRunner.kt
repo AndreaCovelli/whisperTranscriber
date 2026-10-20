@@ -7,6 +7,7 @@ import android.util.Log
 import androidx.core.net.toUri
 import com.andreacovelli.whispertranscriber.QuantityText
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.UserFacingException
 import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.background.BackgroundShareNotifier
 import com.andreacovelli.whispertranscriber.background.BackgroundShareResultKind
@@ -18,7 +19,6 @@ import com.andreacovelli.whispertranscriber.queue.QueueExecutionCoordinator
 import com.andreacovelli.whispertranscriber.queue.QueuedAudioStore
 import com.andreacovelli.whispertranscriber.queue.postTranscriptionWorkSpec
 import com.andreacovelli.whispertranscriber.services.SummarizationService
-import com.andreacovelli.whispertranscriber.userMessageOr
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.IOException
@@ -68,7 +68,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         jobId: Int,
         executionOwnerId: String,
         speakerLabelPrefix: String,
-        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
+        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: UserMessage) -> Unit,
     ): JobRunOutcome = executionCoordinator.runSerialized(jobId) {
         val ownerId = executionCoordinator.ownerId(executionOwnerId)
         try {
@@ -88,7 +88,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         jobId: Int,
         executionOwnerId: String,
         speakerLabelPrefix: String,
-        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
+        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: UserMessage) -> Unit,
     ): JobRunOutcome {
         backgroundShareNotifier.cancelRetryScheduled(jobId)
         backgroundShareNotifier.cancelBackgroundProcessing(jobId)
@@ -96,7 +96,7 @@ class TranscriptionExecutionRunner @Inject constructor(
             repository.claimJobForExecution(
                 jobId,
                 executionOwnerId,
-                applicationContext.getString(R.string.transcription_status_starting),
+                UserMessage(R.string.transcription_status_starting),
             )
                 ?: return when (val current = repository.getJob(jobId)) {
                     null -> JobRunOutcome.Failure
@@ -130,12 +130,11 @@ class TranscriptionExecutionRunner @Inject constructor(
                 val exhaustedMessage = UserMessage(
                     R.string.transcription_retries_exhausted,
                     listOf(QuantityText(R.plurals.transcription_attempt_count, job.retryCount + 1), e.userMessage),
-                ).resolve(applicationContext)
+                )
                 handleTerminalFailure(jobId, executionOwnerId, displayName, postTranscriptionWorkSpec, exhaustedMessage)
                 JobRunOutcome.Failure
             } else {
                 val retryMessage = UserMessage(R.string.transcription_retry_notification_body, listOf(e.userMessage))
-                    .resolve(applicationContext)
                 withContext(NonCancellable + ioDispatcher) {
                     requireOwnedUpdate(repository.markRetryScheduled(jobId, executionOwnerId))
                 }
@@ -152,33 +151,32 @@ class TranscriptionExecutionRunner @Inject constructor(
                 executionOwnerId,
                 displayName,
                 postTranscriptionWorkSpec,
-                terminalFailureMessage(e).resolve(applicationContext),
+                terminalFailureMessage(e),
             )
             JobRunOutcome.Failure
         }
     }
 
     /** Shows app-written messages as is; other exception text may come from a provider or the platform. */
-    private fun terminalFailureMessage(error: Exception): UserMessage = error.userMessageOr(
-        when (error) {
-            is IOException -> R.string.transcription_audio_processing_failed
-            is SecurityException -> R.string.transcription_audio_access_denied
-            is SQLException -> R.string.transcription_storage_failed
-            else -> R.string.transcription_failed_unexpected
-        },
-    )
+    private fun terminalFailureMessage(error: Exception): UserMessage =
+        (error as? UserFacingException)?.userMessage ?: when (error) {
+            is IOException -> UserMessage(R.string.transcription_audio_processing_failed)
+            is SecurityException -> UserMessage(R.string.transcription_audio_access_denied)
+            is SQLException -> UserMessage(R.string.transcription_storage_failed)
+            else -> UserMessage(R.string.transcription_failed_unexpected)
+        }
 
     private suspend fun executeClaimedJob(
         job: TranscriptionJob,
         executionOwnerId: String,
         speakerLabelPrefix: String,
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec?,
-        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
+        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: UserMessage) -> Unit,
     ): JobRunOutcome {
         onProgressNotification(
             job.id,
             job.displayName,
-            applicationContext.getString(R.string.transcription_notification_processing, job.displayName),
+            UserMessage(R.string.transcription_notification_processing, listOf(job.displayName)),
         )
 
         val durableTranscript = if (job.historyId != null) {
@@ -206,7 +204,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         val stagedUri = when (val resolution = QueuedAudioInputResolver.resolve(job)) {
             is QueuedAudioInputResolution.Ready -> resolution.uri
             QueuedAudioInputResolution.MissingStagedFile -> {
-                val message = applicationContext.getString(R.string.queued_audio_unavailable)
+                val message = UserMessage(R.string.queued_audio_unavailable)
                 requireOwnedUpdate(
                     repository.updateError(
                         job.id,
@@ -246,7 +244,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         executionOwnerId: String,
         displayName: String,
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec?,
-        message: String,
+        message: UserMessage,
     ) {
         backgroundShareNotifier.cancelBackgroundProcessing(jobId)
         if (repository.updateError(jobId, executionOwnerId, message, JOB_STATUS_ERROR)) {
@@ -264,7 +262,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         speakerDiarizationEnabled: Boolean,
         speakerLabelPrefix: String,
         stagedFilePath: String?,
-        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
+        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: UserMessage) -> Unit,
     ) {
         val usingMicrosoftSpeech = providerExecution is ProviderExecution.MicrosoftSpeech
         var preparedInput: PreparedAudioInput? = null
@@ -276,18 +274,17 @@ class TranscriptionExecutionRunner @Inject constructor(
                 usingMicrosoftSpeech = usingMicrosoftSpeech,
                 listener = object : AudioPreparationListener {
                     override suspend fun onStatus(status: UserMessage, progress: Float?) {
-                        val text = status.resolve(applicationContext)
                         requireOwnedUpdate(
                             if (progress == null) {
-                                repository.updateStatus(jobId, executionOwnerId, text)
+                                repository.updateStatus(jobId, executionOwnerId, status)
                             } else {
-                                repository.updateStatusAndProgress(jobId, executionOwnerId, text, progress)
+                                repository.updateStatusAndProgress(jobId, executionOwnerId, status, progress)
                             },
                         )
                     }
 
                     override suspend fun onNotification(text: UserMessage) {
-                        onProgressNotification(jobId, displayName, text.resolve(applicationContext))
+                        onProgressNotification(jobId, displayName, text)
                     }
                 },
             )
@@ -328,7 +325,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         providerExecution: ProviderExecution,
         speakerDiarizationEnabled: Boolean,
         speakerLabelPrefix: String,
-        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
+        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: UserMessage) -> Unit,
     ): TranscriptionData {
         val transcriber = transcriberFactory.buildTranscriber(
             preparedInput = preparedInput,
@@ -337,18 +334,17 @@ class TranscriptionExecutionRunner @Inject constructor(
             speakerLabelPrefix = speakerLabelPrefix,
         )
         var resultData: TranscriptionData? = null
-        suspend fun reportProviderStatus(message: String) {
-            val providerMessage = applicationContext.getString(
+        suspend fun reportProviderStatus(message: UserMessage) {
+            val providerMessage = UserMessage(
                 R.string.transcription_status_provider_message,
-                providerExecution.displayName.resolve(applicationContext),
-                message,
+                listOf(providerExecution.displayName, message),
             )
             requireOwnedUpdate(repository.updateStatus(jobId, executionOwnerId, providerMessage))
             onProgressNotification(jobId, displayName, providerMessage)
         }
         transcriber.transcribe().collect { result ->
             when (result) {
-                is TranscriptionResult.Loading -> reportProviderStatus(result.message.resolve(applicationContext))
+                is TranscriptionResult.Loading -> reportProviderStatus(result.message)
                 is TranscriptionResult.Success -> resultData = result.data
                 is TranscriptionResult.Error -> throw result.exception
             }
@@ -360,7 +356,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         jobId: Int,
         executionOwnerId: String,
         displayName: String,
-        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: String) -> Unit,
+        onProgressNotification: suspend (jobId: Int, displayName: String, progressText: UserMessage) -> Unit,
     ) {
         // Re-read the stored config: changing the auto-summary settings rewrites it for unfinished jobs.
         val postTranscriptionWorkSpec = repository.getJob(jobId)?.postTranscriptionWorkSpec()
@@ -369,7 +365,6 @@ class TranscriptionExecutionRunner @Inject constructor(
                 jobId = jobId,
                 settings = postTranscriptionWorkSpec.summarizationSettings,
                 executionOwnerId = executionOwnerId,
-                fallbackStatusMessage = applicationContext.getString(R.string.job_status_completed),
                 onStatusUpdate = { statusMessage ->
                     if (postTranscriptionWorkSpec.notifyResult) {
                         onProgressNotification(jobId, displayName, statusMessage)
@@ -400,7 +395,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec?,
         jobId: Int,
         displayName: String,
-        message: String,
+        message: UserMessage,
     ) {
         if (postTranscriptionWorkSpec?.notifyResult != true) return
         backgroundShareNotifier.showFailure(

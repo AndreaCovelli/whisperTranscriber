@@ -29,6 +29,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
+import com.andreacovelli.whispertranscriber.ui.asString
 import com.andreacovelli.whispertranscriber.ui.settings.CustomModelValidation
 
 @Composable
@@ -160,7 +161,7 @@ fun ProviderSelector(
                             }
                             is CustomModelValidation.Error -> {
                                 Text(
-                                    customModelValidation.message,
+                                    customModelValidation.message.asString(),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.error,
                                 )

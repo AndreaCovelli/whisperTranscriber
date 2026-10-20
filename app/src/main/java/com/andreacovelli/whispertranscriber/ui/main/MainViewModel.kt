@@ -1,13 +1,15 @@
 package com.andreacovelli.whispertranscriber.ui.main
 
-import android.content.Context
 import android.content.Intent
 import android.database.SQLException
 import android.net.Uri
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.andreacovelli.whispertranscriber.QuantityText
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.StoredMessages
+import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.background.SummaryWorkScheduler
 import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
@@ -22,13 +24,13 @@ import com.andreacovelli.whispertranscriber.settings.decodeTranscriptionProvider
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_CANCELLED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_ERROR
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_RUNNING
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
 import com.andreacovelli.whispertranscriber.ui.TextTransfer
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 import com.andreacovelli.whispertranscriber.ui.screens.buildBatchProgressState
 import com.andreacovelli.whispertranscriber.userMessageOr
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineDispatcher
@@ -48,8 +50,9 @@ data class TranscriptionJobState(
     val displayName: String = "",
     val provider: TranscriptionProvider = TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
     val requestedModel: String = "",
-    // Stored status: a JOB_STATUS_* code or provider progress text. The job card resolves the label.
     val status: String = JOB_STATUS_QUEUED,
+    // Progress text while running; null otherwise.
+    val statusMessage: UserMessage? = null,
     val progress: Float = 0f, // 0..1 conversion progress
     val transcript: String = "",
     val language: String = "",
@@ -61,8 +64,8 @@ data class TranscriptionJobState(
     val autoSummaryAttempted: Boolean = false,
     val batchId: String = "",
     val historyId: Int? = null,
-    val error: String? = null,
-    val summaryError: String? = null,
+    val error: UserMessage? = null,
+    val summaryError: UserMessage? = null,
     val isRunning: Boolean = false,
     val isSummarizing: Boolean = false,
     val canRetry: Boolean = false,
@@ -76,6 +79,7 @@ fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     provider = decodeTranscriptionProvider(providerName),
     requestedModel = requestedModel.orEmpty(),
     status = status,
+    statusMessage = if (status == JOB_STATUS_RUNNING) StoredMessages.decode(statusMessage) else null,
     progress = progress,
     transcript = transcript,
     language = language,
@@ -89,8 +93,8 @@ fun TranscriptionJob.toUiState(): TranscriptionJobState = TranscriptionJobState(
     autoSummaryAttempted = autoSummaryAttempted,
     batchId = batchId.orEmpty(),
     historyId = historyId,
-    error = error,
-    summaryError = summaryError,
+    error = StoredMessages.decode(error),
+    summaryError = StoredMessages.decode(summaryError),
     isRunning = isRunning,
     isSummarizing = isSummarizing,
     canRetry = status in setOf(JOB_STATUS_ERROR, JOB_STATUS_CANCELLED) &&
@@ -112,7 +116,6 @@ internal fun buildJobPresentationState(jobs: List<TranscriptionJob>): JobPresent
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
-    @param:ApplicationContext private val appContext: Context,
     private val settings: ApiKeyManager,
     private val repository: TranscriptionRepository,
     private val queueService: TranscriptionQueueService,
@@ -123,9 +126,7 @@ class MainViewModel @Inject constructor(
     suspend fun shareText(text: String, title: String, launch: (Intent) -> Unit): Boolean =
         textTransfer.share(text, title, launch)
 
-    private val _uiState = MutableStateFlow(
-        MainUiState(status = appContext.getString(R.string.main_waiting_for_audios)),
-    )
+    private val _uiState = MutableStateFlow(MainUiState())
     val uiState = _uiState.asStateFlow()
     private val _events = Channel<Int>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
@@ -197,9 +198,7 @@ class MainViewModel @Inject constructor(
         if (uris.isEmpty()) return
 
         viewModelScope.launch {
-            val queuingMessage =
-                appContext.resources.getQuantityString(R.plurals.main_queuing_files, uris.size, uris.size)
-            reduce(MainMsg.StatusChanged(queuingMessage))
+            reduce(MainMsg.StatusChanged(UserMessage.verbatim(QuantityText(R.plurals.main_queuing_files, uris.size))))
             val firstCreatedJobId = try {
                 val queueSettings = settings.getTranscriptionQueueSettings()
                 val result = queueService.enqueueSharedAudio(
@@ -227,8 +226,7 @@ class MainViewModel @Inject constructor(
     }
 
     private fun reportShareQueueFailure(error: Exception): Int? {
-        val message = error.userMessageOr(R.string.background_share_queue_failed_body).resolve(appContext)
-        reduce(MainMsg.StatusChanged(message))
+        reduce(MainMsg.StatusChanged(error.userMessageOr(R.string.background_share_queue_failed_body)))
         return null
     }
 
@@ -252,7 +250,7 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             val workId = summaryScheduler.enqueue(jobId, displayName, settings.getSummarizationSettings())
             summaryScheduler.statusMessages(workId).collect { statusMessage ->
-                if (statusMessage.isNotEmpty()) reduce(MainMsg.StatusChanged(statusMessage))
+                statusMessage?.let { reduce(MainMsg.StatusChanged(it)) }
             }
         }
     }
@@ -260,7 +258,7 @@ class MainViewModel @Inject constructor(
     private fun cancelSummary(jobId: Int) {
         viewModelScope.launch {
             val statusMessage = if (queueService.cancelBackgroundSummaryIfRunning(jobId)) {
-                appContext.getString(R.string.summarization_status_cancelled)
+                UserMessage(R.string.summarization_status_cancelled)
             } else {
                 summaryScheduler.cancel(jobId)
             }

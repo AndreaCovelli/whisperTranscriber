@@ -1,6 +1,5 @@
 package com.andreacovelli.whispertranscriber.services
 
-import android.content.Context
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.UserFacingIllegalStateException
 import com.andreacovelli.whispertranscriber.UserMessage
@@ -22,7 +21,6 @@ import com.google.genai.errors.GenAiIOException
 import com.google.genai.types.Content
 import com.google.genai.types.GenerateContentConfig
 import com.google.genai.types.Part
-import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -31,7 +29,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 
-data class SummarizationResult(val statusMessage: String, val errorMessage: String? = null)
+/** [statusMessage] is null when there is nothing new to report, such as an attempt that was not claimed. */
+data class SummarizationResult(val statusMessage: UserMessage?, val errorMessage: UserMessage? = null)
 
 data class SummaryData(val text: String, val model: String)
 
@@ -45,7 +44,6 @@ class SummarizationService @Inject constructor(
     private val genAiClientFactory: GenAiClientFactory,
     private val executionCoordinator: QueueExecutionCoordinator,
     private val operations: JobOperationRegistry,
-    @param:ApplicationContext private val applicationContext: Context,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
     /**
@@ -56,23 +54,21 @@ class SummarizationService @Inject constructor(
         jobId: Int,
         settings: SummarizationSettings,
         executionOwnerId: String? = null,
-        fallbackStatusMessage: String = "",
-        onStatusUpdate: suspend (String) -> Unit = {},
+        onStatusUpdate: suspend (UserMessage) -> Unit = {},
     ): SummarizationResult = operations.track(jobId) {
-        summarizeAttempt(jobId, settings, executionOwnerId, fallbackStatusMessage, onStatusUpdate)
+        summarizeAttempt(jobId, settings, executionOwnerId, onStatusUpdate)
     }
 
     private suspend fun summarizeAttempt(
         jobId: Int,
         settings: SummarizationSettings,
         executionOwnerId: String?,
-        fallbackStatusMessage: String,
-        onStatusUpdate: suspend (String) -> Unit,
+        onStatusUpdate: suspend (UserMessage) -> Unit,
     ): SummarizationResult {
         val summarizerSelection = try {
             resolveSummarizerSelection(settings)
         } catch (e: IllegalStateException) {
-            val message = e.userMessageOr(R.string.provider_request_failed).resolve(applicationContext)
+            val message = e.userMessageOr(R.string.provider_request_failed)
             return SummarizationResult(statusMessage = message, errorMessage = message)
         }
 
@@ -98,13 +94,13 @@ class SummarizationService @Inject constructor(
                     )
                 }
             }
-            if (!claimed) return SummarizationResult(statusMessage = fallbackStatusMessage)
+            if (!claimed) return SummarizationResult(statusMessage = null)
 
             val job = repository.getJob(jobId)
             if (job == null) {
                 summarizationRepository.invalidateSummaryAttempt(jobId, attemptId)
                 summarizingCleared = true
-                return SummarizationResult(statusMessage = fallbackStatusMessage)
+                return SummarizationResult(statusMessage = null)
             }
 
             val text = repository.getTranscriptForJob(jobId)
@@ -112,17 +108,16 @@ class SummarizationService @Inject constructor(
                 summarizationRepository.invalidateSummaryAttempt(jobId, attemptId)
                 summarizingCleared = true
                 SummarizationResult(
-                    statusMessage = applicationContext.getString(
+                    statusMessage = UserMessage(
                         R.string.summarization_status_nothing_to_summarize,
-                        job.displayName,
+                        listOf(job.displayName),
                     ),
                 )
             } else {
-                val summarizingMessage = applicationContext.getString(R.string.transcription_notification_summarizing)
                 if (!summarizationRepository.updateSummaryStatus(jobId, attemptId, SUMMARY_STATUS_SUMMARIZING)) {
-                    return SummarizationResult(statusMessage = fallbackStatusMessage)
+                    return SummarizationResult(statusMessage = null)
                 }
-                onStatusUpdate(summarizingMessage)
+                onStatusUpdate(UserMessage(R.string.transcription_notification_summarizing))
                 val apiKey = requireGeminiApiKey()
                 val summary = try {
                     requestSummary(text, apiKey, summarizerSelection.modelName)
@@ -137,10 +132,8 @@ class SummarizationService @Inject constructor(
                     summary.model,
                 )
                 summarizingCleared = true
-                if (!saved) return SummarizationResult(statusMessage = fallbackStatusMessage)
-                SummarizationResult(
-                    statusMessage = applicationContext.getString(R.string.summarization_status_generated),
-                )
+                if (!saved) return SummarizationResult(statusMessage = null)
+                SummarizationResult(statusMessage = UserMessage(R.string.summarization_status_generated))
             }
         } catch (e: CancellationException) {
             withContext(NonCancellable + ioDispatcher) {
@@ -149,22 +142,22 @@ class SummarizationService @Inject constructor(
             summarizingCleared = true
             throw e
         } catch (_: ApiException) {
-            val message = applicationContext.getString(R.string.provider_request_failed)
+            val message = UserMessage(R.string.provider_request_failed)
             summarizationRepository.failSummarization(jobId, attemptId, message)
             summarizingCleared = true
-            SummarizationResult(applicationContext.getString(R.string.summarization_status_error, message), message)
+            SummarizationResult(UserMessage(R.string.summarization_status_error, listOf(message)), message)
         } catch (_: GenAiIOException) {
-            val message = applicationContext.getString(R.string.provider_request_failed)
+            val message = UserMessage(R.string.provider_request_failed)
             summarizationRepository.failSummarization(jobId, attemptId, message)
             summarizingCleared = true
-            SummarizationResult(applicationContext.getString(R.string.summarization_status_error, message), message)
+            SummarizationResult(UserMessage(R.string.summarization_status_error, listOf(message)), message)
         } catch (_: IOException) {
-            val message = applicationContext.getString(R.string.provider_request_failed)
+            val message = UserMessage(R.string.provider_request_failed)
             summarizationRepository.failSummarization(jobId, attemptId, message)
             summarizingCleared = true
             SummarizationResult(message, message)
         } catch (e: IllegalStateException) {
-            val message = e.userMessageOr(R.string.provider_request_failed).resolve(applicationContext)
+            val message = e.userMessageOr(R.string.provider_request_failed)
             summarizationRepository.failSummarization(jobId, attemptId, message)
             summarizingCleared = true
             SummarizationResult(message, message)
@@ -177,13 +170,13 @@ class SummarizationService @Inject constructor(
         }
     }
 
-    suspend fun cancelSummary(jobId: Int): String {
+    suspend fun cancelSummary(jobId: Int): UserMessage {
         val cancelled = summarizationRepository.cancelSummarization(jobId)
         operations.cancel(jobId)
         return if (cancelled) {
-            applicationContext.getString(R.string.summarization_status_cancelled)
+            UserMessage(R.string.summarization_status_cancelled)
         } else {
-            applicationContext.getString(R.string.summarization_status_nothing_to_stop)
+            UserMessage(R.string.summarization_status_nothing_to_stop)
         }
     }
 

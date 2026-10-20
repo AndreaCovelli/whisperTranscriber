@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -159,18 +160,24 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
 private fun ObserveHistoryEvents(historyViewModel: HistoryViewModel, onLaunchExport: (HistoryExportFormat) -> Unit) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
+    val resources = LocalResources.current
     LaunchedEffect(historyViewModel, lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             historyViewModel.uiEvents.collect { event ->
                 when (event) {
                     is HistoryUiEvent.LaunchExport -> onLaunchExport(event.format)
                     is HistoryUiEvent.Share -> {
-                        if (!historyViewModel.shareText(event.content, event.title, context::startActivity)) {
+                        if (!historyViewModel.shareText(
+                                event.content,
+                                resources.getString(event.titleId),
+                                context::startActivity,
+                            )
+                        ) {
                             Toast.makeText(context, R.string.text_share_failed, Toast.LENGTH_SHORT).show()
                         }
                     }
                     is HistoryUiEvent.Toast -> {
-                        Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, event.messageId, Toast.LENGTH_SHORT).show()
                     }
                 }
             }

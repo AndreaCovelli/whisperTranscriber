@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.SharedAudioIntentHandler
+import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.background.BackgroundShareNotifier
 import com.andreacovelli.whispertranscriber.background.PostTranscriptionWorkSpec
 import com.andreacovelli.whispertranscriber.services.TranscriptionQueueService
@@ -85,7 +86,7 @@ class ShareIntakeViewModel @Inject constructor(
         } catch (e: CancellationException) {
             // The share receiver was closed (for example with Back) before the audio was queued.
             if (!jobsCommitted) {
-                showBackgroundShareQueueFailure(context.getString(R.string.background_share_interrupted_body))
+                showBackgroundShareQueueFailure(UserMessage(R.string.background_share_interrupted_body))
             }
             throw e
         } catch (e: IOException) {
@@ -104,12 +105,10 @@ class ShareIntakeViewModel @Inject constructor(
     }
 
     private fun showBackgroundShareQueueFailure(error: Exception) {
-        showBackgroundShareQueueFailure(
-            error.userMessageOr(R.string.background_share_queue_failed_body).resolve(context),
-        )
+        showBackgroundShareQueueFailure(error.userMessageOr(R.string.background_share_queue_failed_body))
     }
 
-    private fun showBackgroundShareQueueFailure(message: String) {
+    private fun showBackgroundShareQueueFailure(message: UserMessage) {
         backgroundShareNotifier.showFailure(
             displayName = context.getString(R.string.background_share_generic_audio_label),
             message = message,

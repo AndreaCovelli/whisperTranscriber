@@ -51,7 +51,7 @@ class MainJobRevealInstrumentedTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithText(jobs.last().displayName).assertIsDisplayed()
         composeRule.runOnIdle {
-            uiState.value = uiState.value.copy(status = "Recomposed")
+            uiState.value = uiState.value.copy(status = UserMessage.verbatim("Recomposed"))
         }
         composeRule.waitForIdle()
         assertEquals(1, acknowledgementCount)
@@ -124,7 +124,7 @@ class MainJobRevealInstrumentedTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithText(jobs.last().displayName).assertIsDisplayed()
         composeRule.runOnIdle {
-            uiState.value = uiState.value.copy(status = "Recomposed")
+            uiState.value = uiState.value.copy(status = UserMessage.verbatim("Recomposed"))
         }
         composeRule.waitForIdle()
         assertEquals(1, acknowledgementCount)

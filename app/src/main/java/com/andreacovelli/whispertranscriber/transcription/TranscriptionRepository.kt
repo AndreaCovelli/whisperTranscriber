@@ -3,6 +3,7 @@ package com.andreacovelli.whispertranscriber.transcription
 import androidx.room.withTransaction
 import com.andreacovelli.whispertranscriber.QuantityText
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.StoredMessages
 import com.andreacovelli.whispertranscriber.UserFacingIllegalStateException
 import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.data.AppDatabase
@@ -75,8 +76,8 @@ class TranscriptionRepository @Inject constructor(
         )
     }
 
-    suspend fun updateStatusAndProgress(id: Int, ownerId: String, status: String, progress: Float): Boolean =
-        jobDao.updateStatusAndProgress(id, ownerId, status, progress) > 0
+    suspend fun updateStatusAndProgress(id: Int, ownerId: String, status: UserMessage, progress: Float): Boolean =
+        jobDao.updateStatusAndProgress(id, ownerId, StoredMessages.encode(status), progress) > 0
 
     suspend fun persistCompletedTranscription(
         id: Int,
@@ -100,20 +101,20 @@ class TranscriptionRepository @Inject constructor(
         jobDao.updateResult(id = id, ownerId = ownerId, historyId = historyId) > 0
     }
 
-    suspend fun updateError(id: Int, ownerId: String, error: String, status: String): Boolean =
-        jobDao.updateError(id, ownerId, error, status, System.currentTimeMillis()) > 0
+    suspend fun updateError(id: Int, ownerId: String, error: UserMessage, status: String): Boolean =
+        jobDao.updateError(id, ownerId, StoredMessages.encode(error), status, System.currentTimeMillis()) > 0
 
     suspend fun markRetryScheduled(id: Int, ownerId: String): Boolean = jobDao.markRetryScheduled(id, ownerId) > 0
 
-    suspend fun updateStatus(id: Int, ownerId: String, status: String): Boolean =
-        jobDao.updateStatus(id, ownerId, status) > 0
+    suspend fun updateStatus(id: Int, ownerId: String, status: UserMessage): Boolean =
+        jobDao.updateStatus(id, ownerId, StoredMessages.encode(status)) > 0
 
     suspend fun updateExecutionBackend(id: Int, executionBackend: String) {
         jobDao.updateExecutionBackend(id, executionBackend)
     }
 
-    suspend fun failUnstartedJob(id: Int, message: String): Boolean =
-        jobDao.failUnstartedJob(id, message, System.currentTimeMillis()) > 0
+    suspend fun failUnstartedJob(id: Int, message: UserMessage): Boolean =
+        jobDao.failUnstartedJob(id, StoredMessages.encode(message), System.currentTimeMillis()) > 0
 
     suspend fun clearStagedFilePath(id: Int, ownerId: String): Boolean = jobDao.clearStagedFilePath(id, ownerId) > 0
 
@@ -161,9 +162,9 @@ class TranscriptionRepository @Inject constructor(
 
     suspend fun countBlockingJobs(): Int = jobDao.countBlockingJobs()
 
-    suspend fun claimJobForExecution(jobId: Int, ownerId: String, status: String): TranscriptionJob? =
+    suspend fun claimJobForExecution(jobId: Int, ownerId: String, status: UserMessage): TranscriptionJob? =
         db.withTransaction {
-            if (jobDao.claimJobForExecution(jobId, ownerId, status) > 0) {
+            if (jobDao.claimJobForExecution(jobId, ownerId, StoredMessages.encode(status)) > 0) {
                 jobDao.getJobById(jobId)
             } else {
                 null
@@ -206,8 +207,8 @@ class TranscriptionRepository @Inject constructor(
         RetryResult.ACCEPTED
     }
 
-    suspend fun cancelJob(jobId: Int, message: String): Boolean =
-        jobDao.cancelJob(jobId, message, System.currentTimeMillis()) > 0
+    suspend fun cancelJob(jobId: Int, message: UserMessage): Boolean =
+        jobDao.cancelJob(jobId, StoredMessages.encode(message), System.currentTimeMillis()) > 0
 
     suspend fun invalidateOwners(jobId: Int): Boolean = jobDao.invalidateOwners(jobId) > 0
 

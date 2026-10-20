@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.andreacovelli.whispertranscriber.BuildConfig
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.ui.asString
 import com.andreacovelli.whispertranscriber.ui.components.ApiKeyCard
 import com.andreacovelli.whispertranscriber.ui.components.ProviderSelector
 import com.andreacovelli.whispertranscriber.ui.settings.RegionValidationState
@@ -248,7 +249,7 @@ private fun MicrosoftSpeechRegionCard(uiState: SettingsUiState, dispatch: (Setti
                 }
                 is RegionValidationState.Error -> {
                     Text(
-                        validation.message,
+                        validation.message.asString(),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
                     )

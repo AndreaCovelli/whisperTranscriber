@@ -1,6 +1,8 @@
 package com.andreacovelli.whispertranscriber.summary
 
 import androidx.room.withTransaction
+import com.andreacovelli.whispertranscriber.StoredMessages
+import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.data.AppDatabase
 import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.data.HistoryRepository
@@ -39,8 +41,8 @@ class TranscriptionSummarizationRepository @Inject constructor(
         updated
     }
 
-    suspend fun failSummarization(id: Int, attemptId: String, error: String?): Boolean =
-        jobSummarizationDao.failSummarization(id, attemptId, error) > 0
+    suspend fun failSummarization(id: Int, attemptId: String, error: UserMessage): Boolean =
+        jobSummarizationDao.failSummarization(id, attemptId, StoredMessages.encode(error)) > 0
 
     suspend fun cancelSummarization(id: Int): Boolean = jobSummarizationDao.cancelSummarization(id) > 0
 

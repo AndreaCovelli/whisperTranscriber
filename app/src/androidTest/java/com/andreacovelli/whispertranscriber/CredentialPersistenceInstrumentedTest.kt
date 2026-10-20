@@ -123,7 +123,7 @@ class CredentialPersistenceInstrumentedTest {
     ): SettingsViewModel = withContext(Dispatchers.Main) {
         val factory = viewModelFactory {
             initializer {
-                SettingsViewModel(context, manager, ValidationService(manager, client, Dispatchers.IO), Dispatchers.IO)
+                SettingsViewModel(manager, ValidationService(manager, client, Dispatchers.IO), Dispatchers.IO)
             }
         }
         ViewModelProvider.create(viewModelStore, factory)[SettingsViewModel::class]

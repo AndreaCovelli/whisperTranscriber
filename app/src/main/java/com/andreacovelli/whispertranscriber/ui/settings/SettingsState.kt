@@ -1,5 +1,6 @@
 package com.andreacovelli.whispertranscriber.ui.settings
 
+import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.settings.ApiKeyState
 import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
@@ -9,20 +10,20 @@ sealed class CustomModelValidation {
     object Idle : CustomModelValidation()
     object Validating : CustomModelValidation()
     data class Valid(val displayName: String) : CustomModelValidation()
-    data class Error(val message: String) : CustomModelValidation()
+    data class Error(val message: UserMessage) : CustomModelValidation()
 }
 
 sealed class KeyValidationState {
     object Idle : KeyValidationState()
     object Validating : KeyValidationState()
-    data class Error(val message: String) : KeyValidationState()
+    data class Error(val message: UserMessage) : KeyValidationState()
 }
 
 sealed class RegionValidationState {
     object Idle : RegionValidationState()
     object Validating : RegionValidationState()
     data class Valid(val region: String) : RegionValidationState()
-    data class Error(val message: String) : RegionValidationState()
+    data class Error(val message: UserMessage) : RegionValidationState()
 }
 
 data class SettingsUiState(

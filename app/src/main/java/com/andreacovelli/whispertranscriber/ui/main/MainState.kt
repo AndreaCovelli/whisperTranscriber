@@ -1,6 +1,8 @@
 package com.andreacovelli.whispertranscriber.ui.main
 
 import android.net.Uri
+import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 
@@ -14,7 +16,7 @@ data class ProviderSummary(
 )
 
 data class MainUiState(
-    val status: String = "",
+    val status: UserMessage = UserMessage(R.string.main_waiting_for_audios),
     val providerSummary: ProviderSummary = ProviderSummary(),
     val jobs: List<TranscriptionJobState> = emptyList(),
     val batchProgressState: BatchProgressState? = null,
@@ -53,7 +55,7 @@ sealed interface MainMsg {
     data class CancelSummary(val jobId: Int) : MainMsg
     data class DeleteJob(val jobId: Int) : MainMsg
 
-    data class StatusChanged(val status: String) : MainMsg
+    data class StatusChanged(val status: UserMessage) : MainMsg
     data class ProviderSummaryChanged(val summary: ProviderSummary) : MainMsg
     data class JobPresentationChanged(
         val jobs: List<TranscriptionJobState>,

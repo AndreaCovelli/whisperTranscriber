@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.transcription.displayJobStatus
 import com.andreacovelli.whispertranscriber.transcription.displaySummaryStatus
+import com.andreacovelli.whispertranscriber.ui.asString
 import com.andreacovelli.whispertranscriber.ui.main.TranscriptionJobState
 
 @Composable
@@ -50,7 +51,7 @@ fun TranscriptionJobCard(job: TranscriptionJobState, canSummarize: Boolean, acti
             JobHeader(job = job, onDelete = actions.delete)
             JobSecondaryText(job = job, queuedProviderLabel = queuedProviderLabel)
             Text(
-                displayJobStatus(job.status)?.let { stringResource(it) } ?: job.status,
+                job.statusMessage?.asString() ?: displayJobStatus(job.status)?.let { stringResource(it) } ?: job.status,
                 style = MaterialTheme.typography.bodySmall,
             )
             JobErrorSection(job = job, onRetry = actions.retryTranscription)
@@ -124,7 +125,7 @@ private fun JobErrorSection(job: TranscriptionJobState, onRetry: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = error,
+            text = error.asString(),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.error,
             modifier = Modifier.weight(1f),
@@ -146,7 +147,7 @@ private fun JobErrorSection(job: TranscriptionJobState, onRetry: () -> Unit) {
 private fun JobProgressSection(job: TranscriptionJobState) {
     if (job.transcript.isNotBlank() || job.error != null || !job.isRunning) return
     Spacer(Modifier.height(8.dp))
-    if (job.status.contains("Converting")) {
+    if (job.statusMessage?.id == R.string.transcription_status_converting_progress) {
         LinearProgressIndicator(
             progress = { job.progress.coerceIn(0f, 1f) },
             modifier = Modifier.fillMaxWidth(),
@@ -216,8 +217,7 @@ private fun JobPrimaryActions(
 
 @Composable
 private fun SummaryErrorSection(job: TranscriptionJobState) {
-    val summaryError = job.summaryError ?: return
-    if (summaryError.isBlank()) return
+    val summaryError = job.summaryError?.asString()?.takeIf(String::isNotBlank) ?: return
     Spacer(Modifier.height(4.dp))
     Text(
         text = stringResource(R.string.job_summarization_error, summaryError),
