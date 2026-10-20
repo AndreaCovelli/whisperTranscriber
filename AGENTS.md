@@ -74,7 +74,7 @@ The app uses:
 - Use the checked-in Gradle wrapper, never a system Gradle installation.
 - The project requires JDK 21 through `kotlin.jvmToolchain(21)`.
 - The app currently has `minSdk = 26`, `targetSdk = 36`, and `compileSdk = 37`.
-- The current Room database schema version is 16.
+- The current Room database schema version is 17.
 - Android instrumentation work needs an installed Android SDK and the appropriate
   emulator system image.
 - On Windows, Android Studio's bundled JBR is commonly located at:
