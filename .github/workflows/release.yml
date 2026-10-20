@@ -16,7 +16,7 @@ jobs:
   ci-status:
     name: Reuse main CI
     runs-on: ubuntu-26.04
-    timeout-minutes: 40
+    timeout-minutes: 5
     permissions:
       contents: read
       actions: read

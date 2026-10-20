@@ -69,9 +69,11 @@
    and versionCode from the number of commits reachable from the tagged commit.
 
    The tag commit must already be contained in main. The release workflow reuses
-   successful CI checks from a push to main for that exact commit. It waits up to
-   35 minutes for a running CI workflow and blocks publication if CI fails or is
-   cancelled. If no run is found after one minute, it runs the full CI suite;
+   successful CI checks from a push to main for that exact commit. It does not wait
+   for CI: if that run is still queued or in progress, the release fails at once, so
+   wait for main CI to succeed before pushing the tag (or delete and re-push it). It
+   blocks publication if CI fails or is cancelled. If no run is found after one
+   minute, it runs the full CI suite;
    otherwise it runs only the jobs or device suites whose required checks were
    missing or skipped. A green aggregate gate alone is not sufficient evidence.
 

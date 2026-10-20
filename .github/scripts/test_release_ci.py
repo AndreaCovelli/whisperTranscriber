@@ -134,16 +134,15 @@ class ReleaseCiTest(unittest.TestCase):
         self.assertEqual(result["instrumentation-suites"], "[]")
         self.assertEqual(json.loads(result["skip-jobs"]), ["quality-build", "security"])
 
-    def test_waits_for_running_ci_instead_of_starting_duplicate_tests(self):
-        api = FakeGitHub(runs=[successful_run(status="in_progress", conclusion=None)])
-        self.clock.on_sleep = lambda: api.runs[0].update(
-            status="completed", conclusion="success"
-        )
+    def test_unfinished_ci_blocks_release_immediately_without_waiting(self):
+        for status in ("queued", "in_progress", "waiting", "pending"):
+            with self.subTest(status=status):
+                api = FakeGitHub(runs=[successful_run(status=status, conclusion=None)])
 
-        result = self.plan(api)
+                with self.assertRaisesRegex(RuntimeError, f"still {status}.*re-push"):
+                    self.plan(api)
 
-        self.assertEqual(result["required"], "false")
-        self.assertEqual(self.clock.now, 30)
+                self.assertEqual(self.clock.now, 0)
 
     def test_allows_time_for_the_main_push_run_to_appear(self):
         api = FakeGitHub(runs=[])
@@ -195,13 +194,16 @@ class ReleaseCiTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "failure"):
             self.plan(api)
 
-    def test_waiting_has_a_deadline_and_does_not_fall_back_to_duplicate_tests(self):
-        api = FakeGitHub(runs=[successful_run(status="queued", conclusion=None)])
+    def test_run_appearing_unfinished_during_discovery_blocks_release(self):
+        api = FakeGitHub(runs=[])
+        self.clock.on_sleep = lambda: api.runs.append(
+            successful_run(status="queued", conclusion=None)
+        )
 
-        with self.assertRaisesRegex(RuntimeError, "Timed out"):
-            self.plan(api, wait_seconds=90)
+        with self.assertRaisesRegex(RuntimeError, "still queued"):
+            self.plan(api)
 
-        self.assertEqual(self.clock.now, 90)
+        self.assertEqual(self.clock.now, 30)
 
     def test_missing_or_skipped_device_suite_runs_only_that_suite(self):
         for missing_suite in ("debug", "minifiedSmoke"):
@@ -274,12 +276,27 @@ class ReleaseCiTest(unittest.TestCase):
         api.on_jobs = lambda: api.runs[0].update(
             run_attempt=2, status="in_progress", conclusion=None
         )
-        self.clock.on_sleep = lambda: api.runs[0].update(
-            status="completed", conclusion="failure"
-        )
+
+        with self.assertRaisesRegex(RuntimeError, "rerun and is still in_progress"):
+            self.plan(api)
+
+        self.assertEqual(self.clock.now, 0)
+
+    def test_failed_rerun_during_inspection_blocks_release(self):
+        api = FakeGitHub()
+        api.on_jobs = lambda: api.runs[0].update(run_attempt=2, conclusion="failure")
 
         with self.assertRaisesRegex(RuntimeError, "failure"):
             self.plan(api)
+
+    def test_completed_rerun_during_inspection_is_inspected_again(self):
+        api = FakeGitHub()
+        api.on_jobs = lambda: api.runs[0].update(run_attempt=2)
+
+        result = self.plan(api)
+
+        self.assertEqual(result["required"], "false")
+        self.assertEqual(self.clock.now, 0)
 
     def test_api_errors_block_release_instead_of_being_treated_as_missing_ci(self):
         def denied(_path):

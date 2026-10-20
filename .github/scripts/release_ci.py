@@ -97,7 +97,6 @@ def plan_verification(
     *,
     clock=time.monotonic,
     sleep=time.sleep,
-    wait_seconds=35 * 60,
     discovery_seconds=60,
     poll_seconds=30,
 ):
@@ -107,7 +106,6 @@ def plan_verification(
     query = urlencode({"head_sha": commit, "branch": "main", "event": "push"})
     path = f"{prefix}/workflows/ci.yml/runs?{query}"
     started = clock()
-    saw_run = False
 
     while True:
         runs = [
@@ -120,47 +118,44 @@ def plan_verification(
             and run["repository"]["full_name"].lower() == repository.lower()
         ]
         if runs:
-            saw_run = True
             run = max(runs, key=lambda candidate: candidate["id"])
-            if run["status"] == "completed":
-                if run["conclusion"] != "success":
-                    raise RuntimeError(
-                        f"Main CI ended with {run['conclusion']}: {run['html_url']}"
-                    )
-                jobs = list(
-                    records(
-                        get, f"{prefix}/runs/{run['id']}/jobs?filter=latest", "jobs"
-                    )
+            # Fail fast instead of spending runner minutes waiting on CI.
+            if run["status"] != "completed":
+                raise RuntimeError(
+                    f"Main CI is still {run['status']}: {run['html_url']}; "
+                    "re-push the tag after it succeeds"
                 )
-                current = get(f"{prefix}/runs/{run['id']}")
-                if (
-                    current["status"] == "completed"
-                    and current["conclusion"] != "success"
-                ):
-                    raise RuntimeError(
-                        f"Main CI ended with {current['conclusion']}: {run['html_url']}"
-                    )
-                # A rerun may start while the job results are being fetched.
-                if (
-                    current["run_attempt"] == run["run_attempt"]
-                    and current["status"] == "completed"
-                    and current["conclusion"] == "success"
-                ):
-                    completed = reusable_checks(jobs)
-                    print(
-                        f"Reusing {', '.join(sorted(completed)) or 'no checks'} from {run['html_url']}"
-                    )
-                    return verification_outputs(completed)
-        elif not saw_run and clock() - started >= discovery_seconds:
+            if run["conclusion"] != "success":
+                raise RuntimeError(
+                    f"Main CI ended with {run['conclusion']}: {run['html_url']}"
+                )
+            jobs = list(
+                records(get, f"{prefix}/runs/{run['id']}/jobs?filter=latest", "jobs")
+            )
+            current = get(f"{prefix}/runs/{run['id']}")
+            if current["status"] != "completed":
+                raise RuntimeError(
+                    f"Main CI was rerun and is still {current['status']}: "
+                    f"{run['html_url']}; re-push the tag after it succeeds"
+                )
+            if current["conclusion"] != "success":
+                raise RuntimeError(
+                    f"Main CI ended with {current['conclusion']}: {run['html_url']}"
+                )
+            # A completed rerun replaced the fetched job results, so inspect it again.
+            if current["run_attempt"] != run["run_attempt"]:
+                continue
+            completed = reusable_checks(jobs)
+            print(
+                f"Reusing {', '.join(sorted(completed)) or 'no checks'} from {run['html_url']}"
+            )
+            return verification_outputs(completed)
+
+        if clock() - started >= discovery_seconds:
             print(f"No main CI run found for {commit}; requesting full verification.")
             return verification_outputs(set())
-
-        if clock() - started >= wait_seconds:
-            raise RuntimeError(
-                f"Timed out waiting for main CI on {commit}; release remains blocked"
-            )
-        print(f"Waiting for main CI on {commit}...", flush=True)
-        sleep(max(0, min(poll_seconds, wait_seconds - (clock() - started))))
+        print(f"Waiting for a main CI run on {commit} to appear...", flush=True)
+        sleep(max(0, min(poll_seconds, discovery_seconds - (clock() - started))))
 
 
 def main():
