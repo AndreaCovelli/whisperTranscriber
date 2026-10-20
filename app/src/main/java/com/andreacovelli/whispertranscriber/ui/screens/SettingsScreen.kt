@@ -53,7 +53,6 @@ import com.andreacovelli.whispertranscriber.ui.settings.SettingsMsg
 import com.andreacovelli.whispertranscriber.ui.settings.SettingsUiState
 import com.andreacovelli.whispertranscriber.ui.settings.SettingsViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
@@ -61,6 +60,27 @@ fun SettingsScreen(
     onBackgroundShareSummaryNotificationsChange: (Boolean) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    SettingsScreenContent(
+        uiState = uiState,
+        dispatch = viewModel::dispatch,
+        onLoadMicrosoftSpeechKey = viewModel::loadMicrosoftSpeechKeyForDisplay,
+        onLoadGeminiKey = viewModel::loadGeminiKeyForDisplay,
+        onNavigateBack = onNavigateBack,
+        onBackgroundShareSummaryNotificationsChange = onBackgroundShareSummaryNotificationsChange,
+    )
+}
+
+/** Stateless settings layout, driven by [uiState] and reporting user actions through [dispatch]. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun SettingsScreenContent(
+    uiState: SettingsUiState,
+    dispatch: (SettingsMsg) -> Unit,
+    onLoadMicrosoftSpeechKey: suspend () -> String?,
+    onLoadGeminiKey: suspend () -> String?,
+    onNavigateBack: () -> Unit,
+    onBackgroundShareSummaryNotificationsChange: (Boolean) -> Unit,
+) {
     val focusManager = LocalFocusManager.current
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -90,14 +110,14 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             SettingsSectionHeader(stringResource(R.string.settings_section_general))
-            TranscriptionProviderCard(uiState = uiState, dispatch = viewModel::dispatch)
-            SpeakerDiarizationCard(uiState = uiState, dispatch = viewModel::dispatch)
-            SummarizerProviderCard(uiState = uiState, dispatch = viewModel::dispatch)
+            TranscriptionProviderCard(uiState = uiState, dispatch = dispatch)
+            SpeakerDiarizationCard(uiState = uiState, dispatch = dispatch)
+            SummarizerProviderCard(uiState = uiState, dispatch = dispatch)
             BackgroundShareSummaryNotificationsCard(
                 uiState = uiState,
                 onCheckedChange = onBackgroundShareSummaryNotificationsChange,
             )
-            AutomaticSummarizationCard(uiState = uiState, dispatch = viewModel::dispatch)
+            AutomaticSummarizationCard(uiState = uiState, dispatch = dispatch)
 
             SettingsSectionHeader(stringResource(R.string.settings_section_microsoft))
             ApiKeyCard(
@@ -105,12 +125,12 @@ fun SettingsScreen(
                 label = stringResource(R.string.settings_microsoft_speech_api_key_label),
                 apiKeyState = uiState.microsoftSpeechApiKeyState,
                 keyValidationState = uiState.microsoftSpeechKeyValidation,
-                onLoadSavedKey = viewModel::loadMicrosoftSpeechKeyForDisplay,
-                onSave = { viewModel.dispatch(SettingsMsg.SaveMicrosoftSpeechKey(it)) },
-                onForget = { viewModel.dispatch(SettingsMsg.ForgetMicrosoftSpeechKey) },
-                onResetValidation = { viewModel.dispatch(SettingsMsg.ResetMicrosoftSpeechKeyValidation) },
+                onLoadSavedKey = onLoadMicrosoftSpeechKey,
+                onSave = { dispatch(SettingsMsg.SaveMicrosoftSpeechKey(it)) },
+                onForget = { dispatch(SettingsMsg.ForgetMicrosoftSpeechKey) },
+                onResetValidation = { dispatch(SettingsMsg.ResetMicrosoftSpeechKeyValidation) },
             )
-            MicrosoftSpeechRegionCard(uiState = uiState, dispatch = viewModel::dispatch)
+            MicrosoftSpeechRegionCard(uiState = uiState, dispatch = dispatch)
 
             SettingsSectionHeader(stringResource(R.string.settings_section_gemini))
             ApiKeyCard(
@@ -118,10 +138,10 @@ fun SettingsScreen(
                 label = stringResource(R.string.settings_gemini_api_key_label),
                 apiKeyState = uiState.geminiApiKeyState,
                 keyValidationState = uiState.geminiKeyValidation,
-                onLoadSavedKey = viewModel::loadGeminiKeyForDisplay,
-                onSave = { viewModel.dispatch(SettingsMsg.SaveGeminiKey(it)) },
-                onForget = { viewModel.dispatch(SettingsMsg.ForgetGeminiKey) },
-                onResetValidation = { viewModel.dispatch(SettingsMsg.ResetGeminiKeyValidation) },
+                onLoadSavedKey = onLoadGeminiKey,
+                onSave = { dispatch(SettingsMsg.SaveGeminiKey(it)) },
+                onForget = { dispatch(SettingsMsg.ForgetGeminiKey) },
+                onResetValidation = { dispatch(SettingsMsg.ResetGeminiKeyValidation) },
             )
 
             SettingsSectionHeader(stringResource(R.string.settings_section_about))

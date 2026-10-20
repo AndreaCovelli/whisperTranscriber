@@ -10,7 +10,7 @@ import com.andreacovelli.whispertranscriber.QuantityText
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.StoredMessages
 import com.andreacovelli.whispertranscriber.UserMessage
-import com.andreacovelli.whispertranscriber.background.SummaryWorkScheduler
+import com.andreacovelli.whispertranscriber.background.SummaryScheduler
 import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
@@ -120,7 +120,7 @@ class MainViewModel @Inject constructor(
     private val repository: TranscriptionRepository,
     private val queueService: TranscriptionQueueService,
     private val textTransfer: TextTransfer,
-    private val summaryScheduler: SummaryWorkScheduler,
+    private val summaryScheduler: SummaryScheduler,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
     suspend fun shareText(text: String, title: String, launch: (Intent) -> Unit): Boolean =
