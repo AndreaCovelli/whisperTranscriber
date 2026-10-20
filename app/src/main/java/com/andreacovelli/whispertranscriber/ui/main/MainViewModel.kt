@@ -42,7 +42,10 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
@@ -227,6 +230,7 @@ class MainViewModel @Inject constructor(
     // Automatic summaries run one at a time. Both are only touched on the main dispatcher.
     private val autoSummaryRequests = Channel<Int>(Channel.UNLIMITED)
     private val pendingAutoSummaries = mutableSetOf<Int>()
+    private val latestJobs = MutableStateFlow<List<TranscriptionJob>>(emptyList())
     private val transcriptionSettingsHydrated = MutableStateFlow(false)
     private val settingsDelegate = MainSettingsDelegate(
         getState = { _uiState.value },
@@ -294,15 +298,23 @@ class MainViewModel @Inject constructor(
                             batchProgressState = presentationState.batchProgressState,
                         ),
                     )
-
-                    if (_uiState.value.isAutoSummaryActive) {
+                    latestJobs.value = jobsList
+                }
+            }
+            launch {
+                // Rescan when auto-summary becomes active as well, so a completion observed while the
+                // setting or key was still propagating is not missed. Already-marked jobs fail the claim.
+                combine(
+                    latestJobs,
+                    _uiState.map { state -> state.isAutoSummaryActive }.distinctUntilChanged(),
+                ) { jobsList, isActive -> if (isActive) jobsList else emptyList() }
+                    .collect { jobsList ->
                         jobsList.forEach { job ->
                             if (job.isReadyForAutoSummary && pendingAutoSummaries.add(job.id)) {
                                 autoSummaryRequests.trySend(job.id)
                             }
                         }
                     }
-                }
             }
             launch {
                 for (jobId in autoSummaryRequests) {
