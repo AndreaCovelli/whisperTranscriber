@@ -129,7 +129,23 @@ class MainActivity : ComponentActivity() {
                     navController.popBackStack<MainRoute>(inclusive = false)
                     mainViewModel.dispatch(MainMsg.MainNavigationHandled(navigationRequest.token))
                 }
-                NavHost(navController = navController, startDestination = MainRoute) {
+                NavHost(
+                    navController = navController,
+                    startDestination = MainRoute,
+                    // Match the top-bar back arrow; the library default scales the screen out.
+                    predictivePopEnterTransition = {
+                        slideIntoContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = tween(300),
+                        )
+                    },
+                    predictivePopExitTransition = {
+                        slideOutOfContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = tween(300),
+                        )
+                    },
+                ) {
                     composable<MainRoute>(
                         enterTransition = { null },
                         exitTransition = {
