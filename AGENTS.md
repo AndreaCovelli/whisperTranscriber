@@ -298,6 +298,10 @@ checks and report exactly what was not run and why.
 - Releases are triggered by tags matching `v*`; the release workflow derives
   `versionName` from the tag and `versionCode` from Git history. Do not create or
   push a release tag unless explicitly requested.
+- Push a release tag only after the push-triggered main CI run for that exact
+  commit has succeeded. The release workflow reuses those checks and fails
+  immediately if that run is still queued or in progress; re-push the tag once CI
+  is green.
 
 ## Completion Checklist
 
