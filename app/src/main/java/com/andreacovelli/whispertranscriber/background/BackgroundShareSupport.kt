@@ -534,24 +534,6 @@ class BackgroundShareNotifier @Inject constructor(@param:ApplicationContext priv
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
         PackageManager.PERMISSION_GRANTED
 
-    fun showSummary(jobId: Int, displayName: String, summary: String) {
-        showResultPage(
-            jobId = jobId,
-            displayName = displayName,
-            resultKind = BackgroundShareResultKind.SUMMARY,
-            text = summary,
-        )
-    }
-
-    fun showTranscription(jobId: Int, displayName: String, transcript: String) {
-        showResultPage(
-            jobId = jobId,
-            displayName = displayName,
-            resultKind = BackgroundShareResultKind.TRANSCRIPTION,
-            text = transcript,
-        )
-    }
-
     fun showFailure(jobId: Int? = null, displayName: String, message: UserMessage) {
         val text = message.resolve(context)
         notify(

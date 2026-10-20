@@ -11,7 +11,7 @@ plugins {
     alias(libs.plugins.cyclonedx)
 }
 
-val ktlintVersion = "1.7.1"
+val ktlintVersion = libs.versions.ktlint.get()
 val instrumentationBuildType = providers.gradleProperty("instrumentationBuildType").orElse("debug").get()
 
 android {

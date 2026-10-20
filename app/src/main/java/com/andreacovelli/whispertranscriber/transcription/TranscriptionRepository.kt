@@ -166,8 +166,6 @@ class TranscriptionRepository @Inject constructor(
 
     suspend fun getTranscriptForJob(jobId: Int): String = historyDao.getByJobId(jobId)?.text.orEmpty()
 
-    suspend fun getHistoryForJob(jobId: Int): TranscriptionHistory? = historyDao.getByJobId(jobId)
-
     suspend fun getOldestQueuedJob(): TranscriptionJob? = jobDao.getOldestQueuedJob()
 
     suspend fun countBlockingJobs(): Int = jobDao.countBlockingJobs()

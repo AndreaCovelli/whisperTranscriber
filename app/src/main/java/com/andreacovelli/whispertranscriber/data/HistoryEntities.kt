@@ -2,10 +2,12 @@ package com.andreacovelli.whispertranscriber.data
 
 import androidx.room.Entity
 import androidx.room.Fts4
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
 
-@Entity(tableName = "transcription_history")
+// Lets the newest-first history pages and export walk the index instead of sorting the table.
+@Entity(tableName = "transcription_history", indices = [Index(value = ["timestamp", "id"])])
 data class TranscriptionHistory(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,

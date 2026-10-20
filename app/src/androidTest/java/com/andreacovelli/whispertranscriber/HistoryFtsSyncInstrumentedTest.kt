@@ -376,11 +376,46 @@ class HistoryFtsSyncInstrumentedTest {
     }
 
     @Test
-    fun everyExportedSchemaUpgradesToVersion16() {
-        (7..15).forEach { version ->
-            val databaseName = "exported-schema-$version-to-16.db"
+    fun everyExportedSchemaUpgradesToVersion17() {
+        (7..16).forEach { version ->
+            val databaseName = "exported-schema-$version-to-17.db"
             migrationHelper.createDatabase(databaseName, version).close()
             openMigratedDatabase(databaseName).close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun migrationToVersion17_indexesHistoryForNewestFirstPagingWithoutLosingRows() {
+        val databaseName = "history-index-migration-test.db"
+        migrationHelper.createDatabase(databaseName, 16).use { legacyDb ->
+            legacyDb.execSQL(
+                """
+                INSERT INTO transcription_history(id, text, language, model, summary, summaryProviderName,
+                    summaryModel, displayName, timestamp)
+                VALUES (1, 'older', 'en', '', '', '', '', 'older.wav', 100),
+                    (2, 'newer', 'en', '', '', '', '', 'newer.wav', 200)
+                """.trimIndent(),
+            )
+        }
+
+        val migratedDb = migrationHelper.runMigrationsAndValidate(databaseName, 17, true, *AppDatabase.MIGRATIONS)
+        try {
+            migratedDb.query("SELECT id FROM transcription_history ORDER BY timestamp DESC, id DESC").use { cursor ->
+                assertTrue(cursor.moveToNext())
+                assertEquals(2, cursor.getInt(0))
+                assertTrue(cursor.moveToNext())
+                assertEquals(1, cursor.getInt(0))
+            }
+            val plan = migratedDb.query(
+                "EXPLAIN QUERY PLAN SELECT * FROM transcription_history ORDER BY timestamp DESC, id DESC",
+            ).use { cursor ->
+                buildList { while (cursor.moveToNext()) add(cursor.getString(cursor.getColumnIndexOrThrow("detail"))) }
+            }
+            assertTrue(plan.toString(), plan.any { "index_transcription_history_timestamp_id" in it })
+            assertFalse(plan.toString(), plan.any { "TEMP B-TREE" in it })
+        } finally {
+            migratedDb.close()
             context.deleteDatabase(databaseName)
         }
     }
@@ -435,9 +470,9 @@ class HistoryFtsSyncInstrumentedTest {
     }
 
     @Test
-    fun everyLegacyRawSchemaUpgradesToVersion16() {
+    fun everyLegacyRawSchemaUpgradesToVersion17() {
         (1..6).forEach { version ->
-            val databaseName = "raw-schema-$version-to-16.db"
+            val databaseName = "raw-schema-$version-to-17.db"
             createLegacyRawDatabase(databaseName, version)
             openMigratedDatabase(databaseName).close()
             context.deleteDatabase(databaseName)

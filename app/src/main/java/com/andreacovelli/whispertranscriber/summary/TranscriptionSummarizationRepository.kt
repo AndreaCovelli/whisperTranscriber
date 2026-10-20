@@ -4,7 +4,6 @@ import androidx.room.withTransaction
 import com.andreacovelli.whispertranscriber.StoredMessages
 import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.data.AppDatabase
-import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.data.HistoryRepository
 import com.andreacovelli.whispertranscriber.data.TranscriptionJobSummarizationDao
 import javax.inject.Inject
@@ -66,15 +65,4 @@ class TranscriptionSummarizationRepository @Inject constructor(
 
     suspend fun invalidateSummaryAttempt(id: Int, attemptId: String): Boolean =
         jobSummarizationDao.invalidateSummaryAttempt(id, attemptId) > 0
-
-    suspend fun clearJobSummary(jobId: Int) {
-        db.withTransaction {
-            val historyId = db.transcriptionJobDao().getHistoryIdByJobId(jobId)
-            if (historyId != null) {
-                historyRepository.clearContent(historyId, HistoryContentField.SUMMARY)
-            } else {
-                db.transcriptionJobDao().clearSummaryResult(jobId, System.currentTimeMillis())
-            }
-        }
-    }
 }

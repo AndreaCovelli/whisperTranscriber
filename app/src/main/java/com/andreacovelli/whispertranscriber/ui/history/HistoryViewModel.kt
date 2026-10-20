@@ -126,10 +126,6 @@ class HistoryViewModel @Inject constructor(
         }
     }
 
-    fun setSearchQuery(query: String) {
-        dispatch(HistoryMsg.SetSearchQuery(query))
-    }
-
     fun dispatch(msg: HistoryMsg) {
         when (msg) {
             is HistoryMsg.SetSearchQuery -> _searchQuery.value = msg.query

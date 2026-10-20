@@ -295,9 +295,6 @@ interface TranscriptionJobDao {
     @Query("SELECT id AS jobId, stagedFilePath FROM active_jobs WHERE historyId IS NOT NULL")
     suspend fun getAllHistoryLinkedJobCleanup(): List<HistoryJobCleanup>
 
-    @Query("UPDATE active_jobs SET historyId = :historyId WHERE id = :jobId")
-    suspend fun updateHistoryId(jobId: Int, historyId: Int)
-
     @Query(
         """
         SELECT *
