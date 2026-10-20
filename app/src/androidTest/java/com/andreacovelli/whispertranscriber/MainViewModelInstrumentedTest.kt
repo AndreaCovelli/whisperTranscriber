@@ -175,7 +175,7 @@ class MainViewModelInstrumentedTest {
 
         awaitState { state -> state.jobs.none { it.id == failed } }
         assertNull(fixture.repository.getJob(failed))
-        assertFalse(audio.exists())
+        awaitDeleted(audio)
     }
 
     @Test
@@ -194,8 +194,7 @@ class MainViewModelInstrumentedTest {
         assertEquals(queued, state.jobs.single().id)
         assertNull(fixture.repository.getJob(completed))
         assertNull(fixture.repository.getJob(failed))
-        assertFalse(completedAudio.exists())
-        assertFalse(failedAudio.exists())
+        awaitDeleted(completedAudio, failedAudio)
         assertTrue(queuedAudio.isFile)
     }
 

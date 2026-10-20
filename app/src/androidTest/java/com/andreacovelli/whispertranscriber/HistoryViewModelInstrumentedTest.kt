@@ -115,8 +115,8 @@ class HistoryViewModelInstrumentedTest {
         dispatch(HistoryMsg.DeleteItem(checkNotNull(history(removed))))
 
         awaitVisible(kept)
+        awaitDeleted(removedAudio)
         assertNull(fixture.repository.getJob(removedJob))
-        assertFalse(removedAudio.exists())
         assertFalse(removedJob in fixture.scheduler.active)
         assertEquals(kept, fixture.repository.getJob(keptJob)?.historyId)
         assertTrue(keptAudio.isFile)
@@ -136,10 +136,9 @@ class HistoryViewModelInstrumentedTest {
         dispatch(HistoryMsg.DeleteAll)
 
         awaitVisible()
+        awaitDeleted(firstAudio, secondAudio)
         assertNull(fixture.repository.getJob(firstJob))
         assertNull(fixture.repository.getJob(secondJob))
-        assertFalse(firstAudio.exists())
-        assertFalse(secondAudio.exists())
         assertTrue(fixture.scheduler.active.isEmpty())
     }
 

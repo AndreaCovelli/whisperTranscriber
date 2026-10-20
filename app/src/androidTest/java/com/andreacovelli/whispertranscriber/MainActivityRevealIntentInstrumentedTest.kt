@@ -44,7 +44,9 @@ class MainActivityRevealIntentInstrumentedTest {
         composeRule.runOnUiThread {
             activity.finishAndRemoveTask()
         }
-        composeRule.waitUntil { activity.isDestroyed }
+        // The system destroys a finishing activity only after the next one reports idle, with a 10 s
+        // idle-timeout fallback, so a busy emulator can exceed waitUntil's default 1 s.
+        composeRule.waitUntil(DESTROY_TIMEOUT_MILLIS) { activity.isDestroyed }
     }
 
     @Test
@@ -117,6 +119,8 @@ class MainActivityRevealIntentInstrumentedTest {
     }
 
     companion object {
+        private const val DESTROY_TIMEOUT_MILLIS = 15_000L
+
         @JvmStatic
         @BeforeClass
         fun grantNotificationPermission() {
