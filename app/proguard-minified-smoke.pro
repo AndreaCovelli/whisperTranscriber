@@ -11,3 +11,20 @@
 -keep,allowobfuscation class com.andreacovelli.whispertranscriber.history.HistoryExportFormatKt {
     public static *** buildHistoryExport(...);
 }
+
+# The export test wires the repository by hand, while production reaches these only through
+# Hilt bindings. Keep that test-only path so R8 cannot devirtualize or drop it; names still obfuscate.
+-keep,allowobfuscation class com.andreacovelli.whispertranscriber.data.AppDatabase {
+    public abstract *** transcriptionHistoryDao();
+    public abstract *** transcriptionJobDao();
+}
+-keep,allowobfuscation class com.andreacovelli.whispertranscriber.data.RoomHistoryRepository {
+    public <init>(...);
+    public *** exportHistory(...);
+    public *** insert(...);
+    public *** deleteById(...);
+    public *** hasHistory(...);
+}
+-keep,allowobfuscation class com.andreacovelli.whispertranscriber.data.TranscriptionHistory {
+    public *;
+}
