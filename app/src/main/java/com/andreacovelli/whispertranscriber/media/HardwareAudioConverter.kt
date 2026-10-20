@@ -55,6 +55,7 @@ object HardwareAudioConverter {
     private const val CODEC_BUFFER_TIMEOUT_US = 10_000L
     private const val PROGRESS_STEP = 0.05f
     private const val PROGRESS_INTERVAL_NS = 250_000_000L
+    private const val END_OF_STREAM_STALL_TIMEOUT_NS = 5_000_000_000L
 
     data class Result(val sampleRate: Int, val channelCount: Int, val durationUs: Long)
 
@@ -71,6 +72,8 @@ object HardwareAudioConverter {
     private data class ProgressState(val lastProgress: Float, val lastDispatchNs: Long)
 
     private data class InputFeedResult(val inputEos: Boolean, val progressState: ProgressState)
+
+    private enum class DecoderOutput { NONE, PRODUCED, END_OF_STREAM }
 
     suspend fun convertTo16kMonoWav(
         context: Context,
@@ -216,12 +219,14 @@ object HardwareAudioConverter {
                 sourceChannels = sourceChannels,
                 channelMask = sourceChannelMask,
             ),
-            resampler = if (sampleRate != CONVERTED_AUDIO_SAMPLE_RATE) {
-                MonoPcmResampler(sampleRate, CONVERTED_AUDIO_SAMPLE_RATE)
-            } else {
-                null
-            },
+            resampler = createResampler(sampleRate),
         )
+    }
+
+    private fun createResampler(sampleRate: Int): MonoPcmResampler? = if (sampleRate != CONVERTED_AUDIO_SAMPLE_RATE) {
+        MonoPcmResampler(sampleRate, CONVERTED_AUDIO_SAMPLE_RATE)
+    } else {
+        null
     }
 
     private suspend fun decodeAudioStream(
@@ -236,6 +241,7 @@ object HardwareAudioConverter {
         var inputEos = false
         var outputEos = false
         var progressState = ProgressState(lastProgress = -1f, lastDispatchNs = 0L)
+        val drainWatchdog = DecoderDrainWatchdog(END_OF_STREAM_STALL_TIMEOUT_NS)
 
         while (!outputEos && currentCoroutineContext().isActive) {
             if (!inputEos) {
@@ -250,12 +256,15 @@ object HardwareAudioConverter {
                 inputEos = feedResult.inputEos
                 progressState = feedResult.progressState
             }
-            outputEos = handleDecoderOutput(
-                decoder = decoder,
-                info = info,
-                state = state,
-                scratchBuffers = scratchBuffers,
-            )
+            when (handleDecoderOutput(decoder, info, state, scratchBuffers)) {
+                DecoderOutput.END_OF_STREAM -> outputEos = true
+                DecoderOutput.PRODUCED -> drainWatchdog.onOutput()
+                DecoderOutput.NONE -> if (inputEos && drainWatchdog.isStalled()) {
+                    // Some decoders never flag end of stream; keep the audio decoded so far.
+                    android.util.Log.w("HardwareAudioConverter", "Decoder stalled after end of input")
+                    outputEos = true
+                }
+            }
         }
     }
 
@@ -308,32 +317,45 @@ object HardwareAudioConverter {
         info: MediaCodec.BufferInfo,
         state: DecoderState,
         scratchBuffers: ScratchBuffers,
-    ): Boolean = when (val outputIndex = decoder.dequeueOutputBuffer(info, CODEC_BUFFER_TIMEOUT_US)) {
+    ): DecoderOutput = when (val outputIndex = decoder.dequeueOutputBuffer(info, CODEC_BUFFER_TIMEOUT_US)) {
         MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
             updateDecoderState(decoder.outputFormat, state)
-            false
+            DecoderOutput.PRODUCED
         }
-        MediaCodec.INFO_TRY_AGAIN_LATER -> false
-        else -> {
-            if (outputIndex >= 0) {
-                processOutputBuffer(decoder, outputIndex, info, state, scratchBuffers)
+        MediaCodec.INFO_TRY_AGAIN_LATER -> DecoderOutput.NONE
+        else -> if (outputIndex < 0) {
+            DecoderOutput.NONE
+        } else {
+            processOutputBuffer(decoder, outputIndex, info, state, scratchBuffers)
+            if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                DecoderOutput.END_OF_STREAM
+            } else {
+                DecoderOutput.PRODUCED
             }
-            outputIndex >= 0 && (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
         }
     }
 
     private fun updateDecoderState(outputFormat: MediaFormat, state: DecoderState) {
-        state.sampleRate = outputFormat.intValueOr(MediaFormat.KEY_SAMPLE_RATE, state.sampleRate)
+        val pcmEncoding = outputFormat.intValueOr(MediaFormat.KEY_PCM_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
+        if (!isSupportedPcmEncoding(pcmEncoding)) {
+            throw UserFacingIOException(UserMessage(R.string.conversion_unsupported_pcm_encoding))
+        }
+        val sampleRate = outputFormat.intValueOr(MediaFormat.KEY_SAMPLE_RATE, state.sampleRate)
+        if (sampleRate != state.sampleRate) {
+            // Emit the old rate's buffered tail before switching; a mid-stream change must not drop samples.
+            flushResampler(state)
+            state.sampleRate = sampleRate
+            state.resampler = createResampler(sampleRate)
+        }
         state.sourceChannels = outputFormat.intValueOr(MediaFormat.KEY_CHANNEL_COUNT, state.sourceChannels)
         state.sourceChannelMask = outputFormat.intValueOrNull(MediaFormat.KEY_CHANNEL_MASK) ?: state.sourceChannelMask
-        state.pcmEncoding = outputFormat.intValueOr(MediaFormat.KEY_PCM_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
+        state.pcmEncoding = pcmEncoding
         state.downmixGains = PcmMonoDownmixer.createChannelGains(state.sourceChannels, state.sourceChannelMask)
-        state.resampler = if (state.sampleRate != CONVERTED_AUDIO_SAMPLE_RATE) {
-            MonoPcmResampler(state.sampleRate, CONVERTED_AUDIO_SAMPLE_RATE)
-        } else {
-            null
-        }
     }
+
+    private fun isSupportedPcmEncoding(encoding: Int): Boolean = encoding == AudioFormat.ENCODING_PCM_16BIT ||
+        encoding == AudioFormat.ENCODING_PCM_FLOAT ||
+        PcmIntegerSampleReader.bytesPerSample(encoding) != null
 
     private fun processOutputBuffer(
         decoder: MediaCodec,
@@ -355,7 +377,7 @@ object HardwareAudioConverter {
                 state.pcmEncoding == AudioFormat.ENCODING_PCM_16BIT ->
                     processPcm16Output(outputBuffer, info, state, scratchBuffers)
                 else ->
-                    error("Unsupported PCM encoding: ${state.pcmEncoding}")
+                    processIntegerPcmOutput(outputBuffer, info, state, scratchBuffers)
             }
         }
         decoder.releaseOutputBuffer(outputIndex, false)
@@ -418,6 +440,29 @@ object HardwareAudioConverter {
         writeDecodedFrames(scratchBuffers.monoScratch, frames, state)
     }
 
+    private fun processIntegerPcmOutput(
+        outputBuffer: ByteBuffer,
+        info: MediaCodec.BufferInfo,
+        state: DecoderState,
+        scratchBuffers: ScratchBuffers,
+    ) {
+        val bytesPerSample = requireNotNull(PcmIntegerSampleReader.bytesPerSample(state.pcmEncoding))
+        val samplesCount = info.size / bytesPerSample
+        val frames = samplesCount / state.sourceChannels
+        scratchBuffers.ensureFloatCapacity(samplesCount)
+        scratchBuffers.ensureMonoCapacity(frames)
+        PcmIntegerSampleReader.readAsFloat(outputBuffer, state.pcmEncoding, scratchBuffers.floatScratch, samplesCount)
+        PcmMonoDownmixer.mixFloatToMono(
+            source = scratchBuffers.floatScratch,
+            frames = frames,
+            sourceChannels = state.sourceChannels,
+            channelMask = state.sourceChannelMask,
+            destination = scratchBuffers.monoScratch,
+            channelGains = state.downmixGains,
+        )
+        writeDecodedFrames(scratchBuffers.monoScratch, frames, state)
+    }
+
     private fun writeDecodedFrames(monoSamples: FloatArray, frameCount: Int, state: DecoderState) {
         val resampler = state.resampler
         if (resampler != null) {
@@ -450,4 +495,20 @@ object HardwareAudioConverter {
 
     private fun MediaFormat.longValueOr(key: String, fallback: Long): Long =
         if (containsKey(key)) getLong(key) else fallback
+}
+
+/** Detects decoders that stop producing output after the end of input without ever flagging end of stream. */
+internal class DecoderDrainWatchdog(private val timeoutNs: Long, private val nanoTime: () -> Long = System::nanoTime) {
+    private var idleSinceNs: Long? = null
+
+    fun onOutput() {
+        idleSinceNs = null
+    }
+
+    /** Records an empty poll and reports whether the decoder has been idle for at least the timeout. */
+    fun isStalled(): Boolean {
+        val nowNs = nanoTime()
+        val idleSince = idleSinceNs ?: nowNs.also { idleSinceNs = it }
+        return nowNs - idleSince >= timeoutNs
+    }
 }

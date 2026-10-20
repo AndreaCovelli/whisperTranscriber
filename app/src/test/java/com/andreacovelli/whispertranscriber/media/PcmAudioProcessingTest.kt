@@ -7,6 +7,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.PI
 import kotlin.math.sin
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -151,6 +152,58 @@ class PcmAudioProcessingTest {
     }
 
     @Test
+    fun wavWriter_writesNanSamplesAsSilence() {
+        val outputFile = File.createTempFile("nan_pcm_", ".wav")
+        try {
+            Pcm16WavWriter(outputFile).use { writer ->
+                writer.writeMonoFloats(floatArrayOf(Float.NaN, 0.5f, -2f), sampleCount = 3)
+                writer.finish()
+            }
+
+            RandomAccessFile(outputFile, "r").use { input ->
+                input.seek(44)
+                assertEquals(0, java.lang.Short.reverseBytes(input.readShort()).toInt())
+                assertEquals(16_384, java.lang.Short.reverseBytes(input.readShort()).toInt())
+                assertEquals(-32_767, java.lang.Short.reverseBytes(input.readShort()).toInt())
+            }
+        } finally {
+            outputFile.delete()
+        }
+    }
+
+    @Test
+    fun integerSampleReader_normalizes8BitUnsignedSamples() {
+        val samples = readIntegerSamples(PcmIntegerSampleReader.ENCODING_PCM_8BIT, byteArrayOf(0, 0x80.toByte(), -1))
+
+        assertArrayEquals(floatArrayOf(-1f, 0f, 127f / 128f), samples, 0f)
+    }
+
+    @Test
+    fun integerSampleReader_normalizesSignExtended24BitPackedSamples() {
+        val samples = readIntegerSamples(
+            PcmIntegerSampleReader.ENCODING_PCM_24BIT_PACKED,
+            byteArrayOf(0, 0, 0x80.toByte(), -1, -1, 0x7f, 0, 0x40, 0),
+        )
+
+        assertArrayEquals(floatArrayOf(-1f, 8_388_607f / 8_388_608f, 16_384f / 8_388_608f), samples, 0f)
+    }
+
+    @Test
+    fun integerSampleReader_normalizes32BitSamplesAndAdvancesBuffer() {
+        val buffer = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).apply {
+            putInt(Int.MIN_VALUE)
+            putInt(1 shl 30)
+            flip()
+        }
+        val samples = FloatArray(2)
+
+        PcmIntegerSampleReader.readAsFloat(buffer, PcmIntegerSampleReader.ENCODING_PCM_32BIT, samples, 2)
+
+        assertArrayEquals(floatArrayOf(-1f, 0.5f), samples, 0f)
+        assertEquals(0, buffer.remaining())
+    }
+
+    @Test
     fun maximumPcmDataBytesForDuration_keepsStrictBoundaryBelowLimit() {
         val twoHoursUs = 2L * 60L * 60L * 1_000_000L
 
@@ -158,6 +211,17 @@ class PcmAudioProcessingTest {
             230_399_998L,
             maximumPcm16MonoDataBytesForDurationExclusive(twoHoursUs),
         )
+    }
+
+    private fun readIntegerSamples(encoding: Int, bytes: ByteArray): FloatArray {
+        val samples = FloatArray(bytes.size / requireNotNull(PcmIntegerSampleReader.bytesPerSample(encoding)))
+        PcmIntegerSampleReader.readAsFloat(
+            ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN),
+            encoding,
+            samples,
+            samples.size,
+        )
+        return samples
     }
 
     private fun resampleSine(frequencyHz: Double, inputSampleRate: Int, outputSampleRate: Int): FloatArray {

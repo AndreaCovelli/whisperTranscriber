@@ -13,6 +13,7 @@ import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.sin
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -98,6 +99,33 @@ class HardwareAudioConverterInstrumentedTest {
         }
     }
 
+    @Test
+    fun convertTo16kMonoWav_converts24BitStereoWavInput() = runBlocking {
+        val inputFile = File.createTempFile("converter_input_", ".wav", context.cacheDir)
+        val outputFile = File.createTempFile("converter_output_", ".wav", context.cacheDir)
+        try {
+            writePcm24StereoWav(file = inputFile, sampleRate = AAC_INPUT_SAMPLE_RATE, durationMs = 500)
+
+            val result = HardwareAudioConverter.convertTo16kMonoWav(
+                context = context,
+                inputUri = inputFile.toUri(),
+                outputFile = outputFile,
+                ioDispatcher = Dispatchers.IO,
+            )
+            val wavInfo = readWavInfo(outputFile)
+            val samples = ByteBuffer.wrap(wavInfo.pcmData).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+            val peak = (0 until samples.limit()).maxOf { index -> abs(samples.get(index).toInt()) }
+
+            assertEquals(OUTPUT_SAMPLE_RATE, wavInfo.sampleRate)
+            assertEquals(OUTPUT_CHANNELS, wavInfo.channelCount)
+            assertEquals(500_000L, result.durationUs)
+            assertTrue("Converted 24-bit audio peak was $peak", peak > Short.MAX_VALUE / 4)
+        } finally {
+            inputFile.delete()
+            outputFile.delete()
+        }
+    }
+
     private fun generatePcm16SineWave(sampleRate: Int, channelCount: Int, durationMs: Int): ByteArray {
         val frameCount = sampleRate * durationMs / 1000
         val buffer = ByteBuffer.allocate(frameCount * channelCount * 2).order(ByteOrder.LITTLE_ENDIAN)
@@ -135,6 +163,37 @@ class HardwareAudioConverterInstrumentedTest {
             out.write(header)
             out.write(pcm16)
         }
+    }
+
+    private fun writePcm24StereoWav(file: File, sampleRate: Int, durationMs: Int) {
+        val channelCount = 2
+        val bytesPerSample = 3
+        val frameCount = sampleRate * durationMs / 1000
+        val dataSize = frameCount * channelCount * bytesPerSample
+        val wav = ByteBuffer.allocate(44 + dataSize).order(ByteOrder.LITTLE_ENDIAN).apply {
+            put("RIFF".toByteArray(Charsets.US_ASCII))
+            putInt(36 + dataSize)
+            put("WAVE".toByteArray(Charsets.US_ASCII))
+            put("fmt ".toByteArray(Charsets.US_ASCII))
+            putInt(16)
+            putShort(1)
+            putShort(channelCount.toShort())
+            putInt(sampleRate)
+            putInt(sampleRate * channelCount * bytesPerSample)
+            putShort((channelCount * bytesPerSample).toShort())
+            putShort(24)
+            put("data".toByteArray(Charsets.US_ASCII))
+            putInt(dataSize)
+            for (frame in 0 until frameCount) {
+                val sample = (sin(2.0 * PI * 440.0 * frame / sampleRate) * 0.75 * 8_388_607).toInt()
+                repeat(channelCount) {
+                    put(sample.toByte())
+                    put((sample shr 8).toByte())
+                    put((sample shr 16).toByte())
+                }
+            }
+        }.array()
+        file.writeBytes(wav)
     }
 
     private fun writeAacM4a(file: File, pcm16: ByteArray) {
