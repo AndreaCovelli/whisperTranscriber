@@ -207,6 +207,7 @@ class MainViewModel @Inject constructor(
                     provider = queueSettings.provider,
                     customModelName = queueSettings.customModelName,
                     speakerDiarizationEnabled = queueSettings.speakerDiarizationEnabled,
+                    hints = queueSettings.hints(),
                     postTranscriptionWorkSpec = queueService.resolveAutomaticSummarizationWorkSpec(),
                 )
                 reduce(MainMsg.StatusChanged(result.statusMessage))

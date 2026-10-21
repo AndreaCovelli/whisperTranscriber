@@ -3,6 +3,7 @@ package com.andreacovelli.whispertranscriber
 import com.andreacovelli.whispertranscriber.security.DefaultGenAiClientFactory
 import com.andreacovelli.whispertranscriber.transcription.GeminiTranscriber
 import com.andreacovelli.whispertranscriber.transcription.ProviderResponseException
+import com.andreacovelli.whispertranscriber.transcription.TranscriptionHints
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionResult
 import java.io.File
 import java.util.concurrent.CountDownLatch
@@ -69,6 +70,7 @@ class GeminiUploadLifecycleTest {
         "gemini-test",
         false,
         "Speaker",
+        TranscriptionHints(),
         DefaultGenAiClientFactory(OkHttpClient.Builder().addInterceptor(transport).build()),
         Dispatchers.IO,
     )

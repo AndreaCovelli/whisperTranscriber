@@ -6,6 +6,7 @@ import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
 import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.settings.TranscriptionQueueSettings
+import com.andreacovelli.whispertranscriber.transcription.TranscriptionHints
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -102,6 +103,22 @@ class ApiKeyManagerInstrumentedTest {
     }
 
     @Test
+    fun transcriptionHints_areSavedAndClearedWithQueueSettings() = runBlocking {
+        apiKeyManager.saveTranscriptionLanguage(" IT ")
+        apiKeyManager.saveTranscriptionVocabulary("  Covelli, Kotlin \n")
+
+        val saved = apiKeyManager.getTranscriptionQueueSettings()
+        assertEquals("it", saved.languageHint)
+        assertEquals("Covelli, Kotlin", saved.vocabulary)
+        assertEquals(TranscriptionHints("it", listOf("Covelli", "Kotlin")), saved.hints())
+
+        apiKeyManager.saveTranscriptionLanguage("unsupported")
+        apiKeyManager.saveTranscriptionVocabulary(" ")
+
+        assertEquals(TranscriptionHints(), apiKeyManager.getTranscriptionQueueSettings().hints())
+    }
+
+    @Test
     fun microsoftSpeechRegionFlow_returnsSavedNormalizedValue() = runBlocking {
         apiKeyManager.saveMicrosoftSpeechRegion(" WestUS ")
 
@@ -128,5 +145,7 @@ class ApiKeyManagerInstrumentedTest {
         apiKeyManager.saveSummarizerCustomGeminiModelName("")
         apiKeyManager.saveBackgroundShareSummaryNotificationsEnabled(false)
         apiKeyManager.saveSpeakerDiarization(false)
+        apiKeyManager.saveTranscriptionLanguage("")
+        apiKeyManager.saveTranscriptionVocabulary("")
     }
 }

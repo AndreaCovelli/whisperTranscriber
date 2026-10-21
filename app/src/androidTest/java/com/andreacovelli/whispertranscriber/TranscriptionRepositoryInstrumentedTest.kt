@@ -25,6 +25,7 @@ import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_CANCELL
 import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_GENERATED
 import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_SUMMARIZING
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionData
+import com.andreacovelli.whispertranscriber.transcription.TranscriptionHints
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
 import java.io.File
 import kotlinx.coroutines.flow.first
@@ -375,6 +376,8 @@ class TranscriptionRepositoryInstrumentedTest {
             assertEquals(JOB_STATUS_QUEUED, retried.status)
             assertEquals(0, retried.retryCount)
             assertTrue(retried.speakerDiarizationEnabled)
+            assertEquals("it", retried.languageHint)
+            assertEquals("Covelli\nKotlin", retried.vocabulary)
             assertEquals(RetryResult.INELIGIBLE_STATUS, retryWithMicrosoft(jobId))
             repository.cancelJob(jobId, UserMessage.verbatim("Cancelled"))
             audio.delete()
@@ -460,6 +463,7 @@ class TranscriptionRepositoryInstrumentedTest {
         jobId, TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE.name,
         TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE.modelName, JobExecutionBackend.WORK_MANAGER.name,
         false, false, "", "", speakerDiarizationEnabled = true,
+        hints = TranscriptionHints("it", listOf("Covelli", "Kotlin")),
     )
 
     @Test

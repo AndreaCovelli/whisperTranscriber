@@ -71,6 +71,10 @@ class SettingsViewModel @Inject constructor(
             is SettingsMsg.SetBackgroundShareSummaryNotificationsEnabled ->
                 launchSafely { settings.saveBackgroundShareSummaryNotificationsEnabled(msg.enabled) }
             is SettingsMsg.SetSpeakerDiarization -> launchSafely { settings.saveSpeakerDiarization(msg.enabled) }
+            is SettingsMsg.SetTranscriptionLanguage ->
+                launchSafely { settings.saveTranscriptionLanguage(msg.languageCode) }
+            is SettingsMsg.SetTranscriptionVocabulary ->
+                launchSafely { settings.saveTranscriptionVocabulary(msg.vocabulary) }
             is SettingsMsg.SetMicrosoftSpeechRegion -> updateMicrosoftSpeechRegion(msg.region)
             is SettingsMsg.SaveMicrosoftSpeechKey -> validateAndSaveKey(msg.key, isGemini = false)
             is SettingsMsg.SaveGeminiKey -> validateAndSaveKey(msg.key, isGemini = true)

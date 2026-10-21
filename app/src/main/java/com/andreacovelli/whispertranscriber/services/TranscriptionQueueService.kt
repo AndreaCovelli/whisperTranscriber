@@ -24,7 +24,9 @@ import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
 import com.andreacovelli.whispertranscriber.settings.ApiKeyState
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
+import com.andreacovelli.whispertranscriber.transcription.TranscriptionHints
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
+import com.andreacovelli.whispertranscriber.transcription.encodeVocabulary
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -65,6 +67,7 @@ class TranscriptionQueueService @Inject constructor(
         provider: TranscriptionProvider,
         customModelName: String,
         speakerDiarizationEnabled: Boolean,
+        hints: TranscriptionHints = TranscriptionHints(),
         preferImmediateBackgroundStart: Boolean = false,
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec? = null,
         onJobsCommitted: () -> Unit = {},
@@ -76,6 +79,7 @@ class TranscriptionQueueService @Inject constructor(
                 provider,
                 customModelName,
                 speakerDiarizationEnabled,
+                hints,
                 preferImmediateBackgroundStart,
                 postTranscriptionWorkSpec,
                 onJobsCommitted,
@@ -88,6 +92,7 @@ class TranscriptionQueueService @Inject constructor(
         provider: TranscriptionProvider,
         customModelName: String,
         speakerDiarizationEnabled: Boolean,
+        hints: TranscriptionHints,
         preferImmediateBackgroundStart: Boolean = false,
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec? = null,
         onJobsCommitted: () -> Unit = {},
@@ -127,6 +132,8 @@ class TranscriptionQueueService @Inject constructor(
                 persistedPostTranscriptionConfig.queuedSummarizerCustomModelName,
                 batchId = batchId,
                 speakerDiarizationEnabled = speakerDiarizationEnabled,
+                languageHint = hints.languageCode,
+                vocabulary = encodeVocabulary(hints.vocabulary),
                 status = JOB_STATUS_QUEUED,
                 progress = 0f,
                 isRunning = false,
@@ -233,6 +240,7 @@ class TranscriptionQueueService @Inject constructor(
                 queuedSummarizerProviderName = persistedConfig.queuedSummarizerProviderName,
                 queuedSummarizerCustomModelName = persistedConfig.queuedSummarizerCustomModelName,
                 speakerDiarizationEnabled = snapshot.speakerDiarizationEnabled,
+                hints = snapshot.hints(),
             )
             if (retry == RetryResult.ACCEPTED) {
                 operations.cancel(jobId)

@@ -22,6 +22,8 @@ class SettingsReducerTest {
                     provider = TranscriptionProvider.GEMINI_CUSTOM,
                     customModelName = "gemini-custom",
                     speakerDiarizationEnabled = true,
+                    languageHint = "it",
+                    vocabulary = "Covelli",
                 ),
             ),
             SettingsMsg.SummarizationSettingsLoaded(
@@ -32,6 +34,8 @@ class SettingsReducerTest {
         assertEquals(TranscriptionProvider.GEMINI_CUSTOM, state.provider)
         assertEquals("gemini-custom", state.transcriptionCustomGeminiModelName)
         assertTrue(state.speakerDiarizationEnabled)
+        assertEquals("it", state.transcriptionLanguage)
+        assertEquals("Covelli", state.transcriptionVocabulary)
         assertEquals(TranscriptionProvider.GEMINI_PRO, state.summarizerProvider)
         assertEquals("summary-model", state.summarizerCustomGeminiModelName)
     }

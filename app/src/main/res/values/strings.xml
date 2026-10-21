@@ -12,6 +12,12 @@
     <string name="settings_summarizer_model">Summarizer Model</string>
     <string name="settings_speaker_diarization">Speaker Diarization</string>
     <string name="settings_speaker_diarization_body">Label speakers in transcriptions when the provider can distinguish them</string>
+    <string name="settings_transcription_hints_title">Language and Vocabulary</string>
+    <string name="settings_transcription_language_label">Recording language</string>
+    <string name="settings_transcription_language_automatic">Detect automatically</string>
+    <string name="settings_transcription_language_body">Choose a language only if every recording is in it. Automatic detection works better for mixed-language audio.</string>
+    <string name="settings_transcription_vocabulary_label">Names and terms</string>
+    <string name="settings_transcription_vocabulary_supporting">One per line or separated by commas, up to %1$d. Helps the provider spell names, acronyms, and jargon.</string>
     <string name="settings_automatic_summarization">Automatic Summarization</string>
     <string name="settings_automatic_summarization_body">Summarize completed transcriptions automatically</string>
     <string name="settings_background_share_summary_notifications">Stay in current app when sharing</string>

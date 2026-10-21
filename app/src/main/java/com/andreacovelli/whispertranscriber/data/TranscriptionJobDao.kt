@@ -264,6 +264,8 @@ interface TranscriptionJobDao {
             j.retryCount,
             j.batchId,
             j.speakerDiarizationEnabled,
+            j.languageHint,
+            j.vocabulary,
             j.historyId,
             j.timestamp,
             j.finishedAt
@@ -386,7 +388,9 @@ interface TranscriptionJobDao {
             notifyResult = :notifyResult,
             queuedSummarizerProviderName = :queuedSummarizerProviderName,
             queuedSummarizerCustomModelName = :queuedSummarizerCustomModelName,
-            speakerDiarizationEnabled = :speakerDiarizationEnabled
+            speakerDiarizationEnabled = :speakerDiarizationEnabled,
+            languageHint = :languageHint,
+            vocabulary = :vocabulary
         WHERE id = :jobId
           AND status IN ('$JOB_STATUS_ERROR', '$JOB_STATUS_CANCELLED')
           AND isRunning = 0 AND isSummarizing = 0
@@ -402,6 +406,8 @@ interface TranscriptionJobDao {
         queuedSummarizerProviderName: String,
         queuedSummarizerCustomModelName: String,
         speakerDiarizationEnabled: Boolean,
+        languageHint: String,
+        vocabulary: String,
     ): Int
 
     @Query(

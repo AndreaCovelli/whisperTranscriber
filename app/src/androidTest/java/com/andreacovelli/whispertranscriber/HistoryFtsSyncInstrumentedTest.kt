@@ -28,6 +28,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
+private val LATEST_DATABASE_VERSION = AppDatabase.MIGRATIONS.last().endVersion
+
 @RunWith(AndroidJUnit4::class)
 class HistoryFtsSyncInstrumentedTest {
     @get:Rule
@@ -376,9 +378,9 @@ class HistoryFtsSyncInstrumentedTest {
     }
 
     @Test
-    fun everyExportedSchemaUpgradesToVersion17() {
-        (7..16).forEach { version ->
-            val databaseName = "exported-schema-$version-to-17.db"
+    fun everyExportedSchemaUpgradesToLatestVersion() {
+        (7 until LATEST_DATABASE_VERSION).forEach { version ->
+            val databaseName = "exported-schema-$version-to-latest.db"
             migrationHelper.createDatabase(databaseName, version).close()
             openMigratedDatabase(databaseName).close()
             context.deleteDatabase(databaseName)
@@ -414,6 +416,25 @@ class HistoryFtsSyncInstrumentedTest {
             }
             assertTrue(plan.toString(), plan.any { "index_transcription_history_timestamp_id" in it })
             assertFalse(plan.toString(), plan.any { "TEMP B-TREE" in it })
+        } finally {
+            migratedDb.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun migrationToVersion18_addsEmptyTranscriptionHintsToExistingJobs() {
+        val databaseName = "transcription-hints-migration-test.db"
+        migrationHelper.createDatabase(databaseName, 17).use { legacyDb -> legacyDb.insertVersion17Job(id = 5) }
+
+        val migratedDb = migrationHelper.runMigrationsAndValidate(databaseName, 18, true, *AppDatabase.MIGRATIONS)
+        try {
+            migratedDb.query("SELECT displayName, languageHint, vocabulary FROM active_jobs WHERE id = 5").use {
+                assertTrue(it.moveToNext())
+                assertEquals("queued.wav", it.getString(0))
+                assertEquals("", it.getString(1))
+                assertEquals("", it.getString(2))
+            }
         } finally {
             migratedDb.close()
             context.deleteDatabase(databaseName)
@@ -470,9 +491,9 @@ class HistoryFtsSyncInstrumentedTest {
     }
 
     @Test
-    fun everyLegacyRawSchemaUpgradesToVersion17() {
+    fun everyLegacyRawSchemaUpgradesToLatestVersion() {
         (1..6).forEach { version ->
-            val databaseName = "raw-schema-$version-to-17.db"
+            val databaseName = "raw-schema-$version-to-latest.db"
             createLegacyRawDatabase(databaseName, version)
             openMigratedDatabase(databaseName).close()
             context.deleteDatabase(databaseName)
@@ -522,6 +543,22 @@ class HistoryFtsSyncInstrumentedTest {
             .addMigrations(*AppDatabase.MIGRATIONS)
             .build()
             .also { it.openHelper.writableDatabase }
+
+    private fun SupportSQLiteDatabase.insertVersion17Job(id: Int) {
+        execSQL(
+            """
+            INSERT INTO active_jobs(id, uri, displayName, sourceMimeType, stagedFilePath, providerName,
+                requestedModel, executionBackend, summarizeAfterTranscription, notifyResult,
+                queuedSummarizerProviderName, queuedSummarizerCustomModelName, status, statusMessage, progress,
+                transcript, language, model, summary, summaryProviderName, summaryModel, summaryStatus, error,
+                summaryError, isRunning, isSummarizing, autoSummaryAttempted, executionOwnerId, summaryAttemptId,
+                retryCount, batchId, speakerDiarizationEnabled, historyId, timestamp, finishedAt)
+            VALUES ($id, 'content://queued', 'queued.wav', 'audio/wav', NULL, 'MICROSOFT_MAI_TRANSCRIBE', NULL,
+                'WORK_MANAGER', 0, 0, '', '', '$JOB_STATUS_QUEUED', NULL, 0, '', '', '', '', '', '', '', NULL,
+                NULL, 0, 0, 0, '', '', 0, NULL, 0, NULL, 100, 0)
+            """.trimIndent(),
+        )
+    }
 
     private fun SupportSQLiteDatabase.insertVersion14Job(
         displayName: String,

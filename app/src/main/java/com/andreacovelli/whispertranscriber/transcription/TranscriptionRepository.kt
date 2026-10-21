@@ -189,6 +189,7 @@ class TranscriptionRepository @Inject constructor(
         queuedSummarizerProviderName: String,
         queuedSummarizerCustomModelName: String,
         speakerDiarizationEnabled: Boolean = false,
+        hints: TranscriptionHints = TranscriptionHints(),
     ): RetryResult = db.withTransaction {
         val job = jobDao.getJobById(jobId) ?: return@withTransaction RetryResult.INELIGIBLE_STATUS
         if (job.status !in setOf(JOB_STATUS_ERROR, JOB_STATUS_CANCELLED) || job.isRunning || job.isSummarizing) {
@@ -211,6 +212,8 @@ class TranscriptionRepository @Inject constructor(
             queuedSummarizerProviderName = queuedSummarizerProviderName,
             queuedSummarizerCustomModelName = queuedSummarizerCustomModelName,
             speakerDiarizationEnabled = speakerDiarizationEnabled,
+            languageHint = hints.languageCode,
+            vocabulary = encodeVocabulary(hints.vocabulary),
         )
         RetryResult.ACCEPTED
     }

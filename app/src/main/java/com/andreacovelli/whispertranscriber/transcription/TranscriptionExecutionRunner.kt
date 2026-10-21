@@ -232,6 +232,7 @@ class TranscriptionExecutionRunner @Inject constructor(
             providerExecution = providerExecution,
             speakerDiarizationEnabled = job.speakerDiarizationEnabled,
             speakerLabelPrefix = speakerLabelPrefix,
+            hints = job.transcriptionHints(),
             stagedFilePath = job.stagedFilePath,
             onProgressNotification = onProgressNotification,
         )
@@ -261,6 +262,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         providerExecution: ProviderExecution,
         speakerDiarizationEnabled: Boolean,
         speakerLabelPrefix: String,
+        hints: TranscriptionHints,
         stagedFilePath: String?,
         onProgressNotification: suspend (jobId: Int, displayName: String, progressText: UserMessage) -> Unit,
     ) {
@@ -297,6 +299,7 @@ class TranscriptionExecutionRunner @Inject constructor(
                     providerExecution = providerExecution,
                     speakerDiarizationEnabled = speakerDiarizationEnabled,
                     speakerLabelPrefix = speakerLabelPrefix,
+                    hints = hints,
                     part = part,
                     onProgressNotification = onProgressNotification,
                 )
@@ -365,6 +368,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         providerExecution: ProviderExecution,
         speakerDiarizationEnabled: Boolean,
         speakerLabelPrefix: String,
+        hints: TranscriptionHints,
         part: ChunkPosition?,
         onProgressNotification: suspend (jobId: Int, displayName: String, progressText: UserMessage) -> Unit,
     ): TranscriptionData {
@@ -373,6 +377,7 @@ class TranscriptionExecutionRunner @Inject constructor(
             providerExecution = providerExecution,
             speakerDiarizationEnabled = speakerDiarizationEnabled,
             speakerLabelPrefix = speakerLabelPrefix,
+            hints = hints,
         )
         var resultData: TranscriptionData? = null
         suspend fun reportProviderStatus(message: UserMessage) {

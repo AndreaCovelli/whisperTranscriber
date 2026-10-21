@@ -15,8 +15,12 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -45,6 +50,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.andreacovelli.whispertranscriber.BuildConfig
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.transcription.MAX_VOCABULARY_TERMS
+import com.andreacovelli.whispertranscriber.transcription.TRANSCRIPTION_LANGUAGE_CODES
 import com.andreacovelli.whispertranscriber.ui.asString
 import com.andreacovelli.whispertranscriber.ui.components.ApiKeyCard
 import com.andreacovelli.whispertranscriber.ui.components.ProviderSelector
@@ -52,6 +59,7 @@ import com.andreacovelli.whispertranscriber.ui.settings.RegionValidationState
 import com.andreacovelli.whispertranscriber.ui.settings.SettingsMsg
 import com.andreacovelli.whispertranscriber.ui.settings.SettingsUiState
 import com.andreacovelli.whispertranscriber.ui.settings.SettingsViewModel
+import java.util.Locale
 
 @Composable
 fun SettingsScreen(
@@ -112,6 +120,7 @@ internal fun SettingsScreenContent(
             SettingsSectionHeader(stringResource(R.string.settings_section_general))
             TranscriptionProviderCard(uiState = uiState, dispatch = dispatch)
             SpeakerDiarizationCard(uiState = uiState, dispatch = dispatch)
+            TranscriptionHintsCard(uiState = uiState, dispatch = dispatch)
             SummarizerProviderCard(uiState = uiState, dispatch = dispatch)
             BackgroundShareSummaryNotificationsCard(
                 uiState = uiState,
@@ -188,6 +197,93 @@ private fun SpeakerDiarizationCard(uiState: SettingsUiState, dispatch: (Settings
         checked = uiState.speakerDiarizationEnabled,
         onCheckedChange = { dispatch(SettingsMsg.SetSpeakerDiarization(it)) },
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TranscriptionHintsCard(uiState: SettingsUiState, dispatch: (SettingsMsg) -> Unit) {
+    var languageMenuExpanded by remember { mutableStateOf(false) }
+    var vocabularyInput by remember(uiState.transcriptionVocabulary) {
+        mutableStateOf(uiState.transcriptionVocabulary)
+    }
+    var vocabularyHadFocus by remember(uiState.transcriptionVocabulary) { mutableStateOf(false) }
+    val automaticLabel = stringResource(R.string.settings_transcription_language_automatic)
+    val displayLocale = LocalConfiguration.current.locales[0]
+    val languages = remember(displayLocale) {
+        TRANSCRIPTION_LANGUAGE_CODES
+            .map { code -> code to Locale.forLanguageTag(code).getDisplayName(displayLocale) }
+            .sortedBy { (_, name) -> name.lowercase(displayLocale) }
+    }
+    val selectedLabel = languages.firstOrNull { (code, _) -> code == uiState.transcriptionLanguage }?.second
+        ?: automaticLabel
+
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                stringResource(R.string.settings_transcription_hints_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = stringResource(R.string.settings_transcription_language_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            ExposedDropdownMenuBox(
+                expanded = languageMenuExpanded,
+                onExpandedChange = { languageMenuExpanded = it },
+            ) {
+                OutlinedTextField(
+                    value = selectedLabel,
+                    onValueChange = {},
+                    readOnly = true,
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.settings_transcription_language_label)) },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = languageMenuExpanded) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+                )
+                ExposedDropdownMenu(
+                    expanded = languageMenuExpanded,
+                    onDismissRequest = { languageMenuExpanded = false },
+                ) {
+                    (listOf("" to automaticLabel) + languages).forEach { (code, name) ->
+                        DropdownMenuItem(
+                            text = { Text(name) },
+                            onClick = {
+                                languageMenuExpanded = false
+                                if (code != uiState.transcriptionLanguage) {
+                                    dispatch(SettingsMsg.SetTranscriptionLanguage(code))
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+            OutlinedTextField(
+                value = vocabularyInput,
+                onValueChange = { vocabularyInput = it },
+                label = { Text(stringResource(R.string.settings_transcription_vocabulary_label)) },
+                supportingText = {
+                    Text(stringResource(R.string.settings_transcription_vocabulary_supporting, MAX_VOCABULARY_TERMS))
+                },
+                minLines = 2,
+                maxLines = 6,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { focusState ->
+                        if (focusState.isFocused) {
+                            vocabularyHadFocus = true
+                        } else if (vocabularyHadFocus && vocabularyInput.trim() != uiState.transcriptionVocabulary) {
+                            dispatch(SettingsMsg.SetTranscriptionVocabulary(vocabularyInput))
+                        }
+                    },
+            )
+        }
+    }
 }
 
 @Composable

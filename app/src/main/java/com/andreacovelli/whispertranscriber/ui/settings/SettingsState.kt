@@ -42,6 +42,8 @@ data class SettingsUiState(
     val automaticSummarizationEnabled: Boolean = false,
     val backgroundShareSummaryNotificationsEnabled: Boolean = false,
     val speakerDiarizationEnabled: Boolean = false,
+    val transcriptionLanguage: String = "",
+    val transcriptionVocabulary: String = "",
 )
 
 /** User actions from the settings screen, plus the results the view model reports back. */
@@ -51,6 +53,8 @@ sealed interface SettingsMsg {
     data class SetAutomaticSummarization(val enabled: Boolean) : SettingsMsg
     data class SetBackgroundShareSummaryNotificationsEnabled(val enabled: Boolean) : SettingsMsg
     data class SetSpeakerDiarization(val enabled: Boolean) : SettingsMsg
+    data class SetTranscriptionLanguage(val languageCode: String) : SettingsMsg
+    data class SetTranscriptionVocabulary(val vocabulary: String) : SettingsMsg
     data class SetMicrosoftSpeechRegion(val region: String) : SettingsMsg
     data class SaveMicrosoftSpeechKey(val key: String) : SettingsMsg
     data class SaveGeminiKey(val key: String) : SettingsMsg
@@ -93,6 +97,8 @@ internal object SettingsReducer {
             backgroundShareSummaryNotificationsEnabled = msg.enabled,
         )
         is SettingsMsg.SetSpeakerDiarization -> state.copy(speakerDiarizationEnabled = msg.enabled)
+        is SettingsMsg.SetTranscriptionLanguage -> state.copy(transcriptionLanguage = msg.languageCode)
+        is SettingsMsg.SetTranscriptionVocabulary -> state.copy(transcriptionVocabulary = msg.vocabulary.trim())
         is SettingsMsg.SetMicrosoftSpeechRegion -> state.copy(
             microsoftSpeechRegion = msg.region,
             microsoftSpeechKeyValidation = KeyValidationState.Idle,
@@ -106,6 +112,8 @@ internal object SettingsReducer {
             provider = msg.settings.provider,
             transcriptionCustomGeminiModelName = msg.settings.customModelName,
             speakerDiarizationEnabled = msg.settings.speakerDiarizationEnabled,
+            transcriptionLanguage = msg.settings.languageHint,
+            transcriptionVocabulary = msg.settings.vocabulary,
         )
         is SettingsMsg.SummarizationSettingsLoaded -> state.copy(
             summarizerProvider = msg.settings.provider,

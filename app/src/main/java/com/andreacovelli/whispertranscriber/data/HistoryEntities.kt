@@ -68,6 +68,9 @@ data class TranscriptionJob(
     val retryCount: Int = 0,
     val batchId: String? = null,
     val speakerDiarizationEnabled: Boolean = false,
+    // Normalized hints captured when the job was queued or retried; see TranscriptionHints.
+    val languageHint: String = "",
+    val vocabulary: String = "",
     val historyId: Int? = null,
     val timestamp: Long = System.currentTimeMillis(),
     val finishedAt: Long = 0,

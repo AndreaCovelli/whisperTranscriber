@@ -66,6 +66,7 @@ internal class MicrosoftSpeechTranscriber(
     private val modelName: String,
     private val speakerDiarizationEnabled: Boolean,
     private val speakerLabelPrefix: String,
+    private val hints: TranscriptionHints,
     private val audioInspection: AudioInspection,
     private val okHttpClient: OkHttpClient,
     private val ioDispatcher: CoroutineDispatcher,
@@ -142,7 +143,7 @@ internal class MicrosoftSpeechTranscriber(
             encodedPath = "speechtotext/transcriptions:transcribe",
             apiVersion = MICROSOFT_SPEECH_API_VERSION,
         )
-        val definitionJson = buildMicrosoftSpeechDefinition(modelName, diarized).toString()
+        val definitionJson = buildMicrosoftSpeechDefinition(modelName, diarized, hints).toString()
         val multipartBody = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart(
@@ -184,6 +185,7 @@ internal class GeminiTranscriber(
     private val modelName: String,
     private val speakerDiarizationEnabled: Boolean,
     private val speakerLabelPrefix: String,
+    private val hints: TranscriptionHints,
     private val clientFactory: GenAiClientFactory,
     private val ioDispatcher: CoroutineDispatcher,
 ) : ProviderTranscriber {
@@ -285,11 +287,8 @@ internal class GeminiTranscriber(
         .required(listOf("language_code", "text"))
         .build()
 
-    private fun buildPrompt(): String = if (speakerDiarizationEnabled) {
-        buildGeminiSpeakerDiarizationPrompt(speakerLabelPrefix)
-    } else {
-        "Transcribe the provided audio. Return only a compact JSON object with fields: language_code (BCP-47 like en-US) and text (full transcript). Do not include any extra commentary."
-    }
+    private fun buildPrompt(): String =
+        buildGeminiTranscriptionPrompt(speakerDiarizationEnabled, speakerLabelPrefix, hints)
 
     private fun resolveGeminiErrorMessage(
         error: Throwable,
@@ -352,17 +351,25 @@ internal const val MICROSOFT_DIARIZATION_FALLBACK_MIN_DURATION_US = 10L * 60L * 
 internal fun shouldRetryMicrosoftSpeechWithoutDiarization(code: Int, durationUs: Long): Boolean =
     durationUs >= MICROSOFT_DIARIZATION_FALLBACK_MIN_DURATION_US && code in setOf(408, 500, 503)
 
-internal fun buildMicrosoftSpeechDefinition(modelName: String, speakerDiarizationEnabled: Boolean): JSONObject =
-    JSONObject()
-        .put(
-            "enhancedMode",
-            JSONObject()
-                .put("enabled", true)
-                .put("model", modelName),
-        )
-        .apply {
-            if (speakerDiarizationEnabled) put("diarization", JSONObject().put("enabled", true))
+internal fun buildMicrosoftSpeechDefinition(
+    modelName: String,
+    speakerDiarizationEnabled: Boolean,
+    hints: TranscriptionHints = TranscriptionHints(),
+): JSONObject = JSONObject()
+    .put(
+        "enhancedMode",
+        JSONObject()
+            .put("enabled", true)
+            .put("model", modelName),
+    )
+    .apply {
+        if (speakerDiarizationEnabled) put("diarization", JSONObject().put("enabled", true))
+        // Microsoft treats a locale as a strong constraint, so it is only sent when the user chose one.
+        if (hints.languageCode.isNotEmpty()) put("locales", JSONArray().put(hints.languageCode))
+        if (hints.vocabulary.isNotEmpty()) {
+            put("phraseList", JSONObject().put("phrases", JSONArray(hints.vocabulary)))
         }
+    }
 
 /**
  * Formats diarized phrases like the Gemini diarization output: consecutive phrases from the same
@@ -508,6 +515,20 @@ internal fun parseTranscriptTextValue(transcriptText: String, speakerDiarization
         .map(String::trim)
         .filter(String::isNotEmpty)
         .joinToString(separator = "\n")
+}
+
+internal fun buildGeminiTranscriptionPrompt(
+    speakerDiarizationEnabled: Boolean,
+    speakerLabelPrefix: String,
+    hints: TranscriptionHints,
+): String {
+    val base = if (speakerDiarizationEnabled) {
+        buildGeminiSpeakerDiarizationPrompt(speakerLabelPrefix)
+    } else {
+        "Transcribe the provided audio. Return only a compact JSON object with fields: language_code (BCP-47 like en-US) and text (full transcript). Do not include any extra commentary."
+    }
+    val hintInstructions = buildGeminiHintInstructions(hints)
+    return if (hintInstructions.isEmpty()) base else "$base\n$hintInstructions"
 }
 
 internal fun buildGeminiSpeakerDiarizationPrompt(speakerLabelPrefix: String): String {

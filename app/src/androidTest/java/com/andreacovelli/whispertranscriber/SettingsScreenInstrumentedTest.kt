@@ -13,6 +13,7 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -29,6 +30,7 @@ import com.andreacovelli.whispertranscriber.ui.settings.CustomModelValidation
 import com.andreacovelli.whispertranscriber.ui.settings.RegionValidationState
 import com.andreacovelli.whispertranscriber.ui.settings.SettingsMsg
 import com.andreacovelli.whispertranscriber.ui.settings.SettingsUiState
+import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -155,6 +157,34 @@ class SettingsScreenInstrumentedTest {
         composeRule.runOnIdle {
             assertEquals(SettingsMsg.ResetMicrosoftSpeechRegionValidation, messages.first())
             assertEquals(SettingsMsg.SetMicrosoftSpeechRegion("westus2"), messages.last())
+        }
+    }
+
+    @Test
+    fun transcriptionHints_selectLanguageAndSaveVocabularyWhenFocusLeaves() {
+        setSettings(SettingsUiState())
+        val automatic = context.getString(R.string.settings_transcription_language_automatic)
+        val italian = Locale.forLanguageTag("it").getDisplayName(context.resources.configuration.locales[0])
+
+        composeRule.onNode(hasText(automatic) and hasClickAction()).performScrollTo().performClick()
+        composeRule.onNodeWithText(italian).performScrollTo().performClick()
+        composeRule.runOnIdle { uiState = uiState.copy(transcriptionLanguage = "it") }
+        composeRule.onNode(hasText(italian) and hasClickAction()).assertIsDisplayed()
+
+        composeRule.onNodeWithText(context.getString(R.string.settings_transcription_vocabulary_label))
+            .performScrollTo()
+            .performClick()
+            .performTextReplacement("Covelli, Kotlin")
+        composeRule.runOnIdle { focusManager.clearFocus() }
+
+        composeRule.runOnIdle {
+            assertEquals(
+                listOf(
+                    SettingsMsg.SetTranscriptionLanguage("it"),
+                    SettingsMsg.SetTranscriptionVocabulary("Covelli, Kotlin"),
+                ),
+                messages,
+            )
         }
     }
 

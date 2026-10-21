@@ -14,6 +14,9 @@ import com.andreacovelli.whispertranscriber.di.IoDispatcher
 import com.andreacovelli.whispertranscriber.security.KeystoreCrypto
 import com.andreacovelli.whispertranscriber.transcription.MICROSOFT_MAI_TRANSCRIBE_MODEL
 import com.andreacovelli.whispertranscriber.transcription.MicrosoftSpeechEndpoint
+import com.andreacovelli.whispertranscriber.transcription.TranscriptionHints
+import com.andreacovelli.whispertranscriber.transcription.normalizeTranscriptionLanguage
+import com.andreacovelli.whispertranscriber.transcription.parseVocabulary
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
@@ -57,7 +60,16 @@ data class TranscriptionQueueSettings(
     val provider: TranscriptionProvider,
     val customModelName: String,
     val speakerDiarizationEnabled: Boolean,
-)
+    /** A supported language code, or "" for automatic detection. */
+    val languageHint: String = "",
+    /** Names and terms as entered by the user; see [parseVocabulary]. */
+    val vocabulary: String = "",
+) {
+    fun hints(): TranscriptionHints = TranscriptionHints(
+        languageCode = normalizeTranscriptionLanguage(languageHint),
+        vocabulary = parseVocabulary(vocabulary),
+    )
+}
 
 data class SummarizationSettings(val provider: TranscriptionProvider, val customModelName: String)
 
@@ -97,6 +109,8 @@ class ApiKeyManager @Inject constructor(
         private val BACKGROUND_SHARE_SUMMARY_NOTIFICATIONS_ENABLED =
             booleanPreferencesKey("background_share_summary_notifications_enabled")
         private val SPEAKER_DIARIZATION_ENABLED = booleanPreferencesKey("speaker_diarization_enabled")
+        private val TRANSCRIPTION_LANGUAGE = stringPreferencesKey("transcription_language")
+        private val TRANSCRIPTION_VOCABULARY = stringPreferencesKey("transcription_vocabulary")
     }
 
     val automaticSummarizationFlow: Flow<Boolean> = store.data.map { p ->
@@ -117,6 +131,25 @@ class ApiKeyManager @Inject constructor(
 
     suspend fun saveSpeakerDiarization(enabled: Boolean) {
         store.edit { it[SPEAKER_DIARIZATION_ENABLED] = enabled }
+    }
+
+    suspend fun saveTranscriptionLanguage(code: String) {
+        val normalized = normalizeTranscriptionLanguage(code)
+        store.edit { prefs ->
+            if (normalized.isEmpty()) {
+                prefs.remove(TRANSCRIPTION_LANGUAGE)
+            } else {
+                prefs[TRANSCRIPTION_LANGUAGE] =
+                    normalized
+            }
+        }
+    }
+
+    suspend fun saveTranscriptionVocabulary(vocabulary: String) {
+        val trimmed = vocabulary.trim()
+        store.edit { prefs ->
+            if (trimmed.isEmpty()) prefs.remove(TRANSCRIPTION_VOCABULARY) else prefs[TRANSCRIPTION_VOCABULARY] = trimmed
+        }
     }
 
     private suspend fun encryptKey(key: String): String = withContext(ioDispatcher) {
@@ -292,6 +325,8 @@ class ApiKeyManager @Inject constructor(
             provider = provider,
             customModelName = prefs[GEMINI_TRANSCRIPTION_CUSTOM_MODEL_NAME].orEmpty(),
             speakerDiarizationEnabled = prefs[SPEAKER_DIARIZATION_ENABLED] ?: false,
+            languageHint = normalizeTranscriptionLanguage(prefs[TRANSCRIPTION_LANGUAGE]),
+            vocabulary = prefs[TRANSCRIPTION_VOCABULARY].orEmpty(),
         )
     }.distinctUntilChanged()
 
