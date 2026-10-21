@@ -184,7 +184,7 @@ internal class MonoPcmResampler(
     private val inputRate: Int,
     private val outputRate: Int,
     taps: Int = recommendedTapCount(inputRate),
-    phases: Int = DEFAULT_PHASES,
+    phases: Int = recommendedPhaseCount(inputRate, outputRate),
 ) {
     private val tapCount = taps
     private val phaseCount = phases
@@ -295,13 +295,27 @@ internal class MonoPcmResampler(
 
     private fun convolve(leftIndex: Int, phase: Int): Float {
         val filter = kernel[phase]
-        var accumulator = 0f
+        val input = workBuffer
+        // Independent partial sums let the multiply-adds overlap instead of waiting on one accumulator.
+        var sum0 = 0f
+        var sum1 = 0f
+        var sum2 = 0f
+        var sum3 = 0f
         var tap = 0
         var inputIndex = leftIndex
-        while (tap < tapCount) {
-            accumulator += workBuffer[inputIndex++] * filter[tap++]
+        val unrolledTaps = tapCount - tapCount % 4
+        while (tap < unrolledTaps) {
+            sum0 += input[inputIndex] * filter[tap]
+            sum1 += input[inputIndex + 1] * filter[tap + 1]
+            sum2 += input[inputIndex + 2] * filter[tap + 2]
+            sum3 += input[inputIndex + 3] * filter[tap + 3]
+            tap += 4
+            inputIndex += 4
         }
-        return accumulator
+        while (tap < tapCount) {
+            sum0 += input[inputIndex++] * filter[tap++]
+        }
+        return (sum0 + sum1) + (sum2 + sum3)
     }
 
     private fun ensureWorkCapacity(minimumSize: Int) {
@@ -322,6 +336,18 @@ internal class MonoPcmResampler(
         private const val MAX_TAPS = 384
         private const val CUTOFF_MARGIN = 0.9
         private const val OUTPUT_CAPACITY_MARGIN = 32L
+
+        /**
+         * Output samples fall on exactly outputRate / gcd(inputRate, outputRate) distinct input phases, so
+         * common ratios get exact positions from a small kernel: one phase for 48 kHz, 160 for 44.1 kHz.
+         */
+        fun recommendedPhaseCount(inputRate: Int, outputRate: Int): Int {
+            val exactPhases = outputRate / greatestCommonDivisor(inputRate, outputRate)
+            return if (exactPhases <= DEFAULT_PHASES) exactPhases else DEFAULT_PHASES
+        }
+
+        tailrec fun greatestCommonDivisor(first: Int, second: Int): Int =
+            if (second == 0) first else greatestCommonDivisor(second, first % second)
 
         fun recommendedTapCount(inputRate: Int): Int {
             val scaled = ceil(BASE_TAPS_AT_48_KHZ * max(1.0, inputRate / 48_000.0)).toInt()

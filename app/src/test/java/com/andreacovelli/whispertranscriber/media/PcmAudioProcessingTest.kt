@@ -37,6 +37,41 @@ class PcmAudioProcessingTest {
     }
 
     @Test
+    fun monoResampler_preservesSpeechBandToneFrom44kHz() {
+        val output = resampleSine(
+            frequencyHz = 3_000.0,
+            inputSampleRate = 44_100,
+            outputSampleRate = 16_000,
+        )
+
+        assertTrue("Output RMS was ${rms(output)}", rms(output) in 0.55..0.58)
+    }
+
+    @Test
+    fun monoResampler_rejectsToneAboveOutputNyquistFrom44kHz() {
+        val output = resampleSine(
+            frequencyHz = 9_000.0,
+            inputSampleRate = 44_100,
+            outputSampleRate = 16_000,
+        )
+
+        assertTrue("Aliased output RMS was ${rms(output)}", rms(output) < 0.001)
+    }
+
+    @Test
+    fun monoResampler_preservesToneAndDurationForRateWithoutSmallExactRatio() {
+        // 44,056 Hz shares only a factor of 8 with 16 kHz, so it needs the approximate phase table.
+        val output = resampleSine(
+            frequencyHz = 3_000.0,
+            inputSampleRate = 44_056,
+            outputSampleRate = 16_000,
+        )
+
+        assertEquals(16_000, output.size)
+        assertTrue("Output RMS was ${rms(output)}", rms(output) in 0.55..0.58)
+    }
+
+    @Test
     fun monoResampler_preservesDurationAcrossChunkBoundaries() {
         val input = FloatArray(44_100) { index ->
             sin(2.0 * PI * 440.0 * index / 44_100.0).toFloat()

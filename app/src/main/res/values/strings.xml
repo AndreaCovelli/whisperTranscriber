@@ -323,6 +323,7 @@
         <item quantity="other">%d seconds</item>
     </plurals>
     <string name="conversion_no_samples">Decoded audio did not contain any PCM samples.</string>
+    <string name="conversion_audio_unreadable">Part of the audio could not be read. The file may be damaged.</string>
     <string name="conversion_output_too_large">Converted WAV exceeds its duration or classic RIFF size limit.</string>
     <string name="conversion_unsupported_pcm_encoding">The audio decoder produced an unsupported sample format.</string>
     <string name="conversion_insufficient_storage">Insufficient disk space for conversion. Needed at least %1$d MiB, but only %2$d MiB is available.</string>
