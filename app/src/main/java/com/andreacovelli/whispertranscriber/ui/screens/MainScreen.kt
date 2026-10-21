@@ -57,6 +57,7 @@ import com.andreacovelli.whispertranscriber.history.suggestedTextExportFileName
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_RETRY_SCHEDULED
 import com.andreacovelli.whispertranscriber.ui.asString
+import com.andreacovelli.whispertranscriber.ui.components.SummaryStyleChoices
 import com.andreacovelli.whispertranscriber.ui.components.TextSaveTarget
 import com.andreacovelli.whispertranscriber.ui.components.TranscriptionJobCard
 import com.andreacovelli.whispertranscriber.ui.components.TranscriptionJobCardActions
@@ -158,6 +159,7 @@ private fun MainScreenContent(
             viewModel = viewModel,
             job = job,
             canSummarize = uiState.providerSummary.canSummarize,
+            summaryStyleChoices = uiState.providerSummary.summaryStyleChoices,
             clipboard = clipboard,
             scope = scope,
             context = context,
@@ -251,6 +253,7 @@ private fun MainJobCard(
     viewModel: MainViewModel,
     job: TranscriptionJobState,
     canSummarize: Boolean,
+    summaryStyleChoices: SummaryStyleChoices,
     clipboard: Clipboard,
     scope: CoroutineScope,
     context: Context,
@@ -259,6 +262,7 @@ private fun MainJobCard(
     TranscriptionJobCard(
         job = job,
         canSummarize = canSummarize,
+        summaryStyleChoices = summaryStyleChoices,
         actions = rememberJobActions(
             job = job,
             viewModel = viewModel,
@@ -452,6 +456,7 @@ private fun rememberJobActions(
             cancelTranscription = { viewModel.dispatch(MainMsg.CancelJob(job.id)) },
             cancelSummary = { viewModel.dispatch(MainMsg.CancelSummary(job.id)) },
             delete = { viewModel.dispatch(MainMsg.DeleteJob(job.id)) },
+            summarizeWithStyle = { style -> viewModel.dispatch(MainMsg.SummarizeJob(job.id, style)) },
         )
     }
 }

@@ -10,7 +10,7 @@ Share one or more audio files from a file manager or audio player to queue them 
 - **Multi-provider transcription** — choose between Microsoft MAI Transcribe 2 or Gemini (Flash Lite, Flash, Pro, or a custom model)
 - **Batch processing** — share multiple audio files at once; jobs are staged locally, queued, and processed sequentially
 - **Long recordings** — audio longer than a provider handles well in one request is split at pauses and transcribed in parts
-- **AI summarization** — generate summaries manually or automatically after transcription, with a separately selected Gemini model (requires a Gemini API key)
+- **AI summarization** — generate summaries manually or automatically after transcription, with a separately selected Gemini model and a choice of summary styles or a custom prompt (requires a Gemini API key)
 - **Speaker labels** — optionally label distinguishable speakers in Microsoft MAI Transcribe or Gemini transcripts
 - **Background sharing** — stay in the sharing app while audio is queued, and receive the transcript or summary in a result notification
 - **Transcription history** — all transcripts are saved locally in a searchable Room database
@@ -178,7 +178,11 @@ Select **Custom Model** in either the transcription or summarizer selector in Se
 Choose the **Summarizer** model separately from the transcription provider. Enable
 **Automatic Summarization** to summarize each transcript as it finishes, including audio
 that is already queued; existing transcripts are not summarized retroactively. Automatic
-and manual summaries keep running in the background after you leave the app. **Speaker Diarization**
+and manual summaries keep running in the background after you leave the app. **Summary Style**
+shapes summaries as an automatic summary, key points, action items, meeting minutes, or by
+your own prompt; queued audio keeps the style chosen when it was queued, like the summarizer
+model. On a job card, the menu next to **Summarize** picks a different style for that one
+summary, and **Summarize again** replaces an existing summary in any style. **Speaker Diarization**
 is available for Microsoft MAI Transcribe 2 and Gemini transcription and labels
 speakers when they can be distinguished.
 

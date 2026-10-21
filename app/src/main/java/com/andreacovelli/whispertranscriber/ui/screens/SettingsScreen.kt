@@ -50,11 +50,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.andreacovelli.whispertranscriber.BuildConfig
 import com.andreacovelli.whispertranscriber.R
+import com.andreacovelli.whispertranscriber.summary.MAX_SUMMARY_CUSTOM_PROMPT_LENGTH
+import com.andreacovelli.whispertranscriber.summary.SummaryStyle
 import com.andreacovelli.whispertranscriber.transcription.MAX_VOCABULARY_TERMS
 import com.andreacovelli.whispertranscriber.transcription.TRANSCRIPTION_LANGUAGE_CODES
 import com.andreacovelli.whispertranscriber.ui.asString
 import com.andreacovelli.whispertranscriber.ui.components.ApiKeyCard
 import com.andreacovelli.whispertranscriber.ui.components.ProviderSelector
+import com.andreacovelli.whispertranscriber.ui.components.summaryStyleLabel
 import com.andreacovelli.whispertranscriber.ui.settings.RegionValidationState
 import com.andreacovelli.whispertranscriber.ui.settings.SettingsMsg
 import com.andreacovelli.whispertranscriber.ui.settings.SettingsUiState
@@ -122,6 +125,7 @@ internal fun SettingsScreenContent(
             SpeakerDiarizationCard(uiState = uiState, dispatch = dispatch)
             TranscriptionHintsCard(uiState = uiState, dispatch = dispatch)
             SummarizerProviderCard(uiState = uiState, dispatch = dispatch)
+            SummaryStyleCard(uiState = uiState, dispatch = dispatch)
             BackgroundShareSummaryNotificationsCard(
                 uiState = uiState,
                 onCheckedChange = onBackgroundShareSummaryNotificationsChange,
@@ -393,6 +397,84 @@ private fun SummarizerProviderCard(uiState: SettingsUiState, dispatch: (Settings
                 onResetValidation = { dispatch(SettingsMsg.ResetSummarizerModelValidation) },
                 showMicrosoftSpeech = false,
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SummaryStyleCard(uiState: SettingsUiState, dispatch: (SettingsMsg) -> Unit) {
+    var styleMenuExpanded by remember { mutableStateOf(false) }
+    var promptInput by remember(uiState.summaryCustomPrompt) { mutableStateOf(uiState.summaryCustomPrompt) }
+    var promptHadFocus by remember(uiState.summaryCustomPrompt) { mutableStateOf(false) }
+
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(stringResource(R.string.settings_summary_style_title), style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = stringResource(R.string.settings_summary_style_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            ExposedDropdownMenuBox(
+                expanded = styleMenuExpanded,
+                onExpandedChange = { styleMenuExpanded = it },
+            ) {
+                OutlinedTextField(
+                    value = stringResource(summaryStyleLabel(uiState.summaryStyle)),
+                    onValueChange = {},
+                    readOnly = true,
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.settings_summary_style_label)) },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = styleMenuExpanded) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+                )
+                ExposedDropdownMenu(
+                    expanded = styleMenuExpanded,
+                    onDismissRequest = { styleMenuExpanded = false },
+                ) {
+                    SummaryStyle.entries.forEach { style ->
+                        DropdownMenuItem(
+                            text = { Text(stringResource(summaryStyleLabel(style))) },
+                            onClick = {
+                                styleMenuExpanded = false
+                                if (style != uiState.summaryStyle) dispatch(SettingsMsg.SetSummaryStyle(style))
+                            },
+                        )
+                    }
+                }
+            }
+            if (uiState.summaryStyle == SummaryStyle.CUSTOM) {
+                OutlinedTextField(
+                    value = promptInput,
+                    onValueChange = { promptInput = it.take(MAX_SUMMARY_CUSTOM_PROMPT_LENGTH) },
+                    label = { Text(stringResource(R.string.settings_summary_custom_prompt_label)) },
+                    supportingText = { Text(stringResource(R.string.settings_summary_custom_prompt_supporting)) },
+                    minLines = 2,
+                    maxLines = 8,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { focusState ->
+                            if (focusState.isFocused) {
+                                promptHadFocus = true
+                            } else if (promptHadFocus && promptInput.trim() != uiState.summaryCustomPrompt) {
+                                dispatch(SettingsMsg.SetSummaryCustomPrompt(promptInput))
+                            }
+                        },
+                )
+                if (uiState.summaryCustomPrompt.isBlank()) {
+                    Text(
+                        text = stringResource(R.string.settings_summary_custom_prompt_missing),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
         }
     }
 }

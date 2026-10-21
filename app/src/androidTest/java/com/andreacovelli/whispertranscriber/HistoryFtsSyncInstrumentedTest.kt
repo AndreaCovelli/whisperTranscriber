@@ -442,6 +442,25 @@ class HistoryFtsSyncInstrumentedTest {
     }
 
     @Test
+    fun migrationToVersion20_givesQueuedJobsTheAutomaticSummaryStyle() {
+        val databaseName = "summary-style-migration-test.db"
+        migrationHelper.createDatabase(databaseName, 17).use { legacyDb -> legacyDb.insertVersion17Job(id = 6) }
+        migrationHelper.runMigrationsAndValidate(databaseName, 19, true, *AppDatabase.MIGRATIONS).close()
+
+        val migratedDb = migrationHelper.runMigrationsAndValidate(databaseName, 20, true, *AppDatabase.MIGRATIONS)
+        try {
+            migratedDb.query("SELECT queuedSummaryStyle, queuedSummaryCustomPrompt FROM active_jobs WHERE id = 6").use {
+                assertTrue(it.moveToNext())
+                assertEquals("", it.getString(0))
+                assertEquals("", it.getString(1))
+            }
+        } finally {
+            migratedDb.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun migrationToVersion19_marksRecordingDetailsUnknownAndKeepsHistorySearchable() {
         val databaseName = "recording-details-migration-test.db"
         migrationHelper.createDatabase(databaseName, 18).use { legacyDb ->

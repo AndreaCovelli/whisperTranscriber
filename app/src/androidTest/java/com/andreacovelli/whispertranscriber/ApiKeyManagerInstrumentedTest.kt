@@ -6,6 +6,7 @@ import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
 import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.settings.TranscriptionQueueSettings
+import com.andreacovelli.whispertranscriber.summary.SummaryStyle
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionHints
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -119,6 +120,19 @@ class ApiKeyManagerInstrumentedTest {
     }
 
     @Test
+    fun summaryStyle_isSavedWithSummarizationSettings() = runBlocking {
+        apiKeyManager.saveSummaryStyle(SummaryStyle.CUSTOM)
+        apiKeyManager.saveSummaryCustomPrompt("  Only decisions \n")
+
+        val saved = apiKeyManager.getSummarizationSettings()
+        assertEquals(SummaryStyle.CUSTOM, saved.style)
+        assertEquals("Only decisions", saved.customPrompt)
+
+        apiKeyManager.saveSummaryCustomPrompt(" ")
+        assertEquals("", apiKeyManager.getSummarizationSettings().customPrompt)
+    }
+
+    @Test
     fun microsoftSpeechRegionFlow_returnsSavedNormalizedValue() = runBlocking {
         apiKeyManager.saveMicrosoftSpeechRegion(" WestUS ")
 
@@ -147,5 +161,7 @@ class ApiKeyManagerInstrumentedTest {
         apiKeyManager.saveSpeakerDiarization(false)
         apiKeyManager.saveTranscriptionLanguage("")
         apiKeyManager.saveTranscriptionVocabulary("")
+        apiKeyManager.saveSummaryStyle(SummaryStyle.AUTOMATIC)
+        apiKeyManager.saveSummaryCustomPrompt("")
     }
 }

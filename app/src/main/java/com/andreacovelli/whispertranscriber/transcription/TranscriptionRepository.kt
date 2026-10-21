@@ -79,6 +79,8 @@ class TranscriptionRepository @Inject constructor(
             summarizeAfterTranscription = settings != null,
             queuedSummarizerProviderName = settings?.provider?.name.orEmpty(),
             queuedSummarizerCustomModelName = settings?.customModelName.orEmpty(),
+            queuedSummaryStyle = settings?.style?.name.orEmpty(),
+            queuedSummaryCustomPrompt = settings?.customPrompt.orEmpty(),
         )
     }
 
@@ -201,6 +203,8 @@ class TranscriptionRepository @Inject constructor(
         queuedSummarizerCustomModelName: String,
         speakerDiarizationEnabled: Boolean = false,
         hints: TranscriptionHints = TranscriptionHints(),
+        queuedSummaryStyle: String = "",
+        queuedSummaryCustomPrompt: String = "",
     ): RetryResult = db.withTransaction {
         val job = jobDao.getJobById(jobId) ?: return@withTransaction RetryResult.INELIGIBLE_STATUS
         if (job.status !in setOf(JOB_STATUS_ERROR, JOB_STATUS_CANCELLED) || job.isRunning || job.isSummarizing) {
@@ -226,6 +230,7 @@ class TranscriptionRepository @Inject constructor(
             languageHint = hints.languageCode,
             vocabulary = encodeVocabulary(hints.vocabulary),
         )
+        jobDao.updateQueuedSummaryStyle(jobId, queuedSummaryStyle, queuedSummaryCustomPrompt)
         RetryResult.ACCEPTED
     }
 

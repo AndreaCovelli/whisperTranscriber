@@ -12,6 +12,9 @@ import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
 import com.andreacovelli.whispertranscriber.security.KeystoreCrypto
+import com.andreacovelli.whispertranscriber.summary.SummaryStyle
+import com.andreacovelli.whispertranscriber.summary.decodeSummaryStyle
+import com.andreacovelli.whispertranscriber.summary.normalizeSummaryCustomPrompt
 import com.andreacovelli.whispertranscriber.transcription.MICROSOFT_MAI_TRANSCRIBE_MODEL
 import com.andreacovelli.whispertranscriber.transcription.MicrosoftSpeechEndpoint
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionHints
@@ -71,7 +74,12 @@ data class TranscriptionQueueSettings(
     )
 }
 
-data class SummarizationSettings(val provider: TranscriptionProvider, val customModelName: String)
+data class SummarizationSettings(
+    val provider: TranscriptionProvider,
+    val customModelName: String,
+    val style: SummaryStyle = SummaryStyle.AUTOMATIC,
+    val customPrompt: String = "",
+)
 
 internal fun decodeTranscriptionProvider(name: String?): TranscriptionProvider = when (name) {
     null -> TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE
@@ -91,6 +99,8 @@ internal fun decodeHistoricalSummarizerProvider(name: String?): TranscriptionPro
 }
 
 @Singleton
+// The settings facade has one save function per stored preference, so its size follows the settings it owns.
+@Suppress("TooManyFunctions")
 class ApiKeyManager @Inject constructor(
     @param:ApplicationContext private val context: Context,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -111,6 +121,8 @@ class ApiKeyManager @Inject constructor(
         private val SPEAKER_DIARIZATION_ENABLED = booleanPreferencesKey("speaker_diarization_enabled")
         private val TRANSCRIPTION_LANGUAGE = stringPreferencesKey("transcription_language")
         private val TRANSCRIPTION_VOCABULARY = stringPreferencesKey("transcription_vocabulary")
+        private val SUMMARY_STYLE = stringPreferencesKey("summary_style")
+        private val SUMMARY_CUSTOM_PROMPT = stringPreferencesKey("summary_custom_prompt")
     }
 
     val automaticSummarizationFlow: Flow<Boolean> = store.data.map { p ->
@@ -149,6 +161,17 @@ class ApiKeyManager @Inject constructor(
         val trimmed = vocabulary.trim()
         store.edit { prefs ->
             if (trimmed.isEmpty()) prefs.remove(TRANSCRIPTION_VOCABULARY) else prefs[TRANSCRIPTION_VOCABULARY] = trimmed
+        }
+    }
+
+    suspend fun saveSummaryStyle(style: SummaryStyle) {
+        store.edit { it[SUMMARY_STYLE] = style.name }
+    }
+
+    suspend fun saveSummaryCustomPrompt(prompt: String) {
+        val normalized = normalizeSummaryCustomPrompt(prompt)
+        store.edit { prefs ->
+            if (normalized.isEmpty()) prefs.remove(SUMMARY_CUSTOM_PROMPT) else prefs[SUMMARY_CUSTOM_PROMPT] = normalized
         }
     }
 
@@ -316,6 +339,8 @@ class ApiKeyManager @Inject constructor(
                 ?.let { runCatching { TranscriptionProvider.valueOf(it) }.getOrNull() }
                 ?: TranscriptionProvider.GEMINI_FLASH,
             customModelName = prefs[GEMINI_SUMMARIZER_CUSTOM_MODEL_NAME].orEmpty(),
+            style = decodeSummaryStyle(prefs[SUMMARY_STYLE]),
+            customPrompt = prefs[SUMMARY_CUSTOM_PROMPT].orEmpty(),
         )
     }.distinctUntilChanged()
 

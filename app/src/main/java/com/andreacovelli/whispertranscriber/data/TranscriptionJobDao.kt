@@ -244,6 +244,8 @@ interface TranscriptionJobDao {
             j.notifyResult,
             j.queuedSummarizerProviderName,
             j.queuedSummarizerCustomModelName,
+            j.queuedSummaryStyle,
+            j.queuedSummaryCustomPrompt,
             j.status,
             j.statusMessage,
             j.progress,
@@ -608,7 +610,9 @@ interface TranscriptionJobDao {
         UPDATE active_jobs
         SET summarizeAfterTranscription = :summarizeAfterTranscription,
             queuedSummarizerProviderName = :queuedSummarizerProviderName,
-            queuedSummarizerCustomModelName = :queuedSummarizerCustomModelName
+            queuedSummarizerCustomModelName = :queuedSummarizerCustomModelName,
+            queuedSummaryStyle = :queuedSummaryStyle,
+            queuedSummaryCustomPrompt = :queuedSummaryCustomPrompt
         WHERE isSummarizing = 0
           AND (historyId IS NULL OR isRunning = 1)
         """,
@@ -617,5 +621,18 @@ interface TranscriptionJobDao {
         summarizeAfterTranscription: Boolean,
         queuedSummarizerProviderName: String,
         queuedSummarizerCustomModelName: String,
+        queuedSummaryStyle: String,
+        queuedSummaryCustomPrompt: String,
     ): Int
+
+    /** Sets the automatic-summary style of a job that [retryById] has just requeued. */
+    @Query(
+        """
+        UPDATE active_jobs
+        SET queuedSummaryStyle = :queuedSummaryStyle,
+            queuedSummaryCustomPrompt = :queuedSummaryCustomPrompt
+        WHERE id = :jobId
+        """,
+    )
+    suspend fun updateQueuedSummaryStyle(jobId: Int, queuedSummaryStyle: String, queuedSummaryCustomPrompt: String)
 }

@@ -275,6 +275,13 @@ private val MIGRATION_18_19 = object : Migration(18, 19) {
     }
 }
 
+private val MIGRATION_19_20 = object : Migration(19, 20) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE active_jobs ADD COLUMN queuedSummaryStyle TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE active_jobs ADD COLUMN queuedSummaryCustomPrompt TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 internal val DATABASE_MIGRATIONS = arrayOf(
     MIGRATION_1_2,
     MIGRATION_2_3,
@@ -294,4 +301,5 @@ internal val DATABASE_MIGRATIONS = arrayOf(
     MIGRATION_16_17,
     MIGRATION_17_18,
     MIGRATION_18_19,
+    MIGRATION_19_20,
 )

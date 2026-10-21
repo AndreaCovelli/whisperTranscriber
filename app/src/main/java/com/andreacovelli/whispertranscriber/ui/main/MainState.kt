@@ -5,6 +5,8 @@ import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
+import com.andreacovelli.whispertranscriber.summary.SummaryStyle
+import com.andreacovelli.whispertranscriber.ui.components.SummaryStyleChoices
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 
 /** What the main screen shows about the configured providers; the settings screen owns the details. */
@@ -14,6 +16,7 @@ data class ProviderSummary(
     val summarizerProvider: TranscriptionProvider = TranscriptionProvider.GEMINI_FLASH,
     val summarizerCustomModelName: String = "",
     val canSummarize: Boolean = false,
+    val summaryStyleChoices: SummaryStyleChoices = SummaryStyleChoices(),
 )
 
 data class MainUiState(
@@ -48,7 +51,9 @@ sealed interface MainMsg {
     data class MainNavigationHandled(val requestToken: Long) : MainMsg
     data class JobRevealHandled(val requestToken: Long) : MainMsg
     data object ClearCompletedJobs : MainMsg
-    data class SummarizeJob(val jobId: Int) : MainMsg
+
+    /** A null [style] uses the summary style chosen in settings. */
+    data class SummarizeJob(val jobId: Int, val style: SummaryStyle? = null) : MainMsg
     data class ClearSummary(val jobId: Int) : MainMsg
     data class ClearTranscript(val jobId: Int) : MainMsg
     data class SaveJobContent(val jobId: Int, val field: HistoryContentField, val destination: Uri) : MainMsg

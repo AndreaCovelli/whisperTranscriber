@@ -25,6 +25,7 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
+import com.andreacovelli.whispertranscriber.summary.SummaryStyle
 import com.andreacovelli.whispertranscriber.ui.screens.SettingsScreenContent
 import com.andreacovelli.whispertranscriber.ui.settings.CustomModelValidation
 import com.andreacovelli.whispertranscriber.ui.settings.RegionValidationState
@@ -182,6 +183,35 @@ class SettingsScreenInstrumentedTest {
                 listOf(
                     SettingsMsg.SetTranscriptionLanguage("it"),
                     SettingsMsg.SetTranscriptionVocabulary("Covelli, Kotlin"),
+                ),
+                messages,
+            )
+        }
+    }
+
+    @Test
+    fun summaryStyle_customStyleShowsAPromptThatSavesWhenFocusLeaves() {
+        setSettings(SettingsUiState())
+        val custom = context.getString(R.string.summary_style_custom)
+        val promptLabel = context.getString(R.string.settings_summary_custom_prompt_label)
+
+        composeRule.onNodeWithText(promptLabel).assertDoesNotExist()
+        composeRule.onNode(hasText(context.getString(R.string.summary_style_automatic)) and hasClickAction())
+            .performScrollTo()
+            .performClick()
+        composeRule.onNodeWithText(custom).performScrollTo().performClick()
+        composeRule.runOnIdle { uiState = uiState.copy(summaryStyle = SummaryStyle.CUSTOM) }
+
+        composeRule.onNodeWithText(context.getString(R.string.settings_summary_custom_prompt_missing)).assertExists()
+        composeRule.onNodeWithText(promptLabel).performScrollTo().performClick()
+            .performTextReplacement("Only decisions")
+        composeRule.runOnIdle { focusManager.clearFocus() }
+
+        composeRule.runOnIdle {
+            assertEquals(
+                listOf(
+                    SettingsMsg.SetSummaryStyle(SummaryStyle.CUSTOM),
+                    SettingsMsg.SetSummaryCustomPrompt("Only decisions"),
                 ),
                 messages,
             )

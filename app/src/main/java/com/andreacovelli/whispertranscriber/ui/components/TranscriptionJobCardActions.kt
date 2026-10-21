@@ -1,5 +1,7 @@
 package com.andreacovelli.whispertranscriber.ui.components
 
+import com.andreacovelli.whispertranscriber.summary.SummaryStyle
+
 data class TranscriptionJobCardActions(
     val summarize: () -> Unit,
     val clearSummary: () -> Unit,
@@ -16,4 +18,5 @@ data class TranscriptionJobCardActions(
     val cancelTranscription: () -> Unit,
     val cancelSummary: () -> Unit,
     val delete: () -> Unit,
+    val summarizeWithStyle: (SummaryStyle) -> Unit = {},
 )

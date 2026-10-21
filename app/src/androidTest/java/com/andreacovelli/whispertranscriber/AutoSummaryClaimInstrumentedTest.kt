@@ -81,7 +81,10 @@ class AutoSummaryClaimInstrumentedTest {
         )
         val queuedId = jobDao.insert(testJob(displayName = "queued.wav")).toInt()
 
-        assertEquals(2, jobDao.updateQueuedAutoSummary(true, "GEMINI_CUSTOM", "custom-model"))
+        assertEquals(
+            2,
+            jobDao.updateQueuedAutoSummary(true, "GEMINI_CUSTOM", "custom-model", "CUSTOM", "Only decisions"),
+        )
 
         assertFalse(jobDao.getJobById(finishedId)!!.summarizeAfterTranscription)
         assertFalse(jobDao.getJobById(summarizingId)!!.summarizeAfterTranscription)
@@ -90,9 +93,11 @@ class AutoSummaryClaimInstrumentedTest {
             assertTrue(job.summarizeAfterTranscription)
             assertEquals("GEMINI_CUSTOM", job.queuedSummarizerProviderName)
             assertEquals("custom-model", job.queuedSummarizerCustomModelName)
+            assertEquals("CUSTOM", job.queuedSummaryStyle)
+            assertEquals("Only decisions", job.queuedSummaryCustomPrompt)
         }
 
-        jobDao.updateQueuedAutoSummary(false, "", "")
+        jobDao.updateQueuedAutoSummary(false, "", "", "", "")
 
         assertFalse(jobDao.getJobById(runningId)!!.summarizeAfterTranscription)
         assertFalse(jobDao.getJobById(queuedId)!!.summarizeAfterTranscription)

@@ -10,6 +10,7 @@ import com.andreacovelli.whispertranscriber.queue.backgroundShareSchedulerJobId
 import com.andreacovelli.whispertranscriber.services.SummarizationResult
 import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
+import com.andreacovelli.whispertranscriber.summary.SummaryStyle
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -29,6 +30,19 @@ class SummaryWorkerTest {
         }
 
         assertEquals(listOf(42 to settings), calls)
+    }
+
+    @Test
+    fun enqueuedInput_carriesTheSummaryStyleAndCustomPrompt() = runBlocking {
+        val settings = geminiFlash.copy(style = SummaryStyle.CUSTOM, customPrompt = "Only decisions")
+        var requested: SummarizationSettings? = null
+
+        runSummaryWork(summaryWorkInput(5, "call.m4a", settings)) { _, received ->
+            requested = received
+            SummarizationResult(statusMessage = null)
+        }
+
+        assertEquals(settings, requested)
     }
 
     @Test

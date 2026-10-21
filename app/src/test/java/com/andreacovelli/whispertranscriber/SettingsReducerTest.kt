@@ -3,6 +3,7 @@ package com.andreacovelli.whispertranscriber
 import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.settings.TranscriptionQueueSettings
+import com.andreacovelli.whispertranscriber.summary.SummaryStyle
 import com.andreacovelli.whispertranscriber.ui.settings.CustomModelValidation
 import com.andreacovelli.whispertranscriber.ui.settings.KeyValidationState
 import com.andreacovelli.whispertranscriber.ui.settings.RegionValidationState
@@ -27,7 +28,12 @@ class SettingsReducerTest {
                 ),
             ),
             SettingsMsg.SummarizationSettingsLoaded(
-                SummarizationSettings(provider = TranscriptionProvider.GEMINI_PRO, customModelName = "summary-model"),
+                SummarizationSettings(
+                    provider = TranscriptionProvider.GEMINI_PRO,
+                    customModelName = "summary-model",
+                    style = SummaryStyle.MEETING_MINUTES,
+                    customPrompt = "Be brief",
+                ),
             ),
         ).fold(SettingsUiState(), SettingsReducer::reduce)
 
@@ -38,6 +44,19 @@ class SettingsReducerTest {
         assertEquals("Covelli", state.transcriptionVocabulary)
         assertEquals(TranscriptionProvider.GEMINI_PRO, state.summarizerProvider)
         assertEquals("summary-model", state.summarizerCustomGeminiModelName)
+        assertEquals(SummaryStyle.MEETING_MINUTES, state.summaryStyle)
+        assertEquals("Be brief", state.summaryCustomPrompt)
+    }
+
+    @Test
+    fun summaryStyleEdits_updateStateWithANormalizedPrompt() {
+        val state = listOf(
+            SettingsMsg.SetSummaryStyle(SummaryStyle.CUSTOM),
+            SettingsMsg.SetSummaryCustomPrompt("  List open questions \n"),
+        ).fold(SettingsUiState(), SettingsReducer::reduce)
+
+        assertEquals(SummaryStyle.CUSTOM, state.summaryStyle)
+        assertEquals("List open questions", state.summaryCustomPrompt)
     }
 
     @Test

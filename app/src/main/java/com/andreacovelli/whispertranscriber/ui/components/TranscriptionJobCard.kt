@@ -23,6 +23,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -35,7 +39,12 @@ import com.andreacovelli.whispertranscriber.ui.asString
 import com.andreacovelli.whispertranscriber.ui.main.TranscriptionJobState
 
 @Composable
-fun TranscriptionJobCard(job: TranscriptionJobState, canSummarize: Boolean, actions: TranscriptionJobCardActions) {
+fun TranscriptionJobCard(
+    job: TranscriptionJobState,
+    canSummarize: Boolean,
+    actions: TranscriptionJobCardActions,
+    summaryStyleChoices: SummaryStyleChoices = SummaryStyleChoices(),
+) {
     val queuedProviderLabel = stringResource(providerFamilyLabel(job.provider))
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -58,9 +67,20 @@ fun TranscriptionJobCard(job: TranscriptionJobState, canSummarize: Boolean, acti
             JobProgressSection(job = job)
             TranscriptSection(job = job, actions = actions)
             StopTranscriptionSection(job = job, actions = actions)
-            JobPrimaryActions(job = job, canSummarize = canSummarize, actions = actions)
+            JobPrimaryActions(
+                job = job,
+                canSummarize = canSummarize,
+                actions = actions,
+                summaryStyleChoices = summaryStyleChoices,
+            )
             SummaryErrorSection(job = job)
             SummarySection(job = job, actions = actions)
+            ResummarizeAction(
+                job = job,
+                canSummarize = canSummarize,
+                actions = actions,
+                summaryStyleChoices = summaryStyleChoices,
+            )
         }
     }
 }
@@ -193,17 +213,29 @@ private fun JobPrimaryActions(
     job: TranscriptionJobState,
     canSummarize: Boolean,
     actions: TranscriptionJobCardActions,
+    summaryStyleChoices: SummaryStyleChoices,
 ) {
-    if (job.isRunning || job.isSummarizing || job.error != null || job.transcript.isBlank() ||
-        job.summary.isNotBlank()
-    ) {
-        return
-    }
+    if (!job.canStartManualSummary() || job.summary.isNotBlank()) return
+    var styleMenuExpanded by remember { mutableStateOf(false) }
     Spacer(Modifier.height(12.dp))
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        SummaryStyleMenu(
+            choices = summaryStyleChoices,
+            expanded = styleMenuExpanded,
+            onDismiss = { styleMenuExpanded = false },
+            onSelect = actions.summarizeWithStyle,
+        ) {
+            IconButton(onClick = { styleMenuExpanded = true }, enabled = canSummarize) {
+                Icon(
+                    painterResource(R.drawable.ic_arrow_drop_down),
+                    stringResource(R.string.summary_style_menu_description),
+                )
+            }
+        }
         Button(
             onClick = actions.summarize,
             enabled = canSummarize,
@@ -213,6 +245,33 @@ private fun JobPrimaryActions(
             ),
         ) {
             Text(stringResource(R.string.summarize))
+        }
+    }
+}
+
+private fun TranscriptionJobState.canStartManualSummary(): Boolean =
+    !isRunning && !isSummarizing && error == null && transcript.isNotBlank()
+
+// Replacing a summary is mostly about trying another style, so the button opens the style menu directly.
+@Composable
+private fun ResummarizeAction(
+    job: TranscriptionJobState,
+    canSummarize: Boolean,
+    actions: TranscriptionJobCardActions,
+    summaryStyleChoices: SummaryStyleChoices,
+) {
+    if (!job.canStartManualSummary() || job.summary.isBlank()) return
+    var styleMenuExpanded by remember { mutableStateOf(false) }
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        SummaryStyleMenu(
+            choices = summaryStyleChoices,
+            expanded = styleMenuExpanded,
+            onDismiss = { styleMenuExpanded = false },
+            onSelect = actions.summarizeWithStyle,
+        ) {
+            TextButton(onClick = { styleMenuExpanded = true }, enabled = canSummarize) {
+                Text(stringResource(R.string.summarize_again))
+            }
         }
     }
 }

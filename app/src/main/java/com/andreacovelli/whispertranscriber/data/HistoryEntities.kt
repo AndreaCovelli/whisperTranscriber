@@ -52,6 +52,9 @@ data class TranscriptionJob(
     val notifyResult: Boolean = false,
     val queuedSummarizerProviderName: String = "",
     val queuedSummarizerCustomModelName: String = "",
+    // SummaryStyle name and custom prompt for the automatic summary; "" means the automatic style.
+    val queuedSummaryStyle: String = "",
+    val queuedSummaryCustomPrompt: String = "",
     val status: String = JOB_STATUS_QUEUED,
     // Encoded progress text while running (see StoredMessages); error and summaryError are encoded too.
     val statusMessage: String? = null,

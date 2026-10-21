@@ -25,6 +25,7 @@ import com.andreacovelli.whispertranscriber.services.SummarizationResult
 import com.andreacovelli.whispertranscriber.services.SummarizationService
 import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
+import com.andreacovelli.whispertranscriber.summary.decodeSummaryStyle
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.util.UUID
@@ -70,6 +71,8 @@ class SummaryWorker @AssistedInject constructor(
         const val DISPLAY_NAME_INPUT = "summary_display_name"
         const val PROVIDER_INPUT = "summary_provider"
         const val CUSTOM_MODEL_INPUT = "summary_custom_model"
+        const val STYLE_INPUT = "summary_style"
+        const val CUSTOM_PROMPT_INPUT = "summary_custom_prompt"
         const val STATUS_MESSAGE_OUTPUT = "summary_status_message"
     }
 }
@@ -79,6 +82,8 @@ internal fun summaryWorkInput(jobId: Int, displayName: String, settings: Summari
     SummaryWorker.DISPLAY_NAME_INPUT to displayName,
     SummaryWorker.PROVIDER_INPUT to settings.provider.name,
     SummaryWorker.CUSTOM_MODEL_INPUT to settings.customModelName,
+    SummaryWorker.STYLE_INPUT to settings.style.name,
+    SummaryWorker.CUSTOM_PROMPT_INPUT to settings.customPrompt,
 )
 
 /** Summarizes the job named in [input]; failures are already stored on the job, so the work still succeeds. */
@@ -95,6 +100,8 @@ internal suspend fun runSummaryWork(
     val settings = SummarizationSettings(
         provider = provider,
         customModelName = input.getString(SummaryWorker.CUSTOM_MODEL_INPUT).orEmpty(),
+        style = decodeSummaryStyle(input.getString(SummaryWorker.STYLE_INPUT)),
+        customPrompt = input.getString(SummaryWorker.CUSTOM_PROMPT_INPUT).orEmpty(),
     )
     val result = summarize(jobId, settings)
     return ListenableWorker.Result.success(

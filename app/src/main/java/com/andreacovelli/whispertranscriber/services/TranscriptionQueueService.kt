@@ -130,6 +130,8 @@ class TranscriptionQueueService @Inject constructor(
                 queuedSummarizerProviderName = persistedPostTranscriptionConfig.queuedSummarizerProviderName,
                 queuedSummarizerCustomModelName =
                 persistedPostTranscriptionConfig.queuedSummarizerCustomModelName,
+                queuedSummaryStyle = persistedPostTranscriptionConfig.queuedSummaryStyle,
+                queuedSummaryCustomPrompt = persistedPostTranscriptionConfig.queuedSummaryCustomPrompt,
                 batchId = batchId,
                 speakerDiarizationEnabled = speakerDiarizationEnabled,
                 languageHint = hints.languageCode,
@@ -241,6 +243,8 @@ class TranscriptionQueueService @Inject constructor(
                 queuedSummarizerCustomModelName = persistedConfig.queuedSummarizerCustomModelName,
                 speakerDiarizationEnabled = snapshot.speakerDiarizationEnabled,
                 hints = snapshot.hints(),
+                queuedSummaryStyle = persistedConfig.queuedSummaryStyle,
+                queuedSummaryCustomPrompt = persistedConfig.queuedSummaryCustomPrompt,
             )
             if (retry == RetryResult.ACCEPTED) {
                 operations.cancel(jobId)
