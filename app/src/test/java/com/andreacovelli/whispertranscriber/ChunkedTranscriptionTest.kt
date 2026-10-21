@@ -60,6 +60,26 @@ class ChunkedTranscriptionTest {
     }
 
     @Test
+    fun combinePartTranscriptions_skipsMarkersForEmptyParts() {
+        val marker = { number: Int -> "[Part $number of 3]" }
+        val silent = combinePartTranscriptions(
+            parts = listOf(TranscriptionData(" ", "und", "model"), TranscriptionData("", "und", "model")),
+            partMarker = marker,
+        )
+        val partlySilent = combinePartTranscriptions(
+            parts = listOf(
+                TranscriptionData("Speaker A: Hi", "en-US", "model"),
+                TranscriptionData("", "und", "model"),
+                TranscriptionData("Speaker A: Bye", "en-US", "model"),
+            ),
+            partMarker = marker,
+        )
+
+        assertEquals("", silent.text)
+        assertEquals("[Part 1 of 3]\nSpeaker A: Hi\n\n[Part 3 of 3]\nSpeaker A: Bye", partlySilent.text)
+    }
+
+    @Test
     fun combinePartTranscriptions_usesMostCommonDetectedLanguage() {
         val combined = combinePartTranscriptions(
             parts = listOf(

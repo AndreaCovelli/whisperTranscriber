@@ -480,8 +480,10 @@ internal fun combinePartTranscriptions(
     val text = if (partMarker == null) {
         parts.map { it.text.trim() }.filter(String::isNotEmpty).joinToString(separator = "\n")
     } else {
-        parts.mapIndexed { index, part -> "${partMarker(index + 1)}\n${part.text.trim()}".trim() }
-            .joinToString(separator = "\n\n")
+        // Empty parts get no marker, so a recording with no speech still has an empty transcript.
+        parts.mapIndexedNotNull { index, part ->
+            part.text.trim().takeIf(String::isNotEmpty)?.let { text -> "${partMarker(index + 1)}\n$text" }
+        }.joinToString(separator = "\n\n")
     }
     val language = parts.map { it.language }
         .filter { it.isNotBlank() && it != "und" }
