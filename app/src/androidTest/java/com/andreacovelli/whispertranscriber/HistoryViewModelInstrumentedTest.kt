@@ -56,6 +56,7 @@ class HistoryViewModelInstrumentedTest {
 
     // Outside runBlocking, which would otherwise wait for the never-ending collection before setUp returns.
     private val collectionScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @Before
     fun setUp() {
@@ -71,6 +72,7 @@ class HistoryViewModelInstrumentedTest {
             fixture.queue,
             TextTransfer(context, Dispatchers.IO),
             dates,
+            applicationScope,
         )
         val differ = AsyncPagingDataDiffer(
             diffCallback = object : DiffUtil.ItemCallback<HistoryListRow>() {
@@ -99,6 +101,7 @@ class HistoryViewModelInstrumentedTest {
         collectionScope.coroutineContext.job.cancelAndJoin()
         // Join, not just cancel: an in-flight Room query would otherwise outlive the closed database.
         withContext(Dispatchers.Main) { viewModel.viewModelScope.coroutineContext.job.cancelAndJoin() }
+        applicationScope.coroutineContext.job.children.forEach { it.join() }
         fixture.close()
         settings.close()
         testFiles.forEach(File::delete)
@@ -116,13 +119,39 @@ class HistoryViewModelInstrumentedTest {
 
         dispatch(HistoryMsg.DeleteItem(checkNotNull(history(removed))))
 
+        assertEquals(HistoryUiEvent.ItemDeleted(removed), awaitEvent())
         awaitVisible(kept)
+        assertEquals(removed, fixture.repository.getJob(removedJob)?.historyId)
+        assertTrue(removedAudio.isFile)
+
+        dispatch(HistoryMsg.FinishDeleteItem(removed))
         awaitDeleted(removedAudio)
         assertNull(fixture.repository.getJob(removedJob))
         assertFalse(removedJob in fixture.scheduler.active)
         assertEquals(kept, fixture.repository.getJob(keptJob)?.historyId)
         assertTrue(keptAudio.isFile)
         assertTrue(keptJob in fixture.scheduler.active)
+    }
+
+    @Test
+    fun undoDeleteItem_restoresTheItemWithoutTouchingItsJob() = runBlocking {
+        val item = insertHistory("Restored transcript")
+        val audio = stagedAudio()
+        val job = insertLinkedJob(item, audio)
+        awaitVisible(item)
+
+        dispatch(HistoryMsg.DeleteItem(checkNotNull(history(item))))
+        awaitVisible()
+        dispatch(HistoryMsg.UndoDeleteItem(item))
+        awaitVisible(item)
+
+        // A late finish after an undo must not delete the restored item.
+        dispatch(HistoryMsg.FinishDeleteItem(item))
+        applicationScope.coroutineContext.job.children.forEach { it.join() }
+        assertEquals("Restored transcript", history(item)?.text)
+        assertEquals(item, fixture.repository.getJob(job)?.historyId)
+        assertTrue(audio.isFile)
+        assertTrue(job in fixture.scheduler.active)
     }
 
     @Test

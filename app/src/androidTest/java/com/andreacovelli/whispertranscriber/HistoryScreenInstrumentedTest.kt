@@ -23,7 +23,9 @@ import com.andreacovelli.whispertranscriber.ui.history.HistoryViewModel
 import com.andreacovelli.whispertranscriber.ui.screens.HistoryScreen
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.job
@@ -31,6 +33,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -45,6 +48,7 @@ class HistoryScreenInstrumentedTest {
     private lateinit var settings: IsolatedSettings
     private lateinit var fixture: RepairTestFixture
     private lateinit var viewModel: HistoryViewModel
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @Before
     fun setUp() {
@@ -55,13 +59,23 @@ class HistoryScreenInstrumentedTest {
             override val changes = MutableStateFlow(today)
         }
         viewModel =
-            HistoryViewModel(context, fixture.history, fixture.queue, TextTransfer(context, Dispatchers.IO), dates)
+            HistoryViewModel(
+                context,
+                fixture.history,
+                fixture.queue,
+                TextTransfer(context, Dispatchers.IO),
+                dates,
+                applicationScope,
+            )
     }
 
     @After
     fun tearDown() {
         // Join, not just cancel: an in-flight Room query would otherwise outlive the closed database.
-        runBlocking { withContext(Dispatchers.Main) { viewModel.viewModelScope.coroutineContext.job.cancelAndJoin() } }
+        runBlocking {
+            withContext(Dispatchers.Main) { viewModel.viewModelScope.coroutineContext.job.cancelAndJoin() }
+            applicationScope.coroutineContext.job.children.forEach { it.join() }
+        }
         fixture.close()
         settings.close()
     }
@@ -127,6 +141,35 @@ class HistoryScreenInstrumentedTest {
     }
 
     @Test
+    fun deleteItem_offersUndoThatRestoresTheItem() {
+        insertHistory("Transcript to keep")
+        setHistoryScreen()
+        awaitText("Transcript to keep")
+
+        composeRule.onNodeWithContentDescription(context.getString(R.string.delete_item_description)).performClick()
+        awaitText(context.getString(R.string.history_item_deleted))
+        composeRule.onNodeWithText("Transcript to keep", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithText(context.getString(R.string.history_undo)).performClick()
+
+        awaitText("Transcript to keep")
+        assertTrue(runBlocking { fixture.history.hasHistory() })
+    }
+
+    @Test
+    fun deleteItem_deletesWhenTheUndoOfferEnds() {
+        insertHistory("Transcript to delete")
+        setHistoryScreen()
+        awaitText("Transcript to delete")
+
+        composeRule.onNodeWithContentDescription(context.getString(R.string.delete_item_description)).performClick()
+        awaitText(context.getString(R.string.history_item_deleted))
+
+        composeRule.waitUntil(UNDO_TIMEOUT_MILLIS) { !runBlocking { fixture.history.hasHistory() } }
+        awaitGone(context.getString(R.string.history_item_deleted))
+        awaitText(context.getString(R.string.history_empty))
+    }
+
+    @Test
     fun exportDialog_offersEveryFormatAndClosesWhenOneIsChosenOrCancelled() {
         setHistoryScreen()
         awaitText(context.getString(R.string.history_empty))
@@ -179,5 +222,8 @@ class HistoryScreenInstrumentedTest {
 
     private companion object {
         const val TIMEOUT_MILLIS = 10_000L
+
+        // A short snackbar stays up for four seconds, or longer when accessibility services ask for it.
+        const val UNDO_TIMEOUT_MILLIS = 30_000L
     }
 }
