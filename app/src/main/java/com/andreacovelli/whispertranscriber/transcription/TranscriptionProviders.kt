@@ -42,7 +42,7 @@ internal class TransientWorkException(override val userMessage: UserMessage, cau
     IOException("Transient provider failure", cause),
     UserFacingException
 
-/** [speakerLabels] reports whether the transcript was produced with speaker labeling enabled. */
+/** [speakerLabels] reports whether the transcript contains speaker labels. */
 data class TranscriptionData(
     val text: String,
     val language: String,
@@ -107,17 +107,18 @@ internal class MicrosoftSpeechTranscriber(
             } catch (_: JSONException) {
                 throw ProviderResponseException(R.string.provider_response_invalid)
             }
+            val text = if (diarized) {
+                parseMicrosoftSpeechDiarizedTranscriptText(response, speakerLabelPrefix)
+            } else {
+                parseMicrosoftSpeechTranscriptText(response)
+            }
             emit(
                 TranscriptionResult.Success(
                     TranscriptionData(
-                        text = if (diarized) {
-                            parseMicrosoftSpeechDiarizedTranscriptText(response, speakerLabelPrefix)
-                        } else {
-                            parseMicrosoftSpeechTranscriptText(response)
-                        },
+                        text = text,
                         language = parseMicrosoftSpeechLanguage(response),
                         model = modelName,
-                        speakerLabels = diarized,
+                        speakerLabels = diarized && hasSpeakerLabels(text, speakerLabelPrefix),
                     ),
                 ),
             )
@@ -230,6 +231,7 @@ internal class GeminiTranscriber(
                     parseGeminiTranscription(
                         validatedGeminiText(response),
                         speakerDiarizationEnabled,
+                        speakerLabelPrefix,
                         response.modelVersion().filter(String::isNotBlank).orElse(modelName),
                     )
                 }
@@ -522,6 +524,12 @@ internal fun parseTranscriptTextValue(transcriptText: String, speakerDiarization
         .map(String::trim)
         .filter(String::isNotEmpty)
         .joinToString(separator = "\n")
+}
+
+/** Whether a line of [text] starts with a label such as "Speaker A:", as the providers write them. */
+internal fun hasSpeakerLabels(text: String, speakerLabelPrefix: String): Boolean {
+    val prefix = Regex.escape(speakerLabelPrefix.trim().ifBlank { "Speaker" })
+    return Regex("^$prefix [A-Za-z0-9]+:", RegexOption.MULTILINE).containsMatchIn(text)
 }
 
 internal fun buildGeminiTranscriptionPrompt(

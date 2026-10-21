@@ -18,6 +18,7 @@ import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_SUMMARIZING
 import com.andreacovelli.whispertranscriber.transcription.displayJobStatus
 import com.andreacovelli.whispertranscriber.transcription.displaySummaryStatus
+import com.andreacovelli.whispertranscriber.transcription.hasSpeakerLabels
 import com.andreacovelli.whispertranscriber.transcription.isMicrosoftSpeechUploadSizeSupported
 import com.andreacovelli.whispertranscriber.transcription.parseMicrosoftSpeechDiarizedTranscriptText
 import com.andreacovelli.whispertranscriber.transcription.parseMicrosoftSpeechLanguage
@@ -33,7 +34,9 @@ import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 import com.andreacovelli.whispertranscriber.ui.screens.buildBatchProgressState
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TranscriptionPresentationTest {
@@ -421,7 +424,19 @@ class TranscriptionPresentationTest {
             """.trimIndent(),
         )
 
-        assertEquals("Hello from MAI", parseMicrosoftSpeechDiarizedTranscriptText(response, "Speaker"))
+        val text = parseMicrosoftSpeechDiarizedTranscriptText(response, "Speaker")
+
+        assertEquals("Hello from MAI", text)
+        assertFalse(hasSpeakerLabels(text, "Speaker"))
+    }
+
+    @Test
+    fun hasSpeakerLabels_detectsLabeledLinesWithTheConfiguredPrefix() {
+        assertTrue(hasSpeakerLabels("Intro\nSpeaker A: Hello", "Speaker"))
+        assertTrue(hasSpeakerLabels("Speaker 2: Hello", " "))
+        assertTrue(hasSpeakerLabels("Relatore (1) A: Ciao", "Relatore (1)"))
+        assertFalse(hasSpeakerLabels("The Speaker A: said hello", "Speaker"))
+        assertFalse(hasSpeakerLabels("Speaker A: Hello", "Relatore"))
     }
 
     @Test
