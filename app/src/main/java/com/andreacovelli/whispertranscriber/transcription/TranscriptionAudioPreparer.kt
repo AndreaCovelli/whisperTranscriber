@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.storage.StorageManager
 import android.util.Log
+import com.andreacovelli.whispertranscriber.QuantityText
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
@@ -212,7 +213,10 @@ class TranscriptionAudioPreparer @Inject constructor(
             val preparedInput = if (policy.requiresChunking(inspection.durationUs)) {
                 val chunks = withContext(ioDispatcher) { planChunks(outputFile, policy) }
                 listener.onStatus(
-                    UserMessage(R.string.transcription_status_split_into_parts, listOf(chunks.size)),
+                    UserMessage(
+                        R.string.transcription_status_split_into_parts,
+                        listOf(QuantityText(R.plurals.transcription_part_count, chunks.size)),
+                    ),
                     null,
                 )
                 PreparedAudioInput.Chunked(file = outputFile, chunks = chunks, tempFileToClean = outputFile)

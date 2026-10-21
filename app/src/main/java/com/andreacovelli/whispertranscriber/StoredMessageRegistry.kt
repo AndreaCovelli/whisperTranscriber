@@ -127,6 +127,7 @@ internal object StoredMessageRegistry {
         "main_queuing_files" to R.plurals.main_queuing_files,
         "share_audio_file_count" to R.plurals.share_audio_file_count,
         "transcription_attempt_count" to R.plurals.transcription_attempt_count,
+        "transcription_part_count" to R.plurals.transcription_part_count,
         "unfinished_job_count" to R.plurals.unfinished_job_count,
     )
 

@@ -89,7 +89,11 @@
     <string name="transcription_status_preparing_upload_gemini">Preparing for Gemini upload…</string>
     <string name="transcription_status_provider_message">%1$s: %2$s</string>
     <string name="transcription_status_conversion_for_chunking">Recording is too long for one %1$s request. Converting to 16 kHz WAV to split it…</string>
-    <string name="transcription_status_split_into_parts">Long recording split into %1$d parts at pauses in speech.</string>
+    <string name="transcription_status_split_into_parts">Long recording split into %1$s at pauses in speech.</string>
+    <plurals name="transcription_part_count">
+        <item quantity="one">%d part</item>
+        <item quantity="other">%d parts</item>
+    </plurals>
     <string name="transcription_status_part_message">Part %1$d of %2$d · %3$s</string>
     <string name="transcription_part_marker">[Part %1$d of %2$d]</string>
     <string name="transcription_status_diarization_fallback">Speaker diarization failed for this recording. Transcribing without speaker labels…</string>
