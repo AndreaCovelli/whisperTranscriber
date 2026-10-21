@@ -4,9 +4,11 @@ import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.history.HistoryExportFormat
 import com.andreacovelli.whispertranscriber.history.buildHistoryExport
+import com.andreacovelli.whispertranscriber.history.formatRecordingDuration
 import com.andreacovelli.whispertranscriber.history.suggestedTextExportFileName
 import com.andreacovelli.whispertranscriber.history.writeHistoryExport
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -50,6 +52,54 @@ class HistoryExportTest {
     }
 
     @Test
+    fun buildHistoryExport_includesRecordingDetailsWhenKnown() {
+        val item = historyItem().copy(
+            providerName = "MICROSOFT_MAI_TRANSCRIBE",
+            durationMs = 3_723_400L,
+            sourceSizeBytes = 52_428_800L,
+            speakerLabels = true,
+        )
+
+        val txt = buildHistoryExport(listOf(item), HistoryExportFormat.TXT)
+        assertTrue(txt.contains("Provider: MICROSOFT_MAI_TRANSCRIBE"))
+        assertTrue(txt.contains("Duration: 1:02:03"))
+        assertTrue(txt.contains("Original file size: 52428800 bytes"))
+        assertTrue(txt.contains("Speaker labels: yes"))
+
+        val csv = buildHistoryExport(listOf(item), HistoryExportFormat.CSV)
+        assertTrue(csv.endsWith("\"MICROSOFT_MAI_TRANSCRIBE\",\"3723.4\",\"52428800\",\"true\""))
+
+        val json = buildHistoryExport(listOf(item), HistoryExportFormat.JSON)
+        assertTrue(json.contains("\"provider\": \"MICROSOFT_MAI_TRANSCRIBE\""))
+        assertTrue(json.contains("\"durationSeconds\": 3723.4"))
+        assertTrue(json.contains("\"sourceSizeBytes\": 52428800"))
+        assertTrue(json.contains("\"speakerLabels\": true"))
+    }
+
+    @Test
+    fun buildHistoryExport_omitsUnknownRecordingDetails() {
+        val txt = buildHistoryExport(listOf(historyItem()), HistoryExportFormat.TXT)
+        assertFalse(txt.contains("Provider:"))
+        assertFalse(txt.contains("Duration:"))
+        assertFalse(txt.contains("Original file size:"))
+        assertFalse(txt.contains("Speaker labels:"))
+
+        val json = buildHistoryExport(listOf(historyItem()), HistoryExportFormat.JSON)
+        assertTrue(json.contains("\"durationSeconds\": null"))
+        assertTrue(json.contains("\"sourceSizeBytes\": null"))
+        assertTrue(json.contains("\"speakerLabels\": false"))
+    }
+
+    @Test
+    fun formatRecordingDuration_usesMinutesOrHours() {
+        assertEquals("0:00", formatRecordingDuration(0))
+        assertEquals("0:01", formatRecordingDuration(500))
+        assertEquals("4:05", formatRecordingDuration(245_000))
+        assertEquals("1:00:00", formatRecordingDuration(3_599_600))
+        assertEquals("12:03:09", formatRecordingDuration(43_389_000))
+    }
+
+    @Test
     fun buildHistoryExport_escapesCsvFields() {
         val export = buildHistoryExport(
             listOf(
@@ -64,11 +114,10 @@ class HistoryExportTest {
 
         assertEquals(
             buildString {
-                append(
-                    "\"id\",\"timestamp\",\"displayName\",\"language\",\"model\",\"summaryModel\",\"text\",\"summary\"\r\n",
-                )
+                append(CSV_HEADER)
                 append("\"7\",\"2026-03-07T23:04:16Z\",\"quarterly,\"\"review\"\".wav\",\"en\",")
-                append("\"whisper-large-v3\",\"gemini-2.5-flash\",\"Line 1,\nLine 2\",\"Needs \"\"quotes\"\"\"")
+                append("\"whisper-large-v3\",\"gemini-2.5-flash\",\"Line 1,\nLine 2\",\"Needs \"\"quotes\"\"\",")
+                append("\"\",\"\",\"\",\"false\"")
             },
             export,
         )
@@ -108,11 +157,11 @@ class HistoryExportTest {
         }
 
         assertEquals(
-            "\"id\",\"timestamp\",\"displayName\",\"language\",\"model\",\"summaryModel\",\"text\",\"summary\"\r\n" +
+            CSV_HEADER +
                 "\"2\",\"1970-01-01T00:00:02Z\",\"meeting.wav\",\"en\",\"whisper-large-v3\"," +
-                "\"gemini-2.5-flash\",\"Newest\",\"Summary body\"\r\n" +
+                "\"gemini-2.5-flash\",\"Newest\",\"Summary body\",\"\",\"\",\"\",\"false\"\r\n" +
                 "\"1\",\"1970-01-01T00:00:01Z\",\"meeting.wav\",\"en\",\"whisper-large-v3\"," +
-                "\"gemini-2.5-flash\",\"Older\",\"Summary body\"",
+                "\"gemini-2.5-flash\",\"Older\",\"Summary body\",\"\",\"\",\"\",\"false\"",
             writer.toString(),
         )
     }
@@ -145,6 +194,11 @@ class HistoryExportTest {
     @Test(expected = IllegalArgumentException::class)
     fun buildHistoryExport_rejectsEmptyHistory() {
         buildHistoryExport(emptyList(), HistoryExportFormat.JSON)
+    }
+
+    private companion object {
+        const val CSV_HEADER = "\"id\",\"timestamp\",\"displayName\",\"language\",\"model\",\"summaryModel\"," +
+            "\"text\",\"summary\",\"provider\",\"durationSeconds\",\"sourceSizeBytes\",\"speakerLabels\"\r\n"
     }
 
     private fun historyItem(

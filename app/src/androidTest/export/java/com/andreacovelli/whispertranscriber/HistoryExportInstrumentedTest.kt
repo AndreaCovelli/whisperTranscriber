@@ -79,8 +79,20 @@ class HistoryExportInstrumentedTest {
         repository.insert(item)
         val destination = ByteArrayOutputStream()
         repository.exportHistory(HistoryExportFormat.JSON, directory) { destination }
-        val expectedKeys =
-            setOf("id", "timestamp", "displayName", "language", "model", "summaryModel", "text", "summary")
+        val expectedKeys = setOf(
+            "id",
+            "timestamp",
+            "displayName",
+            "language",
+            "model",
+            "summaryModel",
+            "text",
+            "summary",
+            "provider",
+            "durationSeconds",
+            "sourceSizeBytes",
+            "speakerLabels",
+        )
         listOf(
             destination.toString("UTF-8"),
             buildHistoryExport(listOf(item), HistoryExportFormat.JSON),

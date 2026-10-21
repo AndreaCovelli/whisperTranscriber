@@ -1,5 +1,6 @@
 package com.andreacovelli.whispertranscriber.ui.components
 
+import android.text.format.Formatter
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -25,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -35,6 +37,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
+import com.andreacovelli.whispertranscriber.history.formatRecordingDuration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -159,6 +162,7 @@ fun HistoryItemCard(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            RecordingDetailsLine(item)
             if (hasTranscript || hasSummary) {
                 Spacer(Modifier.height(8.dp))
             }
@@ -172,6 +176,27 @@ fun HistoryItemCard(
             )
         }
     }
+}
+
+/** Duration, original size, and speaker labels, as far as they were recorded. The model line names the provider. */
+@Composable
+private fun RecordingDetailsLine(item: TranscriptionHistory) {
+    val context = LocalContext.current
+    val speakerLabels = stringResource(R.string.history_item_speaker_labels).takeIf { item.speakerLabels }
+    val details = remember(item.durationMs, item.sourceSizeBytes, speakerLabels) {
+        listOfNotNull(
+            item.durationMs.takeIf { it > 0 }?.let(::formatRecordingDuration),
+            item.sourceSizeBytes.takeIf { it > 0 }?.let { Formatter.formatShortFileSize(context, it) },
+            speakerLabels,
+        ).joinToString(separator = " · ")
+    }
+    if (details.isEmpty()) return
+    Spacer(Modifier.height(2.dp))
+    Text(
+        details,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable

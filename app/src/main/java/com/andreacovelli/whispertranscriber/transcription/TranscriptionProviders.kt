@@ -42,7 +42,13 @@ internal class TransientWorkException(override val userMessage: UserMessage, cau
     IOException("Transient provider failure", cause),
     UserFacingException
 
-data class TranscriptionData(val text: String, val language: String, val model: String)
+/** [speakerLabels] reports whether the transcript was produced with speaker labeling enabled. */
+data class TranscriptionData(
+    val text: String,
+    val language: String,
+    val model: String,
+    val speakerLabels: Boolean = false,
+)
 
 sealed interface TranscriptionResult {
     data class Loading(val message: UserMessage) : TranscriptionResult
@@ -111,6 +117,7 @@ internal class MicrosoftSpeechTranscriber(
                         },
                         language = parseMicrosoftSpeechLanguage(response),
                         model = modelName,
+                        speakerLabels = diarized,
                     ),
                 ),
             )

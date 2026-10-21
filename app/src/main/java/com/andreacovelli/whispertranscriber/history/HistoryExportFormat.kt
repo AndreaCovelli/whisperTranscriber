@@ -25,6 +25,10 @@ private val csvHeaderRow = listOf(
     "summaryModel",
     "text",
     "summary",
+    "provider",
+    "durationSeconds",
+    "sourceSizeBytes",
+    "speakerLabels",
 )
 
 fun buildHistoryExport(items: List<TranscriptionHistory>, format: HistoryExportFormat): String =
@@ -32,6 +36,8 @@ fun buildHistoryExport(items: List<TranscriptionHistory>, format: HistoryExportF
 
 fun suggestedHistoryExportFileName(format: HistoryExportFormat, clock: Clock = Clock.systemDefaultZone()): String =
     "whispertranscriber-history-${LocalDate.now(clock)}.${format.extension}"
+
+private const val MILLISECONDS_PER_SECOND = 1_000.0
 
 private val unsafeFileNameCharacters = Regex("""[\\/:*?"<>|\p{Cntrl}]""")
 private const val MAX_TEXT_EXPORT_BASE_NAME_LENGTH = 100
@@ -86,6 +92,10 @@ internal class HistoryExportWriter(private val writer: Writer, private val forma
                 output.name("summaryModel").value(item.summaryModel)
                 output.name("text").value(item.text)
                 output.name("summary").value(item.summary)
+                output.name("provider").value(item.providerName)
+                output.name("durationSeconds").value(item.durationMs.takeIf { it > 0 }?.let(::millisecondsToSeconds))
+                output.name("sourceSizeBytes").value(item.sourceSizeBytes.takeIf { it > 0 })
+                output.name("speakerLabels").value(item.speakerLabels)
                 output.endObject()
             }
         }
@@ -106,6 +116,10 @@ private fun buildTxtHistoryItem(item: TranscriptionHistory): String = buildStrin
     appendLine("Language: ${item.language}")
     appendLine("Model: ${item.model}")
     appendLine("Summary model: ${item.summaryModel}")
+    if (item.providerName.isNotBlank()) appendLine("Provider: ${item.providerName}")
+    if (item.durationMs > 0) appendLine("Duration: ${formatRecordingDuration(item.durationMs)}")
+    if (item.sourceSizeBytes > 0) appendLine("Original file size: ${item.sourceSizeBytes} bytes")
+    if (item.speakerLabels) appendLine("Speaker labels: yes")
     appendLine()
     appendLine("Transcript:")
     appendLine(item.text)
@@ -125,7 +139,13 @@ private fun csvRowFor(item: TranscriptionHistory): List<String> = listOf(
     item.summaryModel,
     item.text,
     item.summary,
+    item.providerName,
+    item.durationMs.takeIf { it > 0 }?.let(::millisecondsToSeconds)?.toString().orEmpty(),
+    item.sourceSizeBytes.takeIf { it > 0 }?.toString().orEmpty(),
+    item.speakerLabels.toString(),
 )
+
+private fun millisecondsToSeconds(durationMs: Long): Double = durationMs / MILLISECONDS_PER_SECOND
 
 private fun formatHistoryTimestamp(timestamp: Long): String =
     DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(timestamp))

@@ -151,6 +151,7 @@
     <string name="history_item_unknown_model">Unknown</string>
     <string name="history_item_language">Language: %1$s</string>
     <string name="history_item_model">Model: %1$s</string>
+    <string name="history_item_speaker_labels">Speaker labels</string>
     <string name="history_item_show_more">Show more</string>
     <string name="history_item_show_less">Show less</string>
     <string name="history_item_summary_model">Summary model: %1$s</string>

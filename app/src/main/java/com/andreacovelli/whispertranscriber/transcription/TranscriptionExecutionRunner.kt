@@ -62,6 +62,7 @@ class TranscriptionExecutionRunner @Inject constructor(
     companion object {
         private const val TAG = "TranscriptionExecutionRunner"
         private const val MAX_AUTOMATIC_RETRY_ATTEMPTS = 3
+        private const val MICROSECONDS_PER_MILLISECOND = 1_000L
     }
 
     internal suspend fun runJob(
@@ -317,8 +318,14 @@ class TranscriptionExecutionRunner @Inject constructor(
             val transcript = result.copy(
                 text = result.text.ifBlank { applicationContext.getString(R.string.transcription_no_text_found) },
             )
+            val recording = RecordingDetails(
+                durationMs = preparedInput.durationUs.coerceAtLeast(0) / MICROSECONDS_PER_MILLISECOND,
+                sourceSizeBytes = stagedFilePath?.let { path ->
+                    withContext(ioDispatcher) { File(path).length() }
+                } ?: 0,
+            )
             requireOwnedUpdate(
-                repository.persistCompletedTranscription(jobId, executionOwnerId, displayName, transcript),
+                repository.persistCompletedTranscription(jobId, executionOwnerId, displayName, transcript, recording),
             )
             queuedAudioStore.deleteStagedFile(stagedFilePath)
             requireOwnedUpdate(repository.clearStagedFilePath(jobId, executionOwnerId))
@@ -483,7 +490,12 @@ internal fun combinePartTranscriptions(
         .maxByOrNull { it.value }
         ?.key
         ?: parts.first().language
-    return TranscriptionData(text = text, language = language, model = parts.first().model)
+    return TranscriptionData(
+        text = text,
+        language = language,
+        model = parts.first().model,
+        speakerLabels = parts.any(TranscriptionData::speakerLabels),
+    )
 }
 
 internal object QueuedAudioInputResolver {

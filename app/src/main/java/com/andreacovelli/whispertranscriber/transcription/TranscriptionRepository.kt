@@ -16,6 +16,7 @@ import com.andreacovelli.whispertranscriber.data.TranscriptionJobDao
 import com.andreacovelli.whispertranscriber.queue.MAX_NONTERMINAL_JOBS
 import com.andreacovelli.whispertranscriber.queue.RetryResult
 import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
+import com.andreacovelli.whispertranscriber.settings.decodeTranscriptionProvider
 import java.io.File
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -36,6 +37,11 @@ private fun checkQueueCapacity(requestedNonterminalJobs: Int, maximumNonterminal
         )
     }
 }
+
+/** Details of the transcribed recording stored with its history entry; 0 or "" when unknown. */
+
+/** What the runner measured about a finished recording; the provider comes from the job row. */
+data class RecordingDetails(val durationMs: Long = 0, val sourceSizeBytes: Long = 0)
 
 @Singleton
 // This transactional facade intentionally centralizes queue, ownership, and linked-history invariants.
@@ -84,6 +90,7 @@ class TranscriptionRepository @Inject constructor(
         ownerId: String,
         displayName: String,
         data: TranscriptionData,
+        recording: RecordingDetails = RecordingDetails(),
     ): Boolean = db.withTransaction {
         val currentJob = jobDao.getJobById(id)
         if (currentJob?.executionOwnerId != ownerId || !currentJob.isRunning) {
@@ -96,6 +103,10 @@ class TranscriptionRepository @Inject constructor(
                 language = normalizedLanguage,
                 model = data.model,
                 displayName = displayName,
+                providerName = decodeTranscriptionProvider(currentJob.providerName).name,
+                durationMs = recording.durationMs,
+                sourceSizeBytes = recording.sourceSizeBytes,
+                speakerLabels = data.speakerLabels,
             ),
         )
         jobDao.updateResult(id = id, ownerId = ownerId, historyId = historyId) > 0

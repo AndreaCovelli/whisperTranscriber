@@ -30,19 +30,34 @@ import kotlinx.coroutines.withContext
 internal sealed interface PreparedAudioInput {
     val tempFileToClean: File?
 
+    /** Duration of the whole input in microseconds, or a negative value when unknown. */
+    val durationUs: Long
+
     data class MicrosoftSpeech(
         val file: File,
         val mimeType: String,
         val inspection: AudioInspection,
         override val tempFileToClean: File?,
-    ) : PreparedAudioInput
+    ) : PreparedAudioInput {
+        override val durationUs: Long get() = inspection.durationUs
+    }
 
-    data class Gemini(val file: File, val mimeType: String, override val tempFileToClean: File?) : PreparedAudioInput
+    data class Gemini(
+        val file: File,
+        val mimeType: String,
+        override val tempFileToClean: File?,
+        override val durationUs: Long,
+    ) : PreparedAudioInput
 
     /** A converted WAV too long for one request; each part is extracted with [TranscriptionAudioPreparer.preparePart]. */
     data class Chunked(val file: File, val chunks: List<AudioChunk>, override val tempFileToClean: File?) :
-        PreparedAudioInput
+        PreparedAudioInput {
+        override val durationUs: Long
+            get() = chunks.last().endSample * MICROSECONDS_PER_SECOND / CONVERTED_AUDIO_SAMPLE_RATE
+    }
 }
+
+private const val MICROSECONDS_PER_SECOND = 1_000_000L
 
 /** Receives job progress while audio is prepared. A null [progress] keeps the stored progress. */
 internal interface AudioPreparationListener {
@@ -133,7 +148,12 @@ class TranscriptionAudioPreparer @Inject constructor(
                 validateMicrosoftSpeechAudio(inspection)
                 PreparedAudioInput.MicrosoftSpeech(outputFile, "audio/wav", inspection, tempFileToClean = outputFile)
             } else {
-                PreparedAudioInput.Gemini(outputFile, "audio/wav", tempFileToClean = outputFile)
+                PreparedAudioInput.Gemini(
+                    outputFile,
+                    "audio/wav",
+                    tempFileToClean = outputFile,
+                    durationUs = durationUs,
+                )
             }
             written = true
             prepared
@@ -231,7 +251,12 @@ class TranscriptionAudioPreparer @Inject constructor(
                 )
             } else {
                 listener.onStatus(UserMessage(R.string.transcription_status_converted_ready_gemini), null)
-                PreparedAudioInput.Gemini(file = outputFile, mimeType = "audio/wav", tempFileToClean = outputFile)
+                PreparedAudioInput.Gemini(
+                    file = outputFile,
+                    mimeType = "audio/wav",
+                    tempFileToClean = outputFile,
+                    durationUs = inspection.durationUs,
+                )
             }
             converted = true
             return preparedInput
@@ -291,6 +316,7 @@ class TranscriptionAudioPreparer @Inject constructor(
                 file = reusableLocalFile.also(::validateMeasurableGeminiAudio),
                 mimeType = inputMimeType,
                 tempFileToClean = null,
+                durationUs = inspectDurationUsOrUnknown(reusableLocalFile),
             )
         } else {
             listener.onStatus(
@@ -304,6 +330,7 @@ class TranscriptionAudioPreparer @Inject constructor(
                 file = tempFile.also(::validateMeasurableGeminiAudio),
                 mimeType = inputMimeType,
                 tempFileToClean = tempFile,
+                durationUs = inspectDurationUsOrUnknown(tempFile),
             )
         }
     }
@@ -344,6 +371,5 @@ class TranscriptionAudioPreparer @Inject constructor(
 
     private companion object {
         const val TAG = "TranscriptionAudioPrep"
-        const val MICROSECONDS_PER_SECOND = 1_000_000L
     }
 }

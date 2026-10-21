@@ -19,6 +19,11 @@ data class TranscriptionHistory(
     val summaryModel: String = "",
     val displayName: String = "",
     val timestamp: Long = System.currentTimeMillis(),
+    // Recording details captured at transcription time; empty or 0 when unknown, as for older rows.
+    val providerName: String = "",
+    val durationMs: Long = 0,
+    val sourceSizeBytes: Long = 0,
+    val speakerLabels: Boolean = false,
 )
 
 @Fts4(tokenizer = "unicode61", contentEntity = TranscriptionHistory::class)

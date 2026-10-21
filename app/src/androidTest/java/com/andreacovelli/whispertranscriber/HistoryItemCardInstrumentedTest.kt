@@ -1,5 +1,6 @@
 package com.andreacovelli.whispertranscriber
 
+import android.text.format.Formatter
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
@@ -146,6 +147,31 @@ class HistoryItemCardInstrumentedTest {
     }
 
     @Test
+    fun historyItemWithRecordingDetails_showsDurationSizeAndSpeakerLabels() {
+        val item = TranscriptionHistory(
+            id = 3,
+            text = "Speaker A: Hello",
+            language = "en",
+            model = "MAI-Transcribe-2",
+            displayName = "details.wav",
+            durationMs = 125_000L,
+            sourceSizeBytes = 3_000_000L,
+            speakerLabels = true,
+        )
+
+        composeRule.setContent {
+            MaterialTheme {
+                HistoryItemCard(item = item, expanded = false, onToggleExpand = {}, actions = noOpActions())
+            }
+        }
+        composeRule.waitForIdle()
+
+        val size = Formatter.formatShortFileSize(context, item.sourceSizeBytes)
+        val speakerLabels = context.getString(R.string.history_item_speaker_labels)
+        composeRule.onNodeWithText("2:05 · $size · $speakerLabels").assertExists()
+    }
+
+    @Test
     fun recreatedExpandedCard_keepsItsCollapseControl() {
         var generation by mutableStateOf(0)
         var expanded by mutableStateOf(true)
@@ -186,4 +212,16 @@ class HistoryItemCardInstrumentedTest {
         composeRule.onNodeWithText(context.getString(R.string.retry)).performClick()
         composeRule.runOnIdle { org.junit.Assert.assertEquals(1, retries) }
     }
+
+    private fun noOpActions() = HistoryItemCardActions(
+        copyTranscript = {},
+        copySummary = {},
+        clearTranscript = {},
+        clearSummary = {},
+        delete = {},
+        shareTranscript = {},
+        shareSummary = {},
+        saveTranscript = {},
+        saveSummary = {},
+    )
 }

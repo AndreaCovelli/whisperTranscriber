@@ -442,6 +442,42 @@ class HistoryFtsSyncInstrumentedTest {
     }
 
     @Test
+    fun migrationToVersion19_marksRecordingDetailsUnknownAndKeepsHistorySearchable() {
+        val databaseName = "recording-details-migration-test.db"
+        migrationHelper.createDatabase(databaseName, 18).use { legacyDb ->
+            legacyDb.execSQL(
+                """
+                INSERT INTO transcription_history(id, text, language, model, summary, summaryProviderName,
+                    summaryModel, displayName, timestamp)
+                VALUES (3, 'quarterly budget review', 'en', 'model', '', '', '', 'budget.wav', 100)
+                """.trimIndent(),
+            )
+        }
+
+        val migratedDb = migrationHelper.runMigrationsAndValidate(databaseName, 19, true, *AppDatabase.MIGRATIONS)
+        try {
+            migratedDb.query(
+                "SELECT providerName, durationMs, sourceSizeBytes, speakerLabels FROM transcription_history WHERE id = 3",
+            ).use {
+                assertTrue(it.moveToNext())
+                assertEquals("", it.getString(0))
+                assertEquals(0L, it.getLong(1))
+                assertEquals(0L, it.getLong(2))
+                assertEquals(0, it.getInt(3))
+            }
+            migratedDb.query(
+                "SELECT rowid FROM transcription_history_fts WHERE transcription_history_fts MATCH 'budget'",
+            ).use {
+                assertTrue(it.moveToNext())
+                assertEquals(3, it.getInt(0))
+            }
+        } finally {
+            migratedDb.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun migrationFromVersion6_assignsCurrentMicrosoftProviderToExistingJobs() {
         val databaseName = "provider-default-migration-test.db"
         createLegacyRawDatabase(databaseName, 6) { legacyDb ->

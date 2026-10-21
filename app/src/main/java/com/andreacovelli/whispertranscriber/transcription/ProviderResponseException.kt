@@ -48,7 +48,7 @@ internal fun parseGeminiTranscription(json: String, diarization: Boolean, model:
     val text = obj.opt("text") as? String ?: throw ProviderResponseException(R.string.provider_response_invalid)
     val language = (obj.opt("language_code") as? String)?.takeIf(String::isNotBlank)
         ?: throw ProviderResponseException(R.string.provider_response_invalid)
-    return TranscriptionData(parseTranscriptTextValue(text, diarization), language, model)
+    return TranscriptionData(parseTranscriptTextValue(text, diarization), language, model, speakerLabels = diarization)
 }
 
 internal suspend fun awaitGeminiFileActive(
