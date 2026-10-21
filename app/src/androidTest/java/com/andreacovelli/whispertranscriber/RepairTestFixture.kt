@@ -22,6 +22,8 @@ import com.andreacovelli.whispertranscriber.transcription.TranscriptionAudioPrep
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionExecutionRunner
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import okhttp3.OkHttpClient
 
 /** Real Room, storage, and queue orchestration; only OS scheduling is recorded. */
@@ -84,6 +86,9 @@ internal class RecordingScheduler : QueueScheduler {
     var allowUserInitiatedJob = false
     val active = mutableSetOf<Int>()
     val scheduled = mutableListOf<Int>()
+
+    /** Lets tests wait for a cancellation that runs after the Room write they can observe. */
+    val cancelled = MutableStateFlow<Set<Int>>(emptySet())
     override suspend fun hasActiveEntry(job: TranscriptionJob): Boolean = job.id in active
     override suspend fun enqueueWorker(job: TranscriptionJob): Boolean {
         scheduled += job.id
@@ -95,5 +100,6 @@ internal class RecordingScheduler : QueueScheduler {
     }
     override suspend fun cancel(jobId: Int) {
         active -= jobId
+        cancelled.update { it + jobId }
     }
 }

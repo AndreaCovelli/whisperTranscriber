@@ -166,6 +166,8 @@ class MainViewModelInstrumentedTest {
         assertEquals(UserMessage(R.string.job_cancelled_error), job.error)
         assertTrue(job.canRetry)
         assertTrue(audio.isFile)
+        // The service cancels scheduling after writing CANCELLED, so the state above can arrive first.
+        withTimeout(TIMEOUT_MILLIS) { fixture.scheduler.cancelled.first { queued in it } }
         assertFalse(queued in fixture.scheduler.active)
     }
 
