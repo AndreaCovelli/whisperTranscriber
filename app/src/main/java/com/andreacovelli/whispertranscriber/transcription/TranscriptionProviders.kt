@@ -319,12 +319,22 @@ internal fun friendlyHttpError(code: Int, provider: UserMessage): UserMessage = 
     else -> UserMessage(R.string.http_error_unexpected, listOf(code, provider))
 }
 
-internal fun resolveMicrosoftSpeechErrorMessage(code: Int, bodyText: String): UserMessage = when {
-    code == 401 -> UserMessage(R.string.microsoft_speech_unauthorized)
-    code == 404 -> UserMessage(R.string.microsoft_speech_endpoint_not_found)
-    code == 429 && isMicrosoftSpeechResourceExhaustedMessage(extractMicrosoftSpeechServiceMessage(bodyText)) ->
-        UserMessage(R.string.microsoft_speech_resource_exhausted)
-    else -> friendlyHttpError(code, UserMessage(R.string.provider_name_microsoft_speech))
+private const val MAX_MICROSOFT_SPEECH_SERVICE_MESSAGE_LENGTH = 300
+
+internal fun resolveMicrosoftSpeechErrorMessage(code: Int, bodyText: String): UserMessage {
+    val serviceMessage = extractMicrosoftSpeechServiceMessage(bodyText)
+    return when {
+        code == 401 -> UserMessage(R.string.microsoft_speech_unauthorized)
+        code == 404 -> UserMessage(R.string.microsoft_speech_endpoint_not_found)
+        code == 429 && isMicrosoftSpeechResourceExhaustedMessage(serviceMessage) ->
+            UserMessage(R.string.microsoft_speech_resource_exhausted)
+        // Rejected requests are not retried, so show Microsoft's reason instead of a bare status code.
+        code in 400..499 && code != 429 && serviceMessage != null -> UserMessage(
+            R.string.microsoft_speech_request_rejected,
+            listOf(code, serviceMessage.trim().take(MAX_MICROSOFT_SPEECH_SERVICE_MESSAGE_LENGTH)),
+        )
+        else -> friendlyHttpError(code, UserMessage(R.string.provider_name_microsoft_speech))
+    }
 }
 
 internal fun parseMicrosoftSpeechTranscriptText(response: JSONObject): String {

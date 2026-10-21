@@ -278,6 +278,39 @@ class TranscriptionPresentationTest {
     }
 
     @Test
+    fun resolveMicrosoftSpeechErrorMessage_showsServiceReasonForRejectedRequest() {
+        assertEquals(
+            UserMessage(R.string.microsoft_speech_request_rejected, listOf(400, "Invalid definition.")),
+            resolveMicrosoftSpeechErrorMessage(
+                400,
+                """{"error":{"code":"InvalidArgument","message":" Invalid definition. "}}""",
+            ),
+        )
+    }
+
+    @Test
+    fun resolveMicrosoftSpeechErrorMessage_usesInnerErrorReasonWhenTopLevelMessageIsMissing() {
+        assertEquals(
+            UserMessage(R.string.microsoft_speech_request_rejected, listOf(400, "Unsupported audio format.")),
+            resolveMicrosoftSpeechErrorMessage(
+                400,
+                """{"error":{"innerError":{"message":"Unsupported audio format."}}}""",
+            ),
+        )
+    }
+
+    @Test
+    fun resolveMicrosoftSpeechErrorMessage_keepsGenericMessageWithoutServiceReason() {
+        assertEquals(
+            UserMessage(
+                R.string.http_error_unexpected,
+                listOf(400, UserMessage(R.string.provider_name_microsoft_speech)),
+            ),
+            resolveMicrosoftSpeechErrorMessage(400, "Bad Request"),
+        )
+    }
+
+    @Test
     fun isMicrosoftSpeechUploadSizeSupported_allowsPayloadJustBelowDocumentedLimit() {
         assertEquals(true, isMicrosoftSpeechUploadSizeSupported(249_999_999L))
     }

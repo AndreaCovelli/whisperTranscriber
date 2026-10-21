@@ -57,6 +57,7 @@ internal object StoredMessageRegistry {
         "microsoft_speech_region_invalid" to R.string.microsoft_speech_region_invalid,
         "microsoft_speech_region_unreachable" to R.string.microsoft_speech_region_unreachable,
         "microsoft_speech_region_validation_failed_http" to R.string.microsoft_speech_region_validation_failed_http,
+        "microsoft_speech_request_rejected" to R.string.microsoft_speech_request_rejected,
         "microsoft_speech_resource_exhausted" to R.string.microsoft_speech_resource_exhausted,
         "microsoft_speech_unauthorized" to R.string.microsoft_speech_unauthorized,
         "provider_file_failed" to R.string.provider_file_failed,
