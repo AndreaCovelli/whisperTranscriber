@@ -59,9 +59,24 @@ class ProviderResponsesTest {
     @Test
     fun gemini_acceptsCompleteTextAndExplicitNoSpeech() {
         assertEquals("summary", validatedGeminiText(GenerateContentResponse.fromJson(candidate("STOP", "summary"))))
-        val noSpeech = parseGeminiTranscription("""{"text":"","language_code":"und"}""", false, "model")
+        val noSpeech = parseGeminiTranscription("""{"text":"","language_code":"und"}""", false, "Speaker", "model")
         assertEquals("", noSpeech.text)
         assertEquals("und", noSpeech.language)
+    }
+
+    @Test
+    fun geminiDiarizedTranscript_reportsSpeakerLabelsOnlyWhenTheTextHasThem() {
+        val labeled = parseGeminiTranscription(
+            """{"text":"Relatore A: Ciao\nRelatore B: Salve","language_code":"it-IT"}""",
+            true,
+            "Relatore",
+            "model",
+        )
+        val plain =
+            parseGeminiTranscription("""{"text":"Ciao a tutti","language_code":"it-IT"}""", true, "Relatore", "model")
+
+        assertTrue(labeled.speakerLabels)
+        assertFalse(plain.speakerLabels)
     }
 
     @Test
@@ -75,7 +90,7 @@ class ProviderResponsesTest {
             .forEach { json ->
                 val error =
                     assertThrows(ProviderResponseException::class.java) {
-                        parseGeminiTranscription(json, false, "model")
+                        parseGeminiTranscription(json, false, "Speaker", "model")
                     }
                 assertEquals(R.string.provider_response_invalid, error.messageId)
                 assertFalse(error.message.orEmpty().contains("private transcript"))

@@ -5,6 +5,8 @@ import com.andreacovelli.whispertranscriber.settings.ApiKeyState
 import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.settings.TranscriptionQueueSettings
+import com.andreacovelli.whispertranscriber.summary.SummaryStyle
+import com.andreacovelli.whispertranscriber.summary.normalizeSummaryCustomPrompt
 
 sealed class CustomModelValidation {
     object Idle : CustomModelValidation()
@@ -42,6 +44,10 @@ data class SettingsUiState(
     val automaticSummarizationEnabled: Boolean = false,
     val backgroundShareSummaryNotificationsEnabled: Boolean = false,
     val speakerDiarizationEnabled: Boolean = false,
+    val transcriptionLanguage: String = "",
+    val transcriptionVocabulary: String = "",
+    val summaryStyle: SummaryStyle = SummaryStyle.AUTOMATIC,
+    val summaryCustomPrompt: String = "",
 )
 
 /** User actions from the settings screen, plus the results the view model reports back. */
@@ -51,6 +57,10 @@ sealed interface SettingsMsg {
     data class SetAutomaticSummarization(val enabled: Boolean) : SettingsMsg
     data class SetBackgroundShareSummaryNotificationsEnabled(val enabled: Boolean) : SettingsMsg
     data class SetSpeakerDiarization(val enabled: Boolean) : SettingsMsg
+    data class SetTranscriptionLanguage(val languageCode: String) : SettingsMsg
+    data class SetTranscriptionVocabulary(val vocabulary: String) : SettingsMsg
+    data class SetSummaryStyle(val style: SummaryStyle) : SettingsMsg
+    data class SetSummaryCustomPrompt(val prompt: String) : SettingsMsg
     data class SetMicrosoftSpeechRegion(val region: String) : SettingsMsg
     data class SaveMicrosoftSpeechKey(val key: String) : SettingsMsg
     data class SaveGeminiKey(val key: String) : SettingsMsg
@@ -93,6 +103,12 @@ internal object SettingsReducer {
             backgroundShareSummaryNotificationsEnabled = msg.enabled,
         )
         is SettingsMsg.SetSpeakerDiarization -> state.copy(speakerDiarizationEnabled = msg.enabled)
+        is SettingsMsg.SetTranscriptionLanguage -> state.copy(transcriptionLanguage = msg.languageCode)
+        is SettingsMsg.SetTranscriptionVocabulary -> state.copy(transcriptionVocabulary = msg.vocabulary.trim())
+        is SettingsMsg.SetSummaryStyle -> state.copy(summaryStyle = msg.style)
+        is SettingsMsg.SetSummaryCustomPrompt -> state.copy(
+            summaryCustomPrompt = normalizeSummaryCustomPrompt(msg.prompt),
+        )
         is SettingsMsg.SetMicrosoftSpeechRegion -> state.copy(
             microsoftSpeechRegion = msg.region,
             microsoftSpeechKeyValidation = KeyValidationState.Idle,
@@ -106,10 +122,14 @@ internal object SettingsReducer {
             provider = msg.settings.provider,
             transcriptionCustomGeminiModelName = msg.settings.customModelName,
             speakerDiarizationEnabled = msg.settings.speakerDiarizationEnabled,
+            transcriptionLanguage = msg.settings.languageHint,
+            transcriptionVocabulary = msg.settings.vocabulary,
         )
         is SettingsMsg.SummarizationSettingsLoaded -> state.copy(
             summarizerProvider = msg.settings.provider,
             summarizerCustomGeminiModelName = msg.settings.customModelName,
+            summaryStyle = msg.settings.style,
+            summaryCustomPrompt = msg.settings.customPrompt,
         )
         is SettingsMsg.MicrosoftSpeechApiKeyStateChanged -> state.copy(microsoftSpeechApiKeyState = msg.state)
         is SettingsMsg.GeminiApiKeyStateChanged -> state.copy(geminiApiKeyState = msg.state)

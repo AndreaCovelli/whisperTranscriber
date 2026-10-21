@@ -10,6 +10,7 @@ import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.queue.MAX_NONTERMINAL_JOBS
 import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
+import com.andreacovelli.whispertranscriber.summary.SummaryStyle
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_CANCELLED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_COMPLETED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_ERROR
@@ -215,6 +216,24 @@ class MainViewModelInstrumentedTest {
         assertEquals(SummaryRequest(jobId, "meeting.wav", expectedSettings), request)
         summaries.result.complete(UserMessage(R.string.summarization_status_generated))
         awaitState { it.status == UserMessage(R.string.summarization_status_generated) }
+    }
+
+    @Test
+    fun summarizeJob_withAStyle_overridesOnlyTheStyleOfTheSavedSettings() = runBlocking<Unit> {
+        settings.manager.saveSummaryStyle(SummaryStyle.BULLET_POINTS)
+        settings.manager.saveSummaryCustomPrompt("Only decisions")
+        val jobId = insertJob(JOB_STATUS_COMPLETED, displayName = "call.wav", transcript = "Transcript")
+        val state = awaitState { state ->
+            state.jobs.any { it.id == jobId } &&
+                state.providerSummary.summaryStyleChoices.defaultStyle == SummaryStyle.BULLET_POINTS
+        }
+        assertTrue(state.providerSummary.summaryStyleChoices.customPromptAvailable)
+
+        dispatch(MainMsg.SummarizeJob(jobId, SummaryStyle.ACTION_ITEMS))
+
+        val request = withTimeout(TIMEOUT_MILLIS) { summaries.enqueued.first { it.isNotEmpty() } }.single()
+        assertEquals(SummaryStyle.ACTION_ITEMS, request.settings.style)
+        assertEquals("Only decisions", request.settings.customPrompt)
     }
 
     @Test

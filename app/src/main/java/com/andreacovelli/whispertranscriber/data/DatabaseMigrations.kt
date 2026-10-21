@@ -259,6 +259,29 @@ private val MIGRATION_16_17 = object : Migration(16, 17) {
     }
 }
 
+private val MIGRATION_17_18 = object : Migration(17, 18) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE active_jobs ADD COLUMN languageHint TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE active_jobs ADD COLUMN vocabulary TEXT NOT NULL DEFAULT ''")
+    }
+}
+
+private val MIGRATION_18_19 = object : Migration(18, 19) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE transcription_history ADD COLUMN providerName TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE transcription_history ADD COLUMN durationMs INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE transcription_history ADD COLUMN sourceSizeBytes INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE transcription_history ADD COLUMN speakerLabels INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+private val MIGRATION_19_20 = object : Migration(19, 20) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE active_jobs ADD COLUMN queuedSummaryStyle TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE active_jobs ADD COLUMN queuedSummaryCustomPrompt TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 internal val DATABASE_MIGRATIONS = arrayOf(
     MIGRATION_1_2,
     MIGRATION_2_3,
@@ -276,4 +299,7 @@ internal val DATABASE_MIGRATIONS = arrayOf(
     MIGRATION_14_15,
     MIGRATION_15_16,
     MIGRATION_16_17,
+    MIGRATION_17_18,
+    MIGRATION_18_19,
+    MIGRATION_19_20,
 )

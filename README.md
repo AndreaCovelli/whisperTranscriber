@@ -9,7 +9,8 @@ Share one or more audio files from a file manager or audio player to queue them 
 
 - **Multi-provider transcription** — choose between Microsoft MAI Transcribe 2 or Gemini (Flash Lite, Flash, Pro, or a custom model)
 - **Batch processing** — share multiple audio files at once; jobs are staged locally, queued, and processed sequentially
-- **AI summarization** — generate summaries manually or automatically after transcription, with a separately selected Gemini model (requires a Gemini API key)
+- **Long recordings** — audio longer than a provider handles well in one request is split at pauses and transcribed in parts
+- **AI summarization** — generate summaries manually or automatically after transcription, with a separately selected Gemini model and a choice of summary styles or a custom prompt (requires a Gemini API key)
 - **Speaker labels** — optionally label distinguishable speakers in Microsoft MAI Transcribe or Gemini transcripts
 - **Background sharing** — stay in the sharing app while audio is queued, and receive the transcript or summary in a result notification
 - **Transcription history** — all transcripts are saved locally in a searchable Room database
@@ -177,7 +178,11 @@ Select **Custom Model** in either the transcription or summarizer selector in Se
 Choose the **Summarizer** model separately from the transcription provider. Enable
 **Automatic Summarization** to summarize each transcript as it finishes, including audio
 that is already queued; existing transcripts are not summarized retroactively. Automatic
-and manual summaries keep running in the background after you leave the app. **Speaker Diarization**
+and manual summaries keep running in the background after you leave the app. **Summary Style**
+shapes summaries as an automatic summary, key points, action items, meeting minutes, or by
+your own prompt; queued audio keeps the style chosen when it was queued, like the summarizer
+model. On a job card, the menu next to **Summarize** picks a different style for that one
+summary, and **Summarize again** replaces an existing summary in any style. **Speaker Diarization**
 is available for Microsoft MAI Transcribe 2 and Gemini transcription and labels
 speakers when they can be distinguished.
 
@@ -200,7 +205,7 @@ The Microsoft endpoint setting accepts either an Azure Speech region such as `ea
 3. The API processes the audio and returns the full transcript in the response.
 4. The finished transcript is saved to local history.
 
-Microsoft MAI inputs must be strictly smaller than **250,000,000 bytes** and shorter than **two hours**. The app inspects both native and converted inputs before upload.
+Each Microsoft MAI request must be strictly smaller than **250,000,000 bytes** and shorter than **two hours**. The app inspects both native and converted inputs before upload. Recordings of two hours or more are split into parts (see below).
 
 ### Gemini flow
 
@@ -211,6 +216,15 @@ Microsoft MAI inputs must be strictly smaller than **250,000,000 bytes** and sho
 Measurable native and converted audio is limited to 9.5 hours. Blocked, truncated,
 or malformed responses preserve staged audio for retry. Transient failures allow
 up to three automatic retries.
+
+### Long recordings
+
+Recordings of one hour or more (Gemini) or two hours or more (Microsoft) are converted
+to 16 kHz mono WAV and split into balanced parts of at most 60 minutes (Gemini) or
+110 minutes (Microsoft), up to 9.5 hours in total. Each cut is placed at the quietest
+moment within two minutes of its ideal position. Parts are transcribed one at a time
+and joined in order. Speaker labels restart in each part, so diarized transcripts mark
+where each part begins. A failed part retries the whole recording.
 
 ### Audio conversion
 
@@ -243,7 +257,7 @@ The main screen shows every active job and up to the 100 most recent terminal ca
 
 ### History
 
-A searchable list of all past transcriptions. Each item can be expanded to reveal the full text and any summary. Clearing a transcript preserves its summary and metadata. Clearing either field cancels pending summarization so late results cannot restore cleared content. Individual items or the entire history can be deleted. TXT, CSV, and JSON exports read a consistent database snapshot.
+A searchable list of all past transcriptions. Each item can be expanded to reveal the full text and any summary. Transcripts can be corrected with **Edit transcript**; search uses the corrected text, and an existing summary is left as it was. Clearing a transcript preserves its summary and metadata. Clearing either field cancels pending summarization so late results cannot restore cleared content. Items transcribed by this version also show the provider, the recording length, the original file size, and whether the transcript has speaker labels; older items leave these details blank. Individual items or the entire history can be deleted. Deleting one item offers **Undo** for a few seconds; the item and its linked job card are removed only when that offer ends. Deleting all history asks for confirmation instead. TXT, CSV, and JSON exports read a consistent database snapshot and include the provider and the same recording details.
 
 Text sharing uses inline text below 128 KiB UTF-8 and a temporary text file for larger results. Shared text files expire after 24 hours and are removed during maintenance or the next file share. Oversized clipboard requests show an error with a sharing alternative.
 
@@ -258,7 +272,7 @@ Configure the transcription and summarizer models, manage API keys, enter a Micr
 - `MainActivity` hosts Compose navigation; `ShareReceiverActivity` accepts Android share intents through a retained intake ViewModel.
 - Main, Settings, and History ViewModels expose immutable state through `StateFlow` and use unidirectional data flow: screens dispatch messages, pure reducers compute state, and ViewModels run side effects. History uses Room-backed Paging with date grouping.
 - `TranscriptionQueueService`, `QueueExecutionCoordinator`, and `TranscriptionExecutionRunner` stage, recover, serialize, and persist work across WorkManager and the Android job service.
-- Room stores history, FTS search, and persistent queue state (schema v16). Job progress, errors, and summary errors are stored as message codes and arguments, then translated when shown. Content mutations and claims are transactional; prior-process claims recover independently of surviving scheduler entries.
+- Room stores history, FTS search, and persistent queue state (schema v20). Job progress, errors, and summary errors are stored as message codes and arguments, then translated when shown. Content mutations and claims are transactional; prior-process claims recover independently of surviving scheduler entries.
 - `ApiKeyManager` and `KeystoreCrypto` encrypt credentials in DataStore. Provider transports cancel each operation independently.
 - `HardwareAudioConverter` uses MediaExtractor/MediaCodec for 16 kHz mono WAV conversion.
 

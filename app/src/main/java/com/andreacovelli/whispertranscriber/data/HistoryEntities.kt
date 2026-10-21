@@ -19,6 +19,11 @@ data class TranscriptionHistory(
     val summaryModel: String = "",
     val displayName: String = "",
     val timestamp: Long = System.currentTimeMillis(),
+    // Recording details captured at transcription time; empty or 0 when unknown, as for older rows.
+    val providerName: String = "",
+    val durationMs: Long = 0,
+    val sourceSizeBytes: Long = 0,
+    val speakerLabels: Boolean = false,
 )
 
 @Fts4(tokenizer = "unicode61", contentEntity = TranscriptionHistory::class)
@@ -47,6 +52,9 @@ data class TranscriptionJob(
     val notifyResult: Boolean = false,
     val queuedSummarizerProviderName: String = "",
     val queuedSummarizerCustomModelName: String = "",
+    // SummaryStyle name and custom prompt for the automatic summary; "" means the automatic style.
+    val queuedSummaryStyle: String = "",
+    val queuedSummaryCustomPrompt: String = "",
     val status: String = JOB_STATUS_QUEUED,
     // Encoded progress text while running (see StoredMessages); error and summaryError are encoded too.
     val statusMessage: String? = null,
@@ -68,6 +76,9 @@ data class TranscriptionJob(
     val retryCount: Int = 0,
     val batchId: String? = null,
     val speakerDiarizationEnabled: Boolean = false,
+    // Normalized hints captured when the job was queued or retried; see TranscriptionHints.
+    val languageHint: String = "",
+    val vocabulary: String = "",
     val historyId: Int? = null,
     val timestamp: Long = System.currentTimeMillis(),
     val finishedAt: Long = 0,

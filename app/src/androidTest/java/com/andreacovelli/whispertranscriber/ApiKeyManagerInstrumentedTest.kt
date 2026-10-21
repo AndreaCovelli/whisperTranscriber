@@ -6,6 +6,8 @@ import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
 import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.settings.TranscriptionQueueSettings
+import com.andreacovelli.whispertranscriber.summary.SummaryStyle
+import com.andreacovelli.whispertranscriber.transcription.TranscriptionHints
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -102,6 +104,35 @@ class ApiKeyManagerInstrumentedTest {
     }
 
     @Test
+    fun transcriptionHints_areSavedAndClearedWithQueueSettings() = runBlocking {
+        apiKeyManager.saveTranscriptionLanguage(" IT ")
+        apiKeyManager.saveTranscriptionVocabulary("  Covelli, Kotlin \n")
+
+        val saved = apiKeyManager.getTranscriptionQueueSettings()
+        assertEquals("it", saved.languageHint)
+        assertEquals("Covelli, Kotlin", saved.vocabulary)
+        assertEquals(TranscriptionHints("it", listOf("Covelli", "Kotlin")), saved.hints())
+
+        apiKeyManager.saveTranscriptionLanguage("unsupported")
+        apiKeyManager.saveTranscriptionVocabulary(" ")
+
+        assertEquals(TranscriptionHints(), apiKeyManager.getTranscriptionQueueSettings().hints())
+    }
+
+    @Test
+    fun summaryStyle_isSavedWithSummarizationSettings() = runBlocking {
+        apiKeyManager.saveSummaryStyle(SummaryStyle.CUSTOM)
+        apiKeyManager.saveSummaryCustomPrompt("  Only decisions \n")
+
+        val saved = apiKeyManager.getSummarizationSettings()
+        assertEquals(SummaryStyle.CUSTOM, saved.style)
+        assertEquals("Only decisions", saved.customPrompt)
+
+        apiKeyManager.saveSummaryCustomPrompt(" ")
+        assertEquals("", apiKeyManager.getSummarizationSettings().customPrompt)
+    }
+
+    @Test
     fun microsoftSpeechRegionFlow_returnsSavedNormalizedValue() = runBlocking {
         apiKeyManager.saveMicrosoftSpeechRegion(" WestUS ")
 
@@ -128,5 +159,9 @@ class ApiKeyManagerInstrumentedTest {
         apiKeyManager.saveSummarizerCustomGeminiModelName("")
         apiKeyManager.saveBackgroundShareSummaryNotificationsEnabled(false)
         apiKeyManager.saveSpeakerDiarization(false)
+        apiKeyManager.saveTranscriptionLanguage("")
+        apiKeyManager.saveTranscriptionVocabulary("")
+        apiKeyManager.saveSummaryStyle(SummaryStyle.AUTOMATIC)
+        apiKeyManager.saveSummaryCustomPrompt("")
     }
 }

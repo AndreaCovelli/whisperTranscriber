@@ -24,7 +24,9 @@ import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
 import com.andreacovelli.whispertranscriber.settings.ApiKeyState
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
+import com.andreacovelli.whispertranscriber.transcription.TranscriptionHints
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
+import com.andreacovelli.whispertranscriber.transcription.encodeVocabulary
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -65,6 +67,7 @@ class TranscriptionQueueService @Inject constructor(
         provider: TranscriptionProvider,
         customModelName: String,
         speakerDiarizationEnabled: Boolean,
+        hints: TranscriptionHints = TranscriptionHints(),
         preferImmediateBackgroundStart: Boolean = false,
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec? = null,
         onJobsCommitted: () -> Unit = {},
@@ -76,6 +79,7 @@ class TranscriptionQueueService @Inject constructor(
                 provider,
                 customModelName,
                 speakerDiarizationEnabled,
+                hints,
                 preferImmediateBackgroundStart,
                 postTranscriptionWorkSpec,
                 onJobsCommitted,
@@ -88,6 +92,7 @@ class TranscriptionQueueService @Inject constructor(
         provider: TranscriptionProvider,
         customModelName: String,
         speakerDiarizationEnabled: Boolean,
+        hints: TranscriptionHints,
         preferImmediateBackgroundStart: Boolean = false,
         postTranscriptionWorkSpec: PostTranscriptionWorkSpec? = null,
         onJobsCommitted: () -> Unit = {},
@@ -125,8 +130,12 @@ class TranscriptionQueueService @Inject constructor(
                 queuedSummarizerProviderName = persistedPostTranscriptionConfig.queuedSummarizerProviderName,
                 queuedSummarizerCustomModelName =
                 persistedPostTranscriptionConfig.queuedSummarizerCustomModelName,
+                queuedSummaryStyle = persistedPostTranscriptionConfig.queuedSummaryStyle,
+                queuedSummaryCustomPrompt = persistedPostTranscriptionConfig.queuedSummaryCustomPrompt,
                 batchId = batchId,
                 speakerDiarizationEnabled = speakerDiarizationEnabled,
+                languageHint = hints.languageCode,
+                vocabulary = encodeVocabulary(hints.vocabulary),
                 status = JOB_STATUS_QUEUED,
                 progress = 0f,
                 isRunning = false,
@@ -217,6 +226,12 @@ class TranscriptionQueueService @Inject constructor(
         cancelRemovedHistoryJobs(historyRepository.clearContent(historyId, field))
     }
 
+    // A summary already running inside a transcription is only invalidated: cancelling its operation would stop
+    // the transcription that owns it.
+    suspend fun updateHistoryTranscript(historyId: Int, text: String) = operations.withClaimLock {
+        historyRepository.updateTranscript(historyId, text).forEach(operations::cancel)
+    }
+
     suspend fun retryJob(jobId: Int): RetryResult {
         executionCoordinator.awaitRecovery()
         val snapshot = settings.getTranscriptionQueueSettings()
@@ -233,6 +248,9 @@ class TranscriptionQueueService @Inject constructor(
                 queuedSummarizerProviderName = persistedConfig.queuedSummarizerProviderName,
                 queuedSummarizerCustomModelName = persistedConfig.queuedSummarizerCustomModelName,
                 speakerDiarizationEnabled = snapshot.speakerDiarizationEnabled,
+                hints = snapshot.hints(),
+                queuedSummaryStyle = persistedConfig.queuedSummaryStyle,
+                queuedSummaryCustomPrompt = persistedConfig.queuedSummaryCustomPrompt,
             )
             if (retry == RetryResult.ACCEPTED) {
                 operations.cancel(jobId)

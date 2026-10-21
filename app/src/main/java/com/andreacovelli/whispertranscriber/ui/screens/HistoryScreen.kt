@@ -26,6 +26,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -69,11 +73,13 @@ import com.andreacovelli.whispertranscriber.history.suggestedTextExportFileName
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCard
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCardActions
 import com.andreacovelli.whispertranscriber.ui.components.TextSaveTarget
+import com.andreacovelli.whispertranscriber.ui.components.TranscriptEditDialog
 import com.andreacovelli.whispertranscriber.ui.components.rememberTextFileSaveLauncher
 import com.andreacovelli.whispertranscriber.ui.copyTextWithFeedback
 import com.andreacovelli.whispertranscriber.ui.history.HistoryMsg
 import com.andreacovelli.whispertranscriber.ui.history.HistoryUiEvent
 import com.andreacovelli.whispertranscriber.ui.history.HistoryViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -105,8 +111,18 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
         uri?.let { historyViewModel.dispatch(HistoryMsg.ExportHistory(it, HistoryExportFormat.JSON)) }
     }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    val itemDeletedMessage = stringResource(R.string.history_item_deleted)
+    val undoLabel = stringResource(R.string.history_undo)
     ObserveHistoryEvents(
         historyViewModel = historyViewModel,
+        onItemDeleted = { historyId ->
+            // A newer deletion replaces the visible offer, which finishes the earlier deletion.
+            snackbarHostState.currentSnackbarData?.dismiss()
+            scope.launch {
+                offerUndoDelete(snackbarHostState, itemDeletedMessage, undoLabel, historyId, historyViewModel::dispatch)
+            }
+        },
         onLaunchExport = { format ->
             val fileName = suggestedHistoryExportFileName(format)
             when (format) {
@@ -125,6 +141,15 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
             },
         )
     }
+    val transcriptEditor by historyViewModel.transcriptEditor.collectAsStateWithLifecycle()
+    transcriptEditor?.let { editor ->
+        TranscriptEditDialog(
+            text = editor.text,
+            hasSummary = editor.hasSummary,
+            onSave = { historyViewModel.dispatch(HistoryMsg.SaveTranscriptEdit) },
+            onCancel = { historyViewModel.dispatch(HistoryMsg.CancelTranscriptEdit) },
+        )
+    }
     if (showExportDialog) {
         ExportHistoryDialog(
             onDismiss = { showExportDialog = false },
@@ -136,6 +161,7 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             HistoryTopBar(
                 canDeleteAll = pagedItems.itemCount > 0 || searchQuery.isNotEmpty(),
@@ -160,8 +186,35 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
     }
 }
 
+// Leaving the screen or recreating it ends the offer, so a cancelled snackbar finishes the deletion too.
+private suspend fun offerUndoDelete(
+    snackbarHostState: SnackbarHostState,
+    message: String,
+    undoLabel: String,
+    historyId: Int,
+    dispatch: (HistoryMsg) -> Unit,
+) {
+    val result = try {
+        snackbarHostState.showSnackbar(message, actionLabel = undoLabel, duration = SnackbarDuration.Short)
+    } catch (cancellation: CancellationException) {
+        dispatch(HistoryMsg.FinishDeleteItem(historyId))
+        throw cancellation
+    }
+    dispatch(
+        if (result == SnackbarResult.ActionPerformed) {
+            HistoryMsg.UndoDeleteItem(historyId)
+        } else {
+            HistoryMsg.FinishDeleteItem(historyId)
+        },
+    )
+}
+
 @Composable
-private fun ObserveHistoryEvents(historyViewModel: HistoryViewModel, onLaunchExport: (HistoryExportFormat) -> Unit) {
+private fun ObserveHistoryEvents(
+    historyViewModel: HistoryViewModel,
+    onItemDeleted: (Int) -> Unit,
+    onLaunchExport: (HistoryExportFormat) -> Unit,
+) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -170,6 +223,7 @@ private fun ObserveHistoryEvents(historyViewModel: HistoryViewModel, onLaunchExp
             historyViewModel.uiEvents.collect { event ->
                 when (event) {
                     is HistoryUiEvent.LaunchExport -> onLaunchExport(event.format)
+                    is HistoryUiEvent.ItemDeleted -> onItemDeleted(event.historyId)
                     is HistoryUiEvent.Share -> {
                         if (!historyViewModel.shareText(
                                 event.content,
@@ -399,6 +453,7 @@ private fun ColumnScope.HistoryContent(
                         suggestedTextExportFileName(item.displayName, HistoryContentField.SUMMARY),
                     )
                 },
+                editTranscript = { historyViewModel.dispatch(HistoryMsg.EditTranscript(item)) },
             )
         }
     }

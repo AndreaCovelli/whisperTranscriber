@@ -21,11 +21,13 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.andreacovelli.whispertranscriber.summary.SummaryStyle
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_COMPLETED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_ERROR
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_RUNNING
 import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_GENERATED
 import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_SUMMARIZING
+import com.andreacovelli.whispertranscriber.ui.components.SummaryStyleChoices
 import com.andreacovelli.whispertranscriber.ui.components.TranscriptionJobCard
 import com.andreacovelli.whispertranscriber.ui.components.TranscriptionJobCardActions
 import com.andreacovelli.whispertranscriber.ui.main.TranscriptionJobState
@@ -41,6 +43,7 @@ class TranscriptionJobCardInstrumentedTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val calls = mutableListOf<String>()
     private var canSummarize by mutableStateOf(true)
+    private var summaryStyleChoices = SummaryStyleChoices()
 
     @Test
     fun runningConversion_showsProgressAndOnlyTheStopAction() {
@@ -122,6 +125,50 @@ class TranscriptionJobCardInstrumentedTest {
     }
 
     @Test
+    fun summaryStyleMenu_summarizesOnceWithTheChosenStyle() {
+        summaryStyleChoices = SummaryStyleChoices(defaultStyle = SummaryStyle.BULLET_POINTS)
+        setCard(
+            TranscriptionJobState(
+                id = 4,
+                displayName = "meeting.wav",
+                status = JOB_STATUS_COMPLETED,
+                transcript = "Transcript text",
+            ),
+        )
+
+        composeRule.onNodeWithContentDescription(context.getString(R.string.summary_style_menu_description))
+            .performClick()
+        // Custom is offered only once a custom prompt has been written.
+        composeRule.onNodeWithText(context.getString(R.string.summary_style_custom)).assertDoesNotExist()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.summary_style_default_description))
+            .assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.summary_style_meeting_minutes)).performClick()
+
+        composeRule.runOnIdle { assertEquals(listOf("summarize:MEETING_MINUTES"), calls) }
+    }
+
+    @Test
+    fun existingSummary_canBeReplacedInAnotherStyle() {
+        summaryStyleChoices = SummaryStyleChoices(customPromptAvailable = true)
+        setCard(
+            TranscriptionJobState(
+                id = 5,
+                displayName = "meeting.wav",
+                status = JOB_STATUS_COMPLETED,
+                transcript = "Transcript text",
+                summary = "Old summary",
+                summaryStatus = SUMMARY_STATUS_GENERATED,
+            ),
+        )
+        composeRule.onNodeWithText(context.getString(R.string.summarize)).assertDoesNotExist()
+
+        composeRule.onNodeWithText(context.getString(R.string.summarize_again)).performScrollTo().performClick()
+        composeRule.onNodeWithText(context.getString(R.string.summary_style_custom)).performClick()
+
+        composeRule.runOnIdle { assertEquals(listOf("summarize:CUSTOM"), calls) }
+    }
+
+    @Test
     fun summarizingJob_showsProgressAndCancelsTheSummary() {
         setCard(
             TranscriptionJobState(
@@ -200,11 +247,17 @@ class TranscriptionJobCardInstrumentedTest {
             cancelTranscription = { calls += "cancelTranscription" },
             cancelSummary = { calls += "cancelSummary" },
             delete = { calls += "delete" },
+            summarizeWithStyle = { style -> calls += "summarize:${style.name}" },
         )
         composeRule.setContent {
             MaterialTheme {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    TranscriptionJobCard(job = job, canSummarize = canSummarize, actions = actions)
+                    TranscriptionJobCard(
+                        job = job,
+                        canSummarize = canSummarize,
+                        actions = actions,
+                        summaryStyleChoices = summaryStyleChoices,
+                    )
                 }
             }
         }

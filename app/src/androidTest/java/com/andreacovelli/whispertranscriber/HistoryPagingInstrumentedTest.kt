@@ -15,7 +15,9 @@ import com.andreacovelli.whispertranscriber.ui.TextTransfer
 import com.andreacovelli.whispertranscriber.ui.history.HistoryViewModel
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -55,7 +57,14 @@ class HistoryPagingInstrumentedTest {
                 override val changes = dates
             }
             val viewModel =
-                HistoryViewModel(context, fixture.history, fixture.queue, TextTransfer(context, Dispatchers.IO), source)
+                HistoryViewModel(
+                    context,
+                    fixture.history,
+                    fixture.queue,
+                    TextTransfer(context, Dispatchers.IO),
+                    source,
+                    CoroutineScope(SupervisorJob()),
+                )
             val rows = MutableStateFlow<List<HistoryListRow>>(emptyList())
             val differ = AsyncPagingDataDiffer(
                 diffCallback = object : DiffUtil.ItemCallback<HistoryListRow>() {

@@ -74,7 +74,7 @@ The app uses:
 - Use the checked-in Gradle wrapper, never a system Gradle installation.
 - The project requires JDK 21 through `kotlin.jvmToolchain(21)`.
 - The app currently has `minSdk = 26`, `targetSdk = 36`, and `compileSdk = 37`.
-- The current Room database schema version is 17.
+- The current Room database schema version is 20.
 - Android instrumentation work needs an installed Android SDK and the appropriate
   emulator system image.
 - On Windows, Android Studio's bundled JBR is commonly located at:
@@ -181,7 +181,9 @@ toolchain or incremental-build settings.
 - Stage shared audio under `noBackupFilesDir/queued_audio`. Enforce 10 files per
   intent, 250 MB per file, 500 MB per batch, 50 unfinished jobs, and 64 MiB free
   after each streamed copy.
-- Microsoft MAI inputs must be strictly below 250,000,000 bytes and two hours.
+- Each Microsoft MAI request must be strictly below 250,000,000 bytes and two hours.
+  Longer recordings are split into parts by `AudioChunkingPolicy`; keep every part
+  within the provider's single-request limits.
 - Preserve provider-specific MIME support and conversion behavior when changing
   upload code.
 - Always clean up temporary conversion and staged files on success, failure, and

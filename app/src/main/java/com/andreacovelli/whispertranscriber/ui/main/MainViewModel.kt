@@ -21,12 +21,14 @@ import com.andreacovelli.whispertranscriber.settings.ApiKeyState
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.settings.decodeHistoricalSummarizerProvider
 import com.andreacovelli.whispertranscriber.settings.decodeTranscriptionProvider
+import com.andreacovelli.whispertranscriber.summary.SummaryStyle
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_CANCELLED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_ERROR
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_RUNNING
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionRepository
 import com.andreacovelli.whispertranscriber.ui.TextTransfer
+import com.andreacovelli.whispertranscriber.ui.components.SummaryStyleChoices
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 import com.andreacovelli.whispertranscriber.ui.screens.buildBatchProgressState
 import com.andreacovelli.whispertranscriber.userMessageOr
@@ -145,6 +147,10 @@ class MainViewModel @Inject constructor(
                         summarizerProvider = summarization.provider,
                         summarizerCustomModelName = summarization.customModelName,
                         canSummarize = geminiKeyState is ApiKeyState.Present,
+                        summaryStyleChoices = SummaryStyleChoices(
+                            defaultStyle = summarization.style,
+                            customPromptAvailable = summarization.customPrompt.isNotBlank(),
+                        ),
                     )
                 }.collect { summary -> reduce(MainMsg.ProviderSummaryChanged(summary)) }
             }
@@ -178,7 +184,7 @@ class MainViewModel @Inject constructor(
                 }
             }
             MainMsg.ClearCompletedJobs -> viewModelScope.launch { queueService.clearCompletedJobs() }
-            is MainMsg.SummarizeJob -> requestSummary(msg.jobId)
+            is MainMsg.SummarizeJob -> requestSummary(msg.jobId, msg.style)
             is MainMsg.ClearSummary -> viewModelScope.launch {
                 queueService.clearJobContent(
                     msg.jobId,
@@ -207,6 +213,7 @@ class MainViewModel @Inject constructor(
                     provider = queueSettings.provider,
                     customModelName = queueSettings.customModelName,
                     speakerDiarizationEnabled = queueSettings.speakerDiarizationEnabled,
+                    hints = queueSettings.hints(),
                     postTranscriptionWorkSpec = queueService.resolveAutomaticSummarizationWorkSpec(),
                 )
                 reduce(MainMsg.StatusChanged(result.statusMessage))
@@ -254,10 +261,12 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    private fun requestSummary(jobId: Int) {
+    private fun requestSummary(jobId: Int, style: SummaryStyle?) {
         val displayName = _uiState.value.jobs.firstOrNull { it.id == jobId }?.displayName.orEmpty()
         viewModelScope.launch {
-            val workId = summaryScheduler.enqueue(jobId, displayName, settings.getSummarizationSettings())
+            val summarizationSettings = settings.getSummarizationSettings()
+                .let { current -> style?.let { current.copy(style = it) } ?: current }
+            val workId = summaryScheduler.enqueue(jobId, displayName, summarizationSettings)
             summaryScheduler.statusMessages(workId).collect { statusMessage ->
                 statusMessage?.let { reduce(MainMsg.StatusChanged(it)) }
             }

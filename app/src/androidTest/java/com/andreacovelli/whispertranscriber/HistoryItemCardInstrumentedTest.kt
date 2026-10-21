@@ -1,5 +1,6 @@
 package com.andreacovelli.whispertranscriber
 
+import android.text.format.Formatter
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
@@ -17,6 +18,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -26,6 +28,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCard
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCardActions
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -146,6 +149,73 @@ class HistoryItemCardInstrumentedTest {
     }
 
     @Test
+    fun historyItemWithRecordingDetails_showsProviderDurationSizeAndSpeakerLabels() {
+        val item = TranscriptionHistory(
+            id = 3,
+            text = "Speaker A: Hello",
+            language = "en",
+            model = "MAI-Transcribe-2",
+            displayName = "details.wav",
+            providerName = "MICROSOFT_MAI_TRANSCRIBE",
+            durationMs = 125_000L,
+            sourceSizeBytes = 3_000_000L,
+            speakerLabels = true,
+        )
+        val unknownProvider = item.copy(
+            id = 6,
+            displayName = "older.wav",
+            providerName = "RETIRED_PROVIDER",
+            durationMs = 60_000L,
+            sourceSizeBytes = 0L,
+            speakerLabels = false,
+        )
+
+        composeRule.setContent {
+            MaterialTheme {
+                androidx.compose.foundation.layout.Column {
+                    listOf(item, unknownProvider).forEach { history ->
+                        HistoryItemCard(item = history, expanded = false, onToggleExpand = {}, actions = noOpActions())
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+
+        val provider = context.getString(R.string.provider_label_microsoft)
+        val size = Formatter.formatShortFileSize(context, item.sourceSizeBytes)
+        val speakerLabels = context.getString(R.string.history_item_speaker_labels)
+        composeRule.onNodeWithText("$provider · 2:05 · $size · $speakerLabels").assertExists()
+        composeRule.onNodeWithText("1:00").assertExists()
+    }
+
+    @Test
+    fun historyItemWithTranscript_offersEditOnlyWhenTheTranscriptExists() {
+        var edits = 0
+        val withTranscript = TranscriptionHistory(id = 4, text = "Short", language = "en", displayName = "a.wav")
+        val summaryOnly = withTranscript.copy(id = 5, text = "", summary = "Summary", displayName = "b.wav")
+        val editLabel = context.getString(R.string.history_edit_transcript)
+
+        composeRule.setContent {
+            MaterialTheme {
+                androidx.compose.foundation.layout.Column {
+                    listOf(withTranscript, summaryOnly).forEach { item ->
+                        HistoryItemCard(
+                            item = item,
+                            expanded = false,
+                            onToggleExpand = {},
+                            actions = noOpActions().copy(editTranscript = { edits++ }),
+                        )
+                    }
+                }
+            }
+        }
+
+        composeRule.onAllNodesWithText(editLabel).assertCountEquals(1)
+        composeRule.onNodeWithText(editLabel).performClick()
+        composeRule.runOnIdle { assertEquals(1, edits) }
+    }
+
+    @Test
     fun recreatedExpandedCard_keepsItsCollapseControl() {
         var generation by mutableStateOf(0)
         var expanded by mutableStateOf(true)
@@ -186,4 +256,16 @@ class HistoryItemCardInstrumentedTest {
         composeRule.onNodeWithText(context.getString(R.string.retry)).performClick()
         composeRule.runOnIdle { org.junit.Assert.assertEquals(1, retries) }
     }
+
+    private fun noOpActions() = HistoryItemCardActions(
+        copyTranscript = {},
+        copySummary = {},
+        clearTranscript = {},
+        clearSummary = {},
+        delete = {},
+        shareTranscript = {},
+        shareSummary = {},
+        saveTranscript = {},
+        saveSummary = {},
+    )
 }

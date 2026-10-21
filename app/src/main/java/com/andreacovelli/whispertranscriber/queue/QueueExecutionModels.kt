@@ -5,6 +5,7 @@ import com.andreacovelli.whispertranscriber.background.PostTranscriptionWorkSpec
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
+import com.andreacovelli.whispertranscriber.summary.decodeSummaryStyle
 
 enum class JobExecutionBackend {
     WORK_MANAGER,
@@ -16,6 +17,8 @@ data class PersistedPostTranscriptionConfig(
     val notifyResult: Boolean,
     val queuedSummarizerProviderName: String,
     val queuedSummarizerCustomModelName: String,
+    val queuedSummaryStyle: String = "",
+    val queuedSummaryCustomPrompt: String = "",
 )
 
 internal fun resolveShareExecutionBackend(preferImmediateBackgroundStart: Boolean): JobExecutionBackend =
@@ -31,6 +34,8 @@ internal fun PostTranscriptionWorkSpec.toPersistedConfig(): PersistedPostTranscr
         notifyResult = notifyResult,
         queuedSummarizerProviderName = summarizationSettings.provider.name,
         queuedSummarizerCustomModelName = summarizationSettings.customModelName,
+        queuedSummaryStyle = summarizationSettings.style.name,
+        queuedSummaryCustomPrompt = summarizationSettings.customPrompt,
     )
 
 internal fun PersistedPostTranscriptionConfig.toWorkSpecOrNull(): PostTranscriptionWorkSpec? {
@@ -43,6 +48,8 @@ internal fun PersistedPostTranscriptionConfig.toWorkSpecOrNull(): PostTranscript
         summarizationSettings = SummarizationSettings(
             provider = provider,
             customModelName = queuedSummarizerCustomModelName,
+            style = decodeSummaryStyle(queuedSummaryStyle),
+            customPrompt = queuedSummaryCustomPrompt,
         ),
     )
 }
@@ -57,6 +64,8 @@ internal fun TranscriptionJob.persistedPostTranscriptionConfig(): PersistedPostT
         notifyResult = notifyResult,
         queuedSummarizerProviderName = queuedSummarizerProviderName,
         queuedSummarizerCustomModelName = queuedSummarizerCustomModelName,
+        queuedSummaryStyle = queuedSummaryStyle,
+        queuedSummaryCustomPrompt = queuedSummaryCustomPrompt,
     )
 
 internal fun TranscriptionJob.postTranscriptionWorkSpec(): PostTranscriptionWorkSpec? =

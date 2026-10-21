@@ -62,6 +62,7 @@ class TranscriptionExecutionRunner @Inject constructor(
     companion object {
         private const val TAG = "TranscriptionExecutionRunner"
         private const val MAX_AUTOMATIC_RETRY_ATTEMPTS = 3
+        private const val MICROSECONDS_PER_MILLISECOND = 1_000L
     }
 
     internal suspend fun runJob(
@@ -232,6 +233,7 @@ class TranscriptionExecutionRunner @Inject constructor(
             providerExecution = providerExecution,
             speakerDiarizationEnabled = job.speakerDiarizationEnabled,
             speakerLabelPrefix = speakerLabelPrefix,
+            hints = job.transcriptionHints(),
             stagedFilePath = job.stagedFilePath,
             onProgressNotification = onProgressNotification,
         )
@@ -261,6 +263,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         providerExecution: ProviderExecution,
         speakerDiarizationEnabled: Boolean,
         speakerLabelPrefix: String,
+        hints: TranscriptionHints,
         stagedFilePath: String?,
         onProgressNotification: suspend (jobId: Int, displayName: String, progressText: UserMessage) -> Unit,
     ) {
@@ -288,21 +291,41 @@ class TranscriptionExecutionRunner @Inject constructor(
                     }
                 },
             )
-            val result = runProviderTranscription(
-                jobId = jobId,
-                executionOwnerId = executionOwnerId,
-                displayName = displayName,
-                preparedInput = preparedInput,
-                providerExecution = providerExecution,
-                speakerDiarizationEnabled = speakerDiarizationEnabled,
-                speakerLabelPrefix = speakerLabelPrefix,
-                onProgressNotification = onProgressNotification,
-            )
+            val transcribeInput: suspend (PreparedAudioInput, ChunkPosition?) -> TranscriptionData = { input, part ->
+                runProviderTranscription(
+                    jobId = jobId,
+                    executionOwnerId = executionOwnerId,
+                    displayName = displayName,
+                    preparedInput = input,
+                    providerExecution = providerExecution,
+                    speakerDiarizationEnabled = speakerDiarizationEnabled,
+                    speakerLabelPrefix = speakerLabelPrefix,
+                    hints = hints,
+                    part = part,
+                    onProgressNotification = onProgressNotification,
+                )
+            }
+            val result = when (val input = preparedInput) {
+                is PreparedAudioInput.Chunked -> transcribeParts(
+                    jobId = jobId,
+                    input = input,
+                    usingMicrosoftSpeech = usingMicrosoftSpeech,
+                    speakerDiarizationEnabled = speakerDiarizationEnabled,
+                    transcribeInput = transcribeInput,
+                )
+                else -> transcribeInput(input, null)
+            }
             val transcript = result.copy(
                 text = result.text.ifBlank { applicationContext.getString(R.string.transcription_no_text_found) },
             )
+            val recording = RecordingDetails(
+                durationMs = preparedInput.durationUs.coerceAtLeast(0) / MICROSECONDS_PER_MILLISECOND,
+                sourceSizeBytes = stagedFilePath?.let { path ->
+                    withContext(ioDispatcher) { File(path).length() }
+                } ?: 0,
+            )
             requireOwnedUpdate(
-                repository.persistCompletedTranscription(jobId, executionOwnerId, displayName, transcript),
+                repository.persistCompletedTranscription(jobId, executionOwnerId, displayName, transcript, recording),
             )
             queuedAudioStore.deleteStagedFile(stagedFilePath)
             requireOwnedUpdate(repository.clearStagedFilePath(jobId, executionOwnerId))
@@ -317,6 +340,33 @@ class TranscriptionExecutionRunner @Inject constructor(
         }
     }
 
+    // Parts run one at a time so only one extracted part file exists beside the converted recording.
+    private suspend fun transcribeParts(
+        jobId: Int,
+        input: PreparedAudioInput.Chunked,
+        usingMicrosoftSpeech: Boolean,
+        speakerDiarizationEnabled: Boolean,
+        transcribeInput: suspend (PreparedAudioInput, ChunkPosition?) -> TranscriptionData,
+    ): TranscriptionData {
+        val partCount = input.chunks.size
+        val parts = input.chunks.indices.map { index ->
+            val partInput = audioPreparer.preparePart(jobId, input, index, usingMicrosoftSpeech)
+            try {
+                transcribeInput(partInput, ChunkPosition(index + 1, partCount))
+            } finally {
+                partInput.tempFileToClean?.let(audioPreparer::deleteTemporaryFile)
+            }
+        }
+        return combinePartTranscriptions(
+            parts = parts,
+            partMarker = if (speakerDiarizationEnabled) {
+                { number -> applicationContext.getString(R.string.transcription_part_marker, number, partCount) }
+            } else {
+                null
+            },
+        )
+    }
+
     private suspend fun runProviderTranscription(
         jobId: Int,
         executionOwnerId: String,
@@ -325,6 +375,8 @@ class TranscriptionExecutionRunner @Inject constructor(
         providerExecution: ProviderExecution,
         speakerDiarizationEnabled: Boolean,
         speakerLabelPrefix: String,
+        hints: TranscriptionHints,
+        part: ChunkPosition?,
         onProgressNotification: suspend (jobId: Int, displayName: String, progressText: UserMessage) -> Unit,
     ): TranscriptionData {
         val transcriber = transcriberFactory.buildTranscriber(
@@ -332,12 +384,16 @@ class TranscriptionExecutionRunner @Inject constructor(
             providerExecution = providerExecution,
             speakerDiarizationEnabled = speakerDiarizationEnabled,
             speakerLabelPrefix = speakerLabelPrefix,
+            hints = hints,
         )
         var resultData: TranscriptionData? = null
         suspend fun reportProviderStatus(message: UserMessage) {
+            val partMessage = part?.let {
+                UserMessage(R.string.transcription_status_part_message, listOf(it.number, it.count, message))
+            } ?: message
             val providerMessage = UserMessage(
                 R.string.transcription_status_provider_message,
-                listOf(providerExecution.displayName, message),
+                listOf(providerExecution.displayName, partMessage),
             )
             requireOwnedUpdate(repository.updateStatus(jobId, executionOwnerId, providerMessage))
             onProgressNotification(jobId, displayName, providerMessage)
@@ -408,6 +464,40 @@ class TranscriptionExecutionRunner @Inject constructor(
     private fun requireOwnedUpdate(updated: Boolean) {
         if (!updated) throw SupersededExecutionException()
     }
+}
+
+internal data class ChunkPosition(val number: Int, val count: Int)
+
+/**
+ * Joins the transcripts of consecutive parts of one recording. Speaker labels restart in every part, so
+ * when [partMarker] is given each part is introduced by its marker line to show where labels may change.
+ */
+internal fun combinePartTranscriptions(
+    parts: List<TranscriptionData>,
+    partMarker: ((Int) -> String)?,
+): TranscriptionData {
+    require(parts.isNotEmpty())
+    val text = if (partMarker == null) {
+        parts.map { it.text.trim() }.filter(String::isNotEmpty).joinToString(separator = "\n")
+    } else {
+        // Empty parts get no marker, so a recording with no speech still has an empty transcript.
+        parts.mapIndexedNotNull { index, part ->
+            part.text.trim().takeIf(String::isNotEmpty)?.let { text -> "${partMarker(index + 1)}\n$text" }
+        }.joinToString(separator = "\n\n")
+    }
+    val language = parts.map { it.language }
+        .filter { it.isNotBlank() && it != "und" }
+        .groupingBy { it }
+        .eachCount()
+        .maxByOrNull { it.value }
+        ?.key
+        ?: parts.first().language
+    return TranscriptionData(
+        text = text,
+        language = language,
+        model = parts.first().model,
+        speakerLabels = parts.any(TranscriptionData::speakerLabels),
+    )
 }
 
 internal object QueuedAudioInputResolver {

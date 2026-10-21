@@ -1,5 +1,6 @@
 package com.andreacovelli.whispertranscriber.ui.components
 
+import android.text.format.Formatter
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -25,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -35,6 +37,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
+import com.andreacovelli.whispertranscriber.history.formatRecordingDuration
+import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -159,6 +163,7 @@ fun HistoryItemCard(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            RecordingDetailsLine(item)
             if (hasTranscript || hasSummary) {
                 Spacer(Modifier.height(8.dp))
             }
@@ -172,6 +177,31 @@ fun HistoryItemCard(
             )
         }
     }
+}
+
+/** Provider, duration, original size, and speaker labels, as far as they were recorded. */
+@Composable
+private fun RecordingDetailsLine(item: TranscriptionHistory) {
+    val context = LocalContext.current
+    // Older items have no provider, and an unrecognized name is hidden rather than guessed.
+    val provider = TranscriptionProvider.entries.find { it.name == item.providerName }
+        ?.let { stringResource(providerFamilyLabel(it)) }
+    val speakerLabels = stringResource(R.string.history_item_speaker_labels).takeIf { item.speakerLabels }
+    val details = remember(provider, item.durationMs, item.sourceSizeBytes, speakerLabels) {
+        listOfNotNull(
+            provider,
+            item.durationMs.takeIf { it > 0 }?.let(::formatRecordingDuration),
+            item.sourceSizeBytes.takeIf { it > 0 }?.let { Formatter.formatShortFileSize(context, it) },
+            speakerLabels,
+        ).joinToString(separator = " · ")
+    }
+    if (details.isEmpty()) return
+    Spacer(Modifier.height(2.dp))
+    Text(
+        details,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable
@@ -255,20 +285,32 @@ private fun HistoryItemBody(
             actions = actions,
         )
     }
-    if (showExpandControl) {
+    val editTranscript = actions.editTranscript.takeIf { hasTranscript }
+    if (showExpandControl || editTranscript != null) {
         Spacer(Modifier.height(4.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            TextButton(onClick = onToggleExpand) {
-                Text(
-                    text = stringResource(
-                        if (expanded) {
-                            R.string.history_item_show_less
-                        } else {
-                            R.string.history_item_show_more
-                        },
-                    ),
-                    style = MaterialTheme.typography.labelLarge,
-                )
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            if (editTranscript != null) {
+                TextButton(onClick = editTranscript) {
+                    Text(
+                        text = stringResource(R.string.history_edit_transcript),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            if (showExpandControl) {
+                TextButton(onClick = onToggleExpand) {
+                    Text(
+                        text = stringResource(
+                            if (expanded) {
+                                R.string.history_item_show_less
+                            } else {
+                                R.string.history_item_show_more
+                            },
+                        ),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
             }
         }
     }

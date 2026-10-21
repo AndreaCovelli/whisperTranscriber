@@ -61,6 +61,7 @@ class ProviderTranscriberFactory @Inject constructor(
         providerExecution: ProviderExecution,
         speakerDiarizationEnabled: Boolean,
         speakerLabelPrefix: String,
+        hints: TranscriptionHints,
     ): ProviderTranscriber = when (providerExecution) {
         is ProviderExecution.MicrosoftSpeech -> {
             val microsoftSpeechInput = checkNotNull(preparedInput as? PreparedAudioInput.MicrosoftSpeech) {
@@ -79,6 +80,7 @@ class ProviderTranscriberFactory @Inject constructor(
                     modelName = providerExecution.modelName,
                     speakerDiarizationEnabled = speakerDiarizationEnabled,
                     speakerLabelPrefix = speakerLabelPrefix,
+                    hints = hints,
                     audioInspection = microsoftSpeechInput.inspection,
                     okHttpClient = okHttpClient,
                     ioDispatcher = ioDispatcher,
@@ -106,6 +108,7 @@ class ProviderTranscriberFactory @Inject constructor(
                     modelName = providerExecution.modelName,
                     speakerDiarizationEnabled = speakerDiarizationEnabled,
                     speakerLabelPrefix = speakerLabelPrefix,
+                    hints = hints,
                     clientFactory = genAiClientFactory,
                     ioDispatcher = ioDispatcher,
                 )

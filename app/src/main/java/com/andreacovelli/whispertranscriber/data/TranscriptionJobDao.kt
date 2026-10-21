@@ -244,6 +244,8 @@ interface TranscriptionJobDao {
             j.notifyResult,
             j.queuedSummarizerProviderName,
             j.queuedSummarizerCustomModelName,
+            j.queuedSummaryStyle,
+            j.queuedSummaryCustomPrompt,
             j.status,
             j.statusMessage,
             j.progress,
@@ -264,6 +266,8 @@ interface TranscriptionJobDao {
             j.retryCount,
             j.batchId,
             j.speakerDiarizationEnabled,
+            j.languageHint,
+            j.vocabulary,
             j.historyId,
             j.timestamp,
             j.finishedAt
@@ -291,6 +295,29 @@ interface TranscriptionJobDao {
 
     @Query("SELECT id AS jobId, stagedFilePath FROM active_jobs WHERE historyId = :historyId")
     suspend fun getJobCleanupByHistoryId(historyId: Int): List<HistoryJobCleanup>
+
+    @Query(
+        """
+        SELECT id FROM active_jobs
+        WHERE historyId = :historyId
+          AND summaryAttemptId != ''
+          AND isRunning = 0
+        """,
+    )
+    suspend fun getManualSummaryJobIdsByHistoryId(historyId: Int): List<Int>
+
+    @Query(
+        """
+        UPDATE active_jobs
+        SET isSummarizing = 0,
+            summaryStatus = '$SUMMARY_STATUS_CANCELLED',
+            summaryError = NULL,
+            summaryAttemptId = ''
+        WHERE historyId = :historyId
+          AND summaryAttemptId != ''
+        """,
+    )
+    suspend fun cancelSummarizationByHistoryId(historyId: Int): Int
 
     @Query("SELECT id AS jobId, stagedFilePath FROM active_jobs WHERE historyId IS NOT NULL")
     suspend fun getAllHistoryLinkedJobCleanup(): List<HistoryJobCleanup>
@@ -386,7 +413,9 @@ interface TranscriptionJobDao {
             notifyResult = :notifyResult,
             queuedSummarizerProviderName = :queuedSummarizerProviderName,
             queuedSummarizerCustomModelName = :queuedSummarizerCustomModelName,
-            speakerDiarizationEnabled = :speakerDiarizationEnabled
+            speakerDiarizationEnabled = :speakerDiarizationEnabled,
+            languageHint = :languageHint,
+            vocabulary = :vocabulary
         WHERE id = :jobId
           AND status IN ('$JOB_STATUS_ERROR', '$JOB_STATUS_CANCELLED')
           AND isRunning = 0 AND isSummarizing = 0
@@ -402,6 +431,8 @@ interface TranscriptionJobDao {
         queuedSummarizerProviderName: String,
         queuedSummarizerCustomModelName: String,
         speakerDiarizationEnabled: Boolean,
+        languageHint: String,
+        vocabulary: String,
     ): Int
 
     @Query(
@@ -602,7 +633,9 @@ interface TranscriptionJobDao {
         UPDATE active_jobs
         SET summarizeAfterTranscription = :summarizeAfterTranscription,
             queuedSummarizerProviderName = :queuedSummarizerProviderName,
-            queuedSummarizerCustomModelName = :queuedSummarizerCustomModelName
+            queuedSummarizerCustomModelName = :queuedSummarizerCustomModelName,
+            queuedSummaryStyle = :queuedSummaryStyle,
+            queuedSummaryCustomPrompt = :queuedSummaryCustomPrompt
         WHERE isSummarizing = 0
           AND (historyId IS NULL OR isRunning = 1)
         """,
@@ -611,5 +644,18 @@ interface TranscriptionJobDao {
         summarizeAfterTranscription: Boolean,
         queuedSummarizerProviderName: String,
         queuedSummarizerCustomModelName: String,
+        queuedSummaryStyle: String,
+        queuedSummaryCustomPrompt: String,
     ): Int
+
+    /** Sets the automatic-summary style of a job that [retryById] has just requeued. */
+    @Query(
+        """
+        UPDATE active_jobs
+        SET queuedSummaryStyle = :queuedSummaryStyle,
+            queuedSummaryCustomPrompt = :queuedSummaryCustomPrompt
+        WHERE id = :jobId
+        """,
+    )
+    suspend fun updateQueuedSummaryStyle(jobId: Int, queuedSummaryStyle: String, queuedSummaryCustomPrompt: String)
 }

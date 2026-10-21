@@ -13,6 +13,7 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -24,11 +25,13 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
+import com.andreacovelli.whispertranscriber.summary.SummaryStyle
 import com.andreacovelli.whispertranscriber.ui.screens.SettingsScreenContent
 import com.andreacovelli.whispertranscriber.ui.settings.CustomModelValidation
 import com.andreacovelli.whispertranscriber.ui.settings.RegionValidationState
 import com.andreacovelli.whispertranscriber.ui.settings.SettingsMsg
 import com.andreacovelli.whispertranscriber.ui.settings.SettingsUiState
+import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -155,6 +158,63 @@ class SettingsScreenInstrumentedTest {
         composeRule.runOnIdle {
             assertEquals(SettingsMsg.ResetMicrosoftSpeechRegionValidation, messages.first())
             assertEquals(SettingsMsg.SetMicrosoftSpeechRegion("westus2"), messages.last())
+        }
+    }
+
+    @Test
+    fun transcriptionHints_selectLanguageAndSaveVocabularyWhenFocusLeaves() {
+        setSettings(SettingsUiState())
+        val automatic = context.getString(R.string.settings_transcription_language_automatic)
+        val italian = Locale.forLanguageTag("it").getDisplayName(context.resources.configuration.locales[0])
+
+        composeRule.onNode(hasText(automatic) and hasClickAction()).performScrollTo().performClick()
+        composeRule.onNodeWithText(italian).performScrollTo().performClick()
+        composeRule.runOnIdle { uiState = uiState.copy(transcriptionLanguage = "it") }
+        composeRule.onNode(hasText(italian) and hasClickAction()).assertIsDisplayed()
+
+        composeRule.onNodeWithText(context.getString(R.string.settings_transcription_vocabulary_label))
+            .performScrollTo()
+            .performClick()
+            .performTextReplacement("Covelli, Kotlin")
+        composeRule.runOnIdle { focusManager.clearFocus() }
+
+        composeRule.runOnIdle {
+            assertEquals(
+                listOf(
+                    SettingsMsg.SetTranscriptionLanguage("it"),
+                    SettingsMsg.SetTranscriptionVocabulary("Covelli, Kotlin"),
+                ),
+                messages,
+            )
+        }
+    }
+
+    @Test
+    fun summaryStyle_customStyleShowsAPromptThatSavesWhenFocusLeaves() {
+        setSettings(SettingsUiState())
+        val custom = context.getString(R.string.summary_style_custom)
+        val promptLabel = context.getString(R.string.settings_summary_custom_prompt_label)
+
+        composeRule.onNodeWithText(promptLabel).assertDoesNotExist()
+        composeRule.onNode(hasText(context.getString(R.string.summary_style_automatic)) and hasClickAction())
+            .performScrollTo()
+            .performClick()
+        composeRule.onNodeWithText(custom).performScrollTo().performClick()
+        composeRule.runOnIdle { uiState = uiState.copy(summaryStyle = SummaryStyle.CUSTOM) }
+
+        composeRule.onNodeWithText(context.getString(R.string.settings_summary_custom_prompt_missing)).assertExists()
+        composeRule.onNodeWithText(promptLabel).performScrollTo().performClick()
+            .performTextReplacement("Only decisions")
+        composeRule.runOnIdle { focusManager.clearFocus() }
+
+        composeRule.runOnIdle {
+            assertEquals(
+                listOf(
+                    SettingsMsg.SetSummaryStyle(SummaryStyle.CUSTOM),
+                    SettingsMsg.SetSummaryCustomPrompt("Only decisions"),
+                ),
+                messages,
+            )
         }
     }
 

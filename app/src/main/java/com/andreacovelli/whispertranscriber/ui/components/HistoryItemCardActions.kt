@@ -10,4 +10,5 @@ data class HistoryItemCardActions(
     val shareSummary: () -> Unit,
     val saveTranscript: () -> Unit,
     val saveSummary: () -> Unit,
+    val editTranscript: (() -> Unit)? = null,
 )

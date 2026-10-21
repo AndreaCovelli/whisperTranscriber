@@ -7,6 +7,7 @@ import com.andreacovelli.whispertranscriber.transcription.MICROSOFT_MAI_TRANSCRI
 import com.andreacovelli.whispertranscriber.transcription.MICROSOFT_SPEECH_API_VERSION
 import com.andreacovelli.whispertranscriber.transcription.MicrosoftSpeechEndpoint
 import com.andreacovelli.whispertranscriber.transcription.MicrosoftSpeechTranscriber
+import com.andreacovelli.whispertranscriber.transcription.TranscriptionHints
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionResult
 import com.andreacovelli.whispertranscriber.transcription.TransientWorkException
 import com.andreacovelli.whispertranscriber.transcription.buildGeminiSpeakerDiarizationPrompt
@@ -170,6 +171,7 @@ class TranscriptionProvidersTest {
                 modelName = modelName,
                 speakerDiarizationEnabled = speakerDiarizationEnabled,
                 speakerLabelPrefix = "Locutore",
+                hints = TranscriptionHints(),
                 audioInspection = AudioInspection(sizeBytes = 1, durationUs = durationUs),
                 okHttpClient = client,
                 ioDispatcher = Dispatchers.Unconfined,

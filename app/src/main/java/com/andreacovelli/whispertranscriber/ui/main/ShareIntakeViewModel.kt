@@ -75,6 +75,7 @@ class ShareIntakeViewModel @Inject constructor(
                 provider = queueSettings.provider,
                 customModelName = queueSettings.customModelName,
                 speakerDiarizationEnabled = queueSettings.speakerDiarizationEnabled,
+                hints = queueSettings.hints(),
                 preferImmediateBackgroundStart = true,
                 postTranscriptionWorkSpec = PostTranscriptionWorkSpec(
                     summarizeAfterTranscription = automaticSummarizationEnabled,

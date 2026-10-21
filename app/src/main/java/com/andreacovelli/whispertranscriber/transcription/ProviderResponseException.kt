@@ -39,7 +39,12 @@ internal fun validatedGeminiText(response: GenerateContentResponse): String {
     }
 }
 
-internal fun parseGeminiTranscription(json: String, diarization: Boolean, model: String): TranscriptionData {
+internal fun parseGeminiTranscription(
+    json: String,
+    diarization: Boolean,
+    speakerLabelPrefix: String,
+    model: String,
+): TranscriptionData {
     val obj = try {
         JSONObject(json)
     } catch (_: JSONException) {
@@ -48,7 +53,10 @@ internal fun parseGeminiTranscription(json: String, diarization: Boolean, model:
     val text = obj.opt("text") as? String ?: throw ProviderResponseException(R.string.provider_response_invalid)
     val language = (obj.opt("language_code") as? String)?.takeIf(String::isNotBlank)
         ?: throw ProviderResponseException(R.string.provider_response_invalid)
-    return TranscriptionData(parseTranscriptTextValue(text, diarization), language, model)
+    val transcript = parseTranscriptTextValue(text, diarization)
+    // The prompt asks for plain text when speakers cannot be told apart, so check what came back.
+    val speakerLabels = diarization && hasSpeakerLabels(transcript, speakerLabelPrefix)
+    return TranscriptionData(transcript, language, model, speakerLabels = speakerLabels)
 }
 
 internal suspend fun awaitGeminiFileActive(

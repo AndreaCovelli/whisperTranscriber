@@ -4,16 +4,19 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.annotation.StringRes
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
+import androidx.paging.filter
 import androidx.paging.insertSeparators
 import androidx.paging.map
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.data.HistoryRepository
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
+import com.andreacovelli.whispertranscriber.di.ApplicationScope
 import com.andreacovelli.whispertranscriber.history.HistoryDateSource
 import com.andreacovelli.whispertranscriber.history.HistoryExportFormat
 import com.andreacovelli.whispertranscriber.history.HistoryListRow
@@ -26,6 +29,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
@@ -38,6 +42,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 sealed interface HistoryUiEvent {
@@ -46,6 +51,17 @@ sealed interface HistoryUiEvent {
     data class Share(val content: String, @param:StringRes val titleId: Int) : HistoryUiEvent
 
     data class Toast(@param:StringRes val messageId: Int) : HistoryUiEvent
+
+    /** Offers to undo the deletion of [historyId]; the screen answers with an undo or finish message. */
+    data class ItemDeleted(val historyId: Int) : HistoryUiEvent
+}
+
+/**
+ * A transcript being corrected. The draft lives in the view model rather than in saved instance state, so a
+ * long transcript survives rotation without being written into a Bundle.
+ */
+class TranscriptEditor(val historyId: Int, originalText: String, val hasSummary: Boolean) {
+    val text = TextFieldState(originalText)
 }
 
 @HiltViewModel
@@ -55,12 +71,19 @@ class HistoryViewModel @Inject constructor(
     private val queueService: TranscriptionQueueService,
     private val textTransfer: TextTransfer,
     private val dateSource: HistoryDateSource,
+    @param:ApplicationScope private val applicationScope: CoroutineScope,
 ) : ViewModel() {
     suspend fun shareText(text: String, title: String, launch: (Intent) -> Unit): Boolean =
         textTransfer.share(text, title, launch)
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    // Items the user deleted that stay in the database until the undo offer ends.
+    private val pendingDeletions = MutableStateFlow<Set<Int>>(emptySet())
+
+    private val _transcriptEditor = MutableStateFlow<TranscriptEditor?>(null)
+    val transcriptEditor: StateFlow<TranscriptEditor?> = _transcriptEditor.asStateFlow()
 
     private val _uiEvents = Channel<HistoryUiEvent>()
     val uiEvents = _uiEvents.receiveAsFlow()
@@ -136,7 +159,14 @@ class HistoryViewModel @Inject constructor(
             is HistoryMsg.SaveContent -> saveContent(msg.historyId, msg.field, msg.destination)
             is HistoryMsg.ClearSummary -> clearSummary(msg.item)
             is HistoryMsg.ClearTranscript -> clearTranscript(msg.item)
+            is HistoryMsg.EditTranscript ->
+                _transcriptEditor.value =
+                    TranscriptEditor(msg.item.id, msg.item.text, hasSummary = msg.item.summary.isNotBlank())
+            HistoryMsg.SaveTranscriptEdit -> saveTranscriptEdit()
+            HistoryMsg.CancelTranscriptEdit -> _transcriptEditor.value = null
             is HistoryMsg.DeleteItem -> deleteHistoryItem(msg.item)
+            is HistoryMsg.UndoDeleteItem -> pendingDeletions.update { it - msg.historyId }
+            is HistoryMsg.FinishDeleteItem -> finishDeletion(msg.historyId)
             HistoryMsg.DeleteAll -> deleteAllHistory()
         }
     }
@@ -147,8 +177,9 @@ class HistoryViewModel @Inject constructor(
         .distinctUntilChanged()
         .flatMapLatest(historyRepository::getPagedHistory)
         .cachedIn(viewModelScope)
-        .combine(dateSource.changes) { pagingData, groupingContext ->
+        .combine(combine(dateSource.changes, pendingDeletions, ::Pair)) { pagingData, (groupingContext, pendingIds) ->
             pagingData
+                .filter { history -> history.id !in pendingIds }
                 .map { history ->
                     historyListItem(
                         history = history,
@@ -180,10 +211,39 @@ class HistoryViewModel @Inject constructor(
         }
     }
 
-    fun deleteHistoryItem(item: TranscriptionHistory) {
+    // A blank draft is rejected rather than saved: clearing a transcript has its own action, which also
+    // cancels pending summarization.
+    private fun saveTranscriptEdit() {
+        val editor = _transcriptEditor.value ?: return
+        val text = editor.text.text.toString().trim()
+        if (text.isEmpty()) return
+        _transcriptEditor.value = null
         viewModelScope.launch {
-            queueService.cancelRemovedHistoryJobs(historyRepository.deleteById(item.id))
+            queueService.updateHistoryTranscript(editor.historyId, text)
+            _uiEvents.send(HistoryUiEvent.Toast(R.string.history_transcript_updated))
         }
+    }
+
+    fun deleteHistoryItem(item: TranscriptionHistory) {
+        pendingDeletions.update { it + item.id }
+        viewModelScope.launch { _uiEvents.send(HistoryUiEvent.ItemDeleted(item.id)) }
+    }
+
+    // The application scope lets a deletion finish after the user leaves the screen. The id stays hidden until
+    // the row is gone, so the item does not flash back while it is being deleted.
+    private fun finishDeletion(historyId: Int) {
+        if (historyId !in pendingDeletions.value) return
+        applicationScope.launch {
+            try {
+                queueService.cancelRemovedHistoryJobs(historyRepository.deleteById(historyId))
+            } finally {
+                pendingDeletions.update { it - historyId }
+            }
+        }
+    }
+
+    override fun onCleared() {
+        pendingDeletions.value.forEach(::finishDeletion)
     }
 
     fun deleteAllHistory() {

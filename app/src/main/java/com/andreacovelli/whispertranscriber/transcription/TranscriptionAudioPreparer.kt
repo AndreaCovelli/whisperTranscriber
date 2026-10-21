@@ -2,11 +2,21 @@ package com.andreacovelli.whispertranscriber.transcription
 
 import android.content.Context
 import android.net.Uri
+import android.os.storage.StorageManager
 import android.util.Log
+import com.andreacovelli.whispertranscriber.QuantityText
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
+import com.andreacovelli.whispertranscriber.media.AudioChunk
+import com.andreacovelli.whispertranscriber.media.CONVERTED_AUDIO_SAMPLE_RATE
+import com.andreacovelli.whispertranscriber.media.ConversionOutputStorage
 import com.andreacovelli.whispertranscriber.media.HardwareAudioConverter
+import com.andreacovelli.whispertranscriber.media.PCM16_BYTES_PER_SAMPLE
+import com.andreacovelli.whispertranscriber.media.Pcm16MonoWavFile
+import com.andreacovelli.whispertranscriber.media.Pcm16WavWriter
+import com.andreacovelli.whispertranscriber.media.planAudioChunks
+import com.andreacovelli.whispertranscriber.media.samplesForDurationUs
 import com.andreacovelli.whispertranscriber.queue.QueuedAudioStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -20,15 +30,34 @@ import kotlinx.coroutines.withContext
 internal sealed interface PreparedAudioInput {
     val tempFileToClean: File?
 
+    /** Duration of the whole input in microseconds, or a negative value when unknown. */
+    val durationUs: Long
+
     data class MicrosoftSpeech(
         val file: File,
         val mimeType: String,
         val inspection: AudioInspection,
         override val tempFileToClean: File?,
+    ) : PreparedAudioInput {
+        override val durationUs: Long get() = inspection.durationUs
+    }
+
+    data class Gemini(
+        val file: File,
+        val mimeType: String,
+        override val tempFileToClean: File?,
+        override val durationUs: Long,
     ) : PreparedAudioInput
 
-    data class Gemini(val file: File, val mimeType: String, override val tempFileToClean: File?) : PreparedAudioInput
+    /** A converted WAV too long for one request; each part is extracted with [TranscriptionAudioPreparer.preparePart]. */
+    data class Chunked(val file: File, val chunks: List<AudioChunk>, override val tempFileToClean: File?) :
+        PreparedAudioInput {
+        override val durationUs: Long
+            get() = chunks.last().endSample * MICROSECONDS_PER_SECOND / CONVERTED_AUDIO_SAMPLE_RATE
+    }
 }
+
+private const val MICROSECONDS_PER_SECOND = 1_000_000L
 
 /** Receives job progress while audio is prepared. A null [progress] keeps the stored progress. */
 internal interface AudioPreparationListener {
@@ -53,8 +82,14 @@ class TranscriptionAudioPreparer @Inject constructor(
         val conversionNeeded = inputMimeType == null ||
             (usingMicrosoftSpeech && shouldConvertForMicrosoftSpeech(inputMimeType)) ||
             (!usingMicrosoftSpeech && inputMimeType !in TranscriptionMimeSupport.geminiNativeUploadMimeTypes)
-        return if (conversionNeeded) {
-            prepareConvertedAudio(jobId, uri, inputMimeType, usingMicrosoftSpeech, listener)
+        val policy = AudioChunkingPolicy.forProvider(usingMicrosoftSpeech)
+        // Splitting works on decoded PCM, so long recordings are converted even when the format is supported.
+        val chunkingNeeded = !conversionNeeded && policy.requiresChunking(
+            reusableLocalFileForUri(uri)?.let { file -> withContext(ioDispatcher) { inspectDurationUsOrUnknown(file) } }
+                ?: -1L,
+        )
+        return if (conversionNeeded || chunkingNeeded) {
+            prepareConvertedAudio(jobId, uri, inputMimeType, usingMicrosoftSpeech, chunkingNeeded, listener)
         } else {
             prepareNativeAudio(jobId, uri, inputMimeType, usingMicrosoftSpeech, listener)
         }
@@ -77,20 +112,81 @@ class TranscriptionAudioPreparer @Inject constructor(
         inputMimeType !in TranscriptionMimeSupport.microsoftSpeechNativeUploadMimeTypes ||
             inputMimeType in TranscriptionMimeSupport.microsoftSpeechWavReencodeMimeTypes
 
+    /**
+     * Writes part [index] of [input] to its own temporary WAV file. The caller owns the returned input's
+     * [PreparedAudioInput.tempFileToClean] and must delete it once the part is transcribed.
+     */
+    internal suspend fun preparePart(
+        jobId: Int,
+        input: PreparedAudioInput.Chunked,
+        index: Int,
+        usingMicrosoftSpeech: Boolean,
+    ): PreparedAudioInput = withContext(ioDispatcher) {
+        val chunk = input.chunks[index]
+        val dataBytes = chunk.sampleCount * PCM16_BYTES_PER_SAMPLE
+        val durationUs = chunk.sampleCount * MICROSECONDS_PER_SECOND / CONVERTED_AUDIO_SAMPLE_RATE
+        val outputFile = File.createTempFile(
+            "${QueuedAudioStore.CONVERTED_FILE_PREFIX}${jobId}_part",
+            ".wav",
+            applicationContext.cacheDir,
+        )
+        var written = false
+        try {
+            Pcm16WavWriter(outputFile, dataBytes).use { writer ->
+                ConversionOutputStorage.reserve(
+                    storageManager = applicationContext.getSystemService(StorageManager::class.java),
+                    fileDescriptor = writer.fileDescriptor,
+                    outputFile = outputFile,
+                    durationUs = durationUs,
+                    maximumOutputDataBytes = dataBytes,
+                )
+                Pcm16MonoWavFile(input.file).copyChunk(chunk, writer)
+                writer.finish()
+            }
+            val prepared = if (usingMicrosoftSpeech) {
+                val inspection = AudioInspection(sizeBytes = outputFile.length(), durationUs = durationUs)
+                validateMicrosoftSpeechAudio(inspection)
+                PreparedAudioInput.MicrosoftSpeech(outputFile, "audio/wav", inspection, tempFileToClean = outputFile)
+            } else {
+                PreparedAudioInput.Gemini(
+                    outputFile,
+                    "audio/wav",
+                    tempFileToClean = outputFile,
+                    durationUs = durationUs,
+                )
+            }
+            written = true
+            prepared
+        } finally {
+            if (!written) {
+                withContext(NonCancellable) { deleteTemporaryFile(outputFile) }
+            }
+        }
+    }
+
     private suspend fun prepareConvertedAudio(
         jobId: Int,
         uri: Uri,
         inputMimeType: String?,
         usingMicrosoftSpeech: Boolean,
+        convertingForChunking: Boolean,
         listener: AudioPreparationListener,
     ): PreparedAudioInput {
+        val policy = AudioChunkingPolicy.forProvider(usingMicrosoftSpeech)
         val reasonSuffix = inputMimeType?.let { "($it)" }
             ?: UserMessage(R.string.transcription_status_unknown_format_suffix)
         listener.onStatus(
-            UserMessage(
-                R.string.transcription_status_conversion_required,
-                listOf(uploadProviderName(usingMicrosoftSpeech), reasonSuffix),
-            ),
+            if (convertingForChunking) {
+                UserMessage(
+                    R.string.transcription_status_conversion_for_chunking,
+                    listOf(uploadProviderName(usingMicrosoftSpeech)),
+                )
+            } else {
+                UserMessage(
+                    R.string.transcription_status_conversion_required,
+                    listOf(uploadProviderName(usingMicrosoftSpeech), reasonSuffix),
+                )
+            },
             0f,
         )
         listener.onNotification(UserMessage(R.string.transcription_notification_converting))
@@ -110,11 +206,7 @@ class TranscriptionAudioPreparer @Inject constructor(
                 inputUri = uri,
                 outputFile = outputFile,
                 ioDispatcher = ioDispatcher,
-                maximumDurationUsExclusive = if (usingMicrosoftSpeech) {
-                    MICROSOFT_SPEECH_MAX_DURATION_US
-                } else {
-                    GEMINI_CONVERSION_DURATION_LIMIT_US_EXCLUSIVE
-                },
+                maximumDurationUsExclusive = CHUNKED_AUDIO_DURATION_LIMIT_US_EXCLUSIVE,
                 onProgress = { progress ->
                     val normalizedProgress = progress.coerceIn(0f, 1f)
                     val progressBucket = if (normalizedProgress >= 1f) {
@@ -138,10 +230,18 @@ class TranscriptionAudioPreparer @Inject constructor(
                 sizeBytes = outputFile.length(),
                 durationUs = conversionResult.durationUs,
             )
-            if (usingMicrosoftSpeech) {
+            val preparedInput = if (policy.requiresChunking(inspection.durationUs)) {
+                val chunks = withContext(ioDispatcher) { planChunks(outputFile, policy) }
+                listener.onStatus(
+                    UserMessage(
+                        R.string.transcription_status_split_into_parts,
+                        listOf(QuantityText(R.plurals.transcription_part_count, chunks.size)),
+                    ),
+                    null,
+                )
+                PreparedAudioInput.Chunked(file = outputFile, chunks = chunks, tempFileToClean = outputFile)
+            } else if (usingMicrosoftSpeech) {
                 validateMicrosoftSpeechAudio(inspection)
-            }
-            val preparedInput = if (usingMicrosoftSpeech) {
                 listener.onStatus(UserMessage(R.string.transcription_status_converted_ready_microsoft), null)
                 PreparedAudioInput.MicrosoftSpeech(
                     file = outputFile,
@@ -151,7 +251,12 @@ class TranscriptionAudioPreparer @Inject constructor(
                 )
             } else {
                 listener.onStatus(UserMessage(R.string.transcription_status_converted_ready_gemini), null)
-                PreparedAudioInput.Gemini(file = outputFile, mimeType = "audio/wav", tempFileToClean = outputFile)
+                PreparedAudioInput.Gemini(
+                    file = outputFile,
+                    mimeType = "audio/wav",
+                    tempFileToClean = outputFile,
+                    durationUs = inspection.durationUs,
+                )
             }
             converted = true
             return preparedInput
@@ -160,6 +265,16 @@ class TranscriptionAudioPreparer @Inject constructor(
                 withContext(NonCancellable + ioDispatcher) { createdFile?.let(::deleteTemporaryFile) }
             }
         }
+    }
+
+    private fun planChunks(wavFile: File, policy: AudioChunkingPolicy): List<AudioChunk> {
+        val wav = Pcm16MonoWavFile(wavFile)
+        return planAudioChunks(
+            totalSamples = wav.totalSamples,
+            maxChunkSamples = samplesForDurationUs(policy.maxChunkDurationUs),
+            searchWindowSamples = samplesForDurationUs(CHUNK_SEARCH_WINDOW_US),
+            frameEnergies = wav::frameEnergies,
+        )
     }
 
     private suspend fun prepareNativeAudio(
@@ -201,6 +316,7 @@ class TranscriptionAudioPreparer @Inject constructor(
                 file = reusableLocalFile.also(::validateMeasurableGeminiAudio),
                 mimeType = inputMimeType,
                 tempFileToClean = null,
+                durationUs = inspectDurationUsOrUnknown(reusableLocalFile),
             )
         } else {
             listener.onStatus(
@@ -214,6 +330,7 @@ class TranscriptionAudioPreparer @Inject constructor(
                 file = tempFile.also(::validateMeasurableGeminiAudio),
                 mimeType = inputMimeType,
                 tempFileToClean = tempFile,
+                durationUs = inspectDurationUsOrUnknown(tempFile),
             )
         }
     }

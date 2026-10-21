@@ -7,8 +7,10 @@ import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_COMPLETED
+import com.andreacovelli.whispertranscriber.transcription.SUMMARY_STATUS_CANCELLED
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
@@ -177,6 +179,60 @@ class ContentMutationInstrumentedTest {
             assertEquals("Transcript", history.text)
             assertEquals("", history.summary)
             assertFalse(fixture.notifier.showCachedResultPage(jobId, BackgroundShareResultKind.SUMMARY, 0))
+        }
+    }
+
+    @Test
+    fun editTranscript_preventsALateSummaryOfTheOldTextAndKeepsTheExistingOne() = runBlocking {
+        RepairTestFixture(context).use { fixture ->
+            val (historyId, jobId) = linkedJob(fixture)
+            fixture.summaries.claimManualSummary(jobId, "pending", "GEMINI_FLASH", "new-model")
+
+            fixture.queue.updateHistoryTranscript(historyId, "Edited transcript")
+
+            assertFalse(
+                fixture.summaries.succeedSummarization(jobId, "pending", "late content", "GEMINI_FLASH", "new-model"),
+            )
+            val history = checkNotNull(fixture.db.transcriptionHistoryDao().getById(historyId))
+            assertEquals("Edited transcript", history.text)
+            assertEquals("Existing summary", history.summary)
+            val job = checkNotNull(fixture.repository.getJob(jobId))
+            assertFalse(job.isSummarizing)
+            assertEquals("", job.summaryAttemptId)
+            assertEquals(SUMMARY_STATUS_CANCELLED, job.summaryStatus)
+        }
+    }
+
+    @Test
+    fun editTranscript_stopsAManualSummaryButNotTheTranscriptionThatOwnsAnAutoSummary() = runBlocking {
+        RepairTestFixture(context).use { fixture ->
+            val (manualHistoryId, manualJobId) = linkedJob(fixture)
+            fixture.summaries.claimManualSummary(manualJobId, "manual", "GEMINI_FLASH", "new-model")
+            val (autoHistoryId, autoJobId) = linkedJob(fixture)
+            val autoJob = checkNotNull(fixture.repository.getJob(autoJobId))
+            fixture.db.transcriptionJobDao().insert(
+                autoJob.copy(
+                    isRunning = true,
+                    isSummarizing = true,
+                    executionOwnerId = "owner",
+                    summaryAttemptId = "auto",
+                ),
+            )
+            val manualWork = async(start = CoroutineStart.UNDISPATCHED) {
+                fixture.operations.track(manualJobId) { awaitCancellation() }
+            }
+            val transcription = async(start = CoroutineStart.UNDISPATCHED) {
+                fixture.operations.track(autoJobId) { awaitCancellation() }
+            }
+
+            fixture.queue.updateHistoryTranscript(manualHistoryId, "Edited manual")
+            fixture.queue.updateHistoryTranscript(autoHistoryId, "Edited auto")
+
+            withTimeout(10_000) { manualWork.join() }
+            assertTrue(manualWork.isCancelled)
+            assertTrue(transcription.isActive)
+            assertEquals("", checkNotNull(fixture.repository.getJob(autoJobId)).summaryAttemptId)
+            transcription.cancel()
         }
     }
 
