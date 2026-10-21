@@ -4,6 +4,7 @@ import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.media.MediaMuxer
+import android.os.Build
 import androidx.core.net.toUri
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -20,6 +21,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -31,6 +33,7 @@ class HardwareAudioConverterInstrumentedTest {
         private const val OUTPUT_CHANNELS = 1
         private const val AAC_INPUT_SAMPLE_RATE = 48_000
         private const val AAC_INPUT_CHANNELS = 2
+        private const val OPUS_INPUT_SAMPLE_RATE = 48_000
     }
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -126,6 +129,107 @@ class HardwareAudioConverterInstrumentedTest {
         }
     }
 
+    @Test
+    fun convertTo16kMonoWav_keepsEverySecondOfLongAacInputInOrder() = runBlocking {
+        val inputFile = File.createTempFile("converter_input_", ".m4a", context.cacheDir)
+        val outputFile = File.createTempFile("converter_output_", ".wav", context.cacheDir)
+        try {
+            // Several seconds span many batched decoder buffers; each second is louder than the last.
+            val amplitudes = doubleArrayOf(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
+            writeAacM4a(
+                file = inputFile,
+                pcm16 = generateSteppedSine(AAC_INPUT_SAMPLE_RATE, AAC_INPUT_CHANNELS, amplitudes),
+            )
+
+            val result = HardwareAudioConverter.convertTo16kMonoWav(
+                context = context,
+                inputUri = inputFile.toUri(),
+                outputFile = outputFile,
+                ioDispatcher = Dispatchers.IO,
+            )
+            val wavInfo = readWavInfo(outputFile)
+
+            assertEquals(OUTPUT_SAMPLE_RATE, wavInfo.sampleRate)
+            assertEquals(OUTPUT_CHANNELS, wavInfo.channelCount)
+            val expectedDurationUs = amplitudes.size * 1_000_000L
+            assertTrue(
+                "Converted ${result.durationUs} us of $expectedDurationUs us",
+                abs(result.durationUs - expectedDurationUs) <= 100_000L,
+            )
+            assertSecondsGetLouder(wavInfo, amplitudes.size)
+        } finally {
+            inputFile.delete()
+            outputFile.delete()
+        }
+    }
+
+    @Test
+    fun convertTo16kMonoWav_convertsOggOpusInput() = runBlocking {
+        assumeTrue("Ogg muxing needs API 29", Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+        val inputFile = File.createTempFile("converter_input_", ".ogg", context.cacheDir)
+        val outputFile = File.createTempFile("converter_output_", ".wav", context.cacheDir)
+        try {
+            val amplitudes = doubleArrayOf(0.2, 0.4, 0.6, 0.8)
+            writeEncodedAudio(
+                file = inputFile,
+                pcm16 = generateSteppedSine(OPUS_INPUT_SAMPLE_RATE, OUTPUT_CHANNELS, amplitudes),
+                mimeType = MediaFormat.MIMETYPE_AUDIO_OPUS,
+                muxerFormat = MediaMuxer.OutputFormat.MUXER_OUTPUT_OGG,
+                sampleRate = OPUS_INPUT_SAMPLE_RATE,
+                channelCount = OUTPUT_CHANNELS,
+            )
+
+            val result = HardwareAudioConverter.convertTo16kMonoWav(
+                context = context,
+                inputUri = inputFile.toUri(),
+                outputFile = outputFile,
+                ioDispatcher = Dispatchers.IO,
+            )
+            val wavInfo = readWavInfo(outputFile)
+
+            assertEquals(OUTPUT_SAMPLE_RATE, wavInfo.sampleRate)
+            val expectedDurationUs = amplitudes.size * 1_000_000L
+            assertTrue(
+                "Converted ${result.durationUs} us of $expectedDurationUs us",
+                abs(result.durationUs - expectedDurationUs) <= 100_000L,
+            )
+            assertSecondsGetLouder(wavInfo, amplitudes.size)
+        } finally {
+            inputFile.delete()
+            outputFile.delete()
+        }
+    }
+
+    /** A 440 Hz tone whose amplitude steps to the next value of [amplitudes] every second. */
+    private fun generateSteppedSine(sampleRate: Int, channelCount: Int, amplitudes: DoubleArray): ByteArray {
+        val frameCount = sampleRate * amplitudes.size
+        val buffer = ByteBuffer.allocate(frameCount * channelCount * 2).order(ByteOrder.LITTLE_ENDIAN)
+        for (frame in 0 until frameCount) {
+            val amplitude = amplitudes[frame / sampleRate]
+            val sample = (sin(2.0 * PI * 440.0 * frame / sampleRate) * amplitude * Short.MAX_VALUE).toInt().toShort()
+            repeat(channelCount) { buffer.putShort(sample) }
+        }
+        return buffer.array()
+    }
+
+    /** Asserts that the middle of each second is louder than the one before, so no audio was lost or reordered. */
+    private fun assertSecondsGetLouder(wavInfo: WavInfo, seconds: Int) {
+        val samples = ByteBuffer.wrap(wavInfo.pcmData).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+        val levels = (0 until seconds).map { second ->
+            // Skip the edges of each second, where codec delay and the step itself blur the level.
+            val start = second * OUTPUT_SAMPLE_RATE + OUTPUT_SAMPLE_RATE / 4
+            val end = start + OUTPUT_SAMPLE_RATE / 2
+            val sumOfSquares = (start until end).sumOf { index ->
+                val sample = samples.get(index).toDouble()
+                sample * sample
+            }
+            kotlin.math.sqrt(sumOfSquares / (end - start))
+        }
+        levels.zipWithNext().forEachIndexed { second, (previous, next) ->
+            assertTrue("Second ${second + 1} level $next is not above $previous; levels $levels", next > previous * 1.1)
+        }
+    }
+
     private fun generatePcm16SineWave(sampleRate: Int, channelCount: Int, durationMs: Int): ByteArray {
         val frameCount = sampleRate * durationMs / 1000
         val buffer = ByteBuffer.allocate(frameCount * channelCount * 2).order(ByteOrder.LITTLE_ENDIAN)
@@ -197,20 +301,36 @@ class HardwareAudioConverterInstrumentedTest {
     }
 
     private fun writeAacM4a(file: File, pcm16: ByteArray) {
-        val format = MediaFormat.createAudioFormat(
-            MediaFormat.MIMETYPE_AUDIO_AAC,
-            AAC_INPUT_SAMPLE_RATE,
-            AAC_INPUT_CHANNELS,
-        ).apply {
-            setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
-            setInteger(MediaFormat.KEY_BIT_RATE, 128_000)
+        writeEncodedAudio(
+            file = file,
+            pcm16 = pcm16,
+            mimeType = MediaFormat.MIMETYPE_AUDIO_AAC,
+            muxerFormat = MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4,
+            sampleRate = AAC_INPUT_SAMPLE_RATE,
+            channelCount = AAC_INPUT_CHANNELS,
+        )
+    }
+
+    private fun writeEncodedAudio(
+        file: File,
+        pcm16: ByteArray,
+        mimeType: String,
+        muxerFormat: Int,
+        sampleRate: Int,
+        channelCount: Int,
+    ) {
+        val format = MediaFormat.createAudioFormat(mimeType, sampleRate, channelCount).apply {
+            if (mimeType == MediaFormat.MIMETYPE_AUDIO_AAC) {
+                setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+            }
+            setInteger(MediaFormat.KEY_BIT_RATE, if (mimeType == MediaFormat.MIMETYPE_AUDIO_AAC) 128_000 else 64_000)
             setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 16_384)
         }
-        val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
-        val muxer = MediaMuxer(file.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        val encoder = MediaCodec.createEncoderByType(mimeType)
+        val muxer = MediaMuxer(file.absolutePath, muxerFormat)
         var muxerStarted = false
         var trackIndex = -1
-        val bytesPerFrame = AAC_INPUT_CHANNELS * 2
+        val bytesPerFrame = channelCount * 2
         try {
             encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
             encoder.start()
@@ -231,12 +351,12 @@ class HardwareAudioConverterInstrumentedTest {
                             val chunkSize = minOf(inputBuffer.capacity(), remaining)
                             inputBuffer.put(pcm16, inputOffset, chunkSize)
                             val presentationTimeUs =
-                                ((inputOffset / bytesPerFrame).toLong() * 1_000_000L) / AAC_INPUT_SAMPLE_RATE.toLong()
+                                ((inputOffset / bytesPerFrame).toLong() * 1_000_000L) / sampleRate.toLong()
                             encoder.queueInputBuffer(inputIndex, 0, chunkSize, presentationTimeUs, 0)
                             inputOffset += chunkSize
                         } else {
                             val endPresentationTimeUs =
-                                ((pcm16.size / bytesPerFrame).toLong() * 1_000_000L) / AAC_INPUT_SAMPLE_RATE.toLong()
+                                ((pcm16.size / bytesPerFrame).toLong() * 1_000_000L) / sampleRate.toLong()
                             encoder.queueInputBuffer(
                                 inputIndex,
                                 0,

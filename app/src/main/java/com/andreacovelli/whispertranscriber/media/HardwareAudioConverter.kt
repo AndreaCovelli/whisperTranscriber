@@ -3,26 +3,32 @@ package com.andreacovelli.whispertranscriber.media
 import android.content.Context
 import android.media.AudioFormat
 import android.media.MediaCodec
-import android.media.MediaCodecList
-import android.media.MediaExtractor
+import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.net.Uri
+import android.os.Build
+import android.os.Handler
+import android.os.HandlerThread
 import android.os.storage.StorageManager
+import androidx.annotation.RequiresApi
 import com.andreacovelli.whispertranscriber.QuantityText
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.UserFacingIOException
-import com.andreacovelli.whispertranscriber.UserFacingIllegalStateException
 import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.requireUserFacing
 import java.io.File
-import java.io.FileNotFoundException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.max
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ReceiveChannel
+import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.selects.onTimeout
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
 
 private class ScratchBuffers {
@@ -52,10 +58,15 @@ private class ScratchBuffers {
 object HardwareAudioConverter {
 
     private const val MICROSECONDS_IN_SECOND = 1_000_000L
-    private const val CODEC_BUFFER_TIMEOUT_US = 10_000L
     private const val PROGRESS_STEP = 0.05f
     private const val PROGRESS_INTERVAL_NS = 250_000_000L
     private const val END_OF_STREAM_STALL_TIMEOUT_NS = 5_000_000_000L
+    private const val DRAIN_POLL_INTERVAL_MS = 250L
+
+    // Each codec round trip costs milliseconds, so batching access units is what makes long files fast.
+    private const val MAX_ACCESS_UNITS_PER_INPUT = 64
+    private const val BATCH_INPUT_BYTES = 256 * 1024
+    private const val BATCH_OUTPUT_BYTES = 256 * 1024
 
     data class Result(val sampleRate: Int, val channelCount: Int, val durationUs: Long)
 
@@ -71,9 +82,17 @@ object HardwareAudioConverter {
 
     private data class ProgressState(val lastProgress: Float, val lastDispatchNs: Long)
 
-    private data class InputFeedResult(val inputEos: Boolean, val progressState: ProgressState)
+    /** Codec callbacks, delivered in order to the converting coroutine. */
+    private sealed interface DecoderEvent {
+        class InputAvailable(val index: Int) : DecoderEvent
 
-    private enum class DecoderOutput { NONE, PRODUCED, END_OF_STREAM }
+        /** One output buffer holding one or, with batched input, several decoded access units. */
+        class OutputAvailable(val index: Int, val infos: List<MediaCodec.BufferInfo>) : DecoderEvent
+
+        class FormatChanged(val format: MediaFormat) : DecoderEvent
+
+        class Failed(val error: MediaCodec.CodecException) : DecoderEvent
+    }
 
     suspend fun convertTo16kMonoWav(
         context: Context,
@@ -83,23 +102,22 @@ object HardwareAudioConverter {
         maximumDurationUsExclusive: Long? = null,
         onProgress: (suspend (Float) -> Unit)? = null,
     ): Result = withContext(ioDispatcher) {
-        var extractor: MediaExtractor? = null
+        var source: EncodedAudioSource? = null
         var decoder: MediaCodec? = null
+        var callbackThread: HandlerThread? = null
         var state: DecoderState? = null
         val storageManager = context.getSystemService(Context.STORAGE_SERVICE) as StorageManager
         var outputFinalized = false
 
         try {
-            val extraction = openExtractorAndFormat(context, inputUri)
-            extractor = extraction.first
-            val srcFormat = extraction.second
+            val decodable = EncodedAudioSources.openDecodable(context, inputUri)
+            source = decodable.source
+            val srcFormat = source.format
             val durationUs = srcFormat.longValueOr(MediaFormat.KEY_DURATION, -1L)
             validateSourceDuration(durationUs, maximumDurationUsExclusive)
             val maximumDataBytes = maximumDurationUsExclusive
                 ?.let(::maximumPcm16MonoDataBytesForDurationExclusive)
                 ?: MAX_CLASSIC_WAV_DATA_BYTES
-            val decoderName = MediaCodecList(MediaCodecList.REGULAR_CODECS).findDecoderForFormat(srcFormat)
-                ?: throw UserFacingIOException(UserMessage(R.string.conversion_no_decoder))
             state = createDecoderState(srcFormat).apply {
                 writer = Pcm16WavWriter(outputFile, maximumDataBytes)
             }
@@ -114,16 +132,20 @@ object HardwareAudioConverter {
                 onProgress?.invoke(0f)
             }
 
-            decoder = MediaCodec.createByCodecName(decoderName)
-            decoder.configure(srcFormat, null, null, 0)
+            decoder = MediaCodec.createByCodecName(decodable.decoderName)
+            val batchedInput = supportsBatchedInput(decoder, srcFormat)
+            callbackThread = HandlerThread("AudioDecoderCallbacks").apply { start() }
+            val events = Channel<DecoderEvent>(Channel.UNLIMITED)
+            decoder.setCallback(DecoderEventForwarder(events), Handler(callbackThread.looper))
+            decoder.configure(decoderFormat(srcFormat, batchedInput), null, null, 0)
             decoder.start()
 
             decodeAudioStream(
-                extractor = extractor,
+                input = InputFeeder(source, decoder, batchedInput),
                 decoder = decoder,
+                events = events,
                 durationUs = durationUs,
                 state = state,
-                scratchBuffers = ScratchBuffers(),
                 onProgress = onProgress,
             )
 
@@ -141,45 +163,11 @@ object HardwareAudioConverter {
         } finally {
             closeBestEffort("Decoder stop") { decoder?.stop() }
             closeBestEffort("Decoder release") { decoder?.release() }
-            closeBestEffort("Extractor release") { extractor?.release() }
+            callbackThread?.quitSafely()
+            closeBestEffort("Extractor release") { source?.release() }
             closeBestEffort("Writer close") { state?.writer?.close() }
             if (!outputFinalized && outputFile.exists() && !outputFile.delete()) {
                 android.util.Log.w("HardwareAudioConverter", "Failed to delete incomplete converted audio")
-            }
-        }
-    }
-
-    // MediaExtractor.release() documents no narrower runtime failure contract.
-    @Suppress("TooGenericExceptionCaught")
-    private fun openExtractorAndFormat(context: Context, inputUri: Uri): Pair<MediaExtractor, MediaFormat> {
-        val extractor = MediaExtractor()
-        var succeeded = false
-        try {
-            val descriptor = context.contentResolver.openAssetFileDescriptor(inputUri, "r")
-                ?: throw FileNotFoundException("Unable to open input URI: $inputUri")
-            descriptor.use { assetFileDescriptor ->
-                extractor.setDataSource(
-                    assetFileDescriptor.fileDescriptor,
-                    assetFileDescriptor.startOffset,
-                    assetFileDescriptor.length,
-                )
-            }
-            val audioTrack = (0 until extractor.trackCount).asSequence()
-                .map { index -> index to extractor.getTrackFormat(index) }
-                .firstOrNull { (_, format) ->
-                    format.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
-                }
-                ?: throw UserFacingIllegalStateException(UserMessage(R.string.conversion_no_audio_track))
-            extractor.selectTrack(audioTrack.first)
-            succeeded = true
-            return extractor to audioTrack.second
-        } finally {
-            if (!succeeded) {
-                try {
-                    extractor.release()
-                } catch (error: RuntimeException) {
-                    android.util.Log.w("HardwareAudioConverter", "Extractor cleanup failed", error)
-                }
             }
         }
     }
@@ -229,81 +217,178 @@ object HardwareAudioConverter {
         null
     }
 
+    /** Whether [decoder] accepts several access units per input buffer (Android 15 large audio frames). */
+    private fun supportsBatchedInput(decoder: MediaCodec, format: MediaFormat): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) return false
+        val mimeType = format.getString(MediaFormat.KEY_MIME) ?: return false
+        return try {
+            decoder.codecInfo.getCapabilitiesForType(mimeType)
+                .isFeatureSupported(MediaCodecInfo.CodecCapabilities.FEATURE_MultipleFrames)
+        } catch (_: IllegalArgumentException) {
+            false
+        }
+    }
+
+    private fun decoderFormat(sourceFormat: MediaFormat, batchedInput: Boolean): MediaFormat {
+        if (!batchedInput || Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) return sourceFormat
+        return MediaFormat(sourceFormat).apply {
+            setInteger(
+                MediaFormat.KEY_MAX_INPUT_SIZE,
+                max(intValueOr(MediaFormat.KEY_MAX_INPUT_SIZE, 0), BATCH_INPUT_BYTES),
+            )
+            setInteger(MediaFormat.KEY_BUFFER_BATCH_MAX_OUTPUT_SIZE, BATCH_OUTPUT_BYTES)
+            setInteger(MediaFormat.KEY_BUFFER_BATCH_THRESHOLD_OUTPUT_SIZE, BATCH_OUTPUT_BYTES)
+        }
+    }
+
     private suspend fun decodeAudioStream(
-        extractor: MediaExtractor,
+        input: InputFeeder,
         decoder: MediaCodec,
+        events: ReceiveChannel<DecoderEvent>,
         durationUs: Long,
         state: DecoderState,
-        scratchBuffers: ScratchBuffers,
         onProgress: (suspend (Float) -> Unit)?,
     ) {
-        val info = MediaCodec.BufferInfo()
-        var inputEos = false
-        var outputEos = false
+        val scratchBuffers = ScratchBuffers()
         var progressState = ProgressState(lastProgress = -1f, lastDispatchNs = 0L)
         val drainWatchdog = DecoderDrainWatchdog(END_OF_STREAM_STALL_TIMEOUT_NS)
+        var outputEos = false
 
-        // Keep the codec pipelined: fill every free input buffer and drain every ready output buffer without
-        // waiting, and block only when neither side can make progress.
-        while (!outputEos && currentCoroutineContext().isActive) {
-            var queuedInput = false
-            while (!inputEos) {
-                val feedResult = queueNextInputBuffer(
-                    decoder = decoder,
-                    extractor = extractor,
-                    durationUs = durationUs,
-                    progressState = progressState,
-                    onProgress = onProgress,
-                ) ?: break
-                queuedInput = true
-                inputEos = feedResult.inputEos
-                progressState = feedResult.progressState
-            }
-            var outputTimeoutUs = if (queuedInput) 0L else CODEC_BUFFER_TIMEOUT_US
-            while (!outputEos) {
-                when (handleDecoderOutput(decoder, info, outputTimeoutUs, state, scratchBuffers)) {
-                    DecoderOutput.END_OF_STREAM -> outputEos = true
-                    DecoderOutput.PRODUCED -> {
-                        drainWatchdog.onOutput()
-                        outputTimeoutUs = 0L
-                    }
-                    DecoderOutput.NONE -> {
-                        if (inputEos && drainWatchdog.isStalled()) {
-                            // Some decoders never flag end of stream; keep the audio decoded so far.
-                            android.util.Log.w("HardwareAudioConverter", "Decoder stalled after end of input")
-                            outputEos = true
-                        }
-                        break
-                    }
+        while (!outputEos) {
+            // receive() does not check cancellation while events are already queued.
+            currentCoroutineContext().ensureActive()
+            val event = if (input.endOfStreamQueued) receiveOrNullAfterPoll(events) else events.receive()
+            when (event) {
+                null -> if (drainWatchdog.isStalled()) {
+                    // Some decoders never flag end of stream; keep the audio decoded so far.
+                    android.util.Log.w("HardwareAudioConverter", "Decoder stalled after end of input")
+                    outputEos = true
                 }
+                is DecoderEvent.InputAvailable -> {
+                    val presentationTimeUs = input.queue(event.index)
+                    progressState = updateProgress(durationUs, presentationTimeUs, progressState, onProgress)
+                }
+                is DecoderEvent.OutputAvailable -> {
+                    drainWatchdog.onOutput()
+                    outputEos = processOutputBuffer(decoder, event, state, scratchBuffers)
+                }
+                is DecoderEvent.FormatChanged -> {
+                    drainWatchdog.onOutput()
+                    updateDecoderState(event.format, state)
+                }
+                is DecoderEvent.Failed -> throw event.error
             }
         }
     }
 
-    /** Queues the next sample into a free input buffer, or returns null when the decoder has none free. */
-    private suspend fun queueNextInputBuffer(
-        decoder: MediaCodec,
-        extractor: MediaExtractor,
-        durationUs: Long,
-        progressState: ProgressState,
-        onProgress: (suspend (Float) -> Unit)?,
-    ): InputFeedResult? {
-        val inputIndex = decoder.dequeueInputBuffer(0L)
-        if (inputIndex < 0) return null
+    /** Waits briefly for the next event; unlike a timeout around receive(), select never drops one. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private suspend fun receiveOrNullAfterPoll(events: ReceiveChannel<DecoderEvent>): DecoderEvent? = select {
+        events.onReceive { it }
+        onTimeout(DRAIN_POLL_INTERVAL_MS) { null }
+    }
 
-        val inputBuffer = requireNotNull(decoder.getInputBuffer(inputIndex))
-        inputBuffer.clear()
-        val size = extractor.readSampleData(inputBuffer, 0)
-        if (size < 0) {
-            decoder.queueInputBuffer(inputIndex, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-            return InputFeedResult(inputEos = true, progressState = progressState)
+    /** Forwards codec callbacks without touching codec state, which stays owned by the converting coroutine. */
+    private class DecoderEventForwarder(private val events: SendChannel<DecoderEvent>) : MediaCodec.Callback() {
+        override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
+            events.trySend(DecoderEvent.InputAvailable(index))
         }
 
-        val presentationTimeUs = extractor.sampleTime
-        decoder.queueInputBuffer(inputIndex, 0, size, presentationTimeUs, 0)
-        val updatedProgress = updateProgress(durationUs, presentationTimeUs, progressState, onProgress)
-        extractor.advance()
-        return InputFeedResult(inputEos = false, progressState = updatedProgress)
+        override fun onOutputBufferAvailable(codec: MediaCodec, index: Int, info: MediaCodec.BufferInfo) {
+            events.trySend(DecoderEvent.OutputAvailable(index, listOf(info.copy())))
+        }
+
+        override fun onOutputBuffersAvailable(
+            codec: MediaCodec,
+            index: Int,
+            infos: java.util.ArrayDeque<MediaCodec.BufferInfo>,
+        ) {
+            events.trySend(DecoderEvent.OutputAvailable(index, infos.map { info -> info.copy() }))
+        }
+
+        override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {
+            events.trySend(DecoderEvent.FormatChanged(format))
+        }
+
+        override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
+            events.trySend(DecoderEvent.Failed(e))
+        }
+
+        // The codec may reuse its BufferInfo objects once the callback returns.
+        private fun MediaCodec.BufferInfo.copy() = MediaCodec.BufferInfo().also { copy ->
+            copy.set(offset, size, presentationTimeUs, flags)
+        }
+    }
+
+    /** Fills decoder input buffers from [source], several access units per buffer when [batched]. */
+    private class InputFeeder(
+        private val source: EncodedAudioSource,
+        private val decoder: MediaCodec,
+        private val batched: Boolean,
+    ) {
+        private val batchInfos = java.util.ArrayDeque<MediaCodec.BufferInfo>()
+
+        var endOfStreamQueued = false
+            private set
+
+        /** Queues input into buffer [index]; returns the last presentation time queued, or -1 if none. */
+        fun queue(index: Int): Long {
+            // The codec keeps offering its remaining buffers after the end of stream; they stay unused.
+            if (endOfStreamQueued) return -1L
+            val buffer = requireNotNull(decoder.getInputBuffer(index))
+            buffer.clear()
+            return if (batched && Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                queueBatch(index, buffer)
+            } else {
+                queueSingle(index, buffer)
+            }
+        }
+
+        private fun queueSingle(index: Int, buffer: ByteBuffer): Long {
+            val size = source.readSampleData(buffer, 0)
+            if (size < 0) {
+                queueEndOfStream(index)
+                return -1L
+            }
+            val presentationTimeUs = source.sampleTime
+            decoder.queueInputBuffer(index, 0, size, presentationTimeUs, 0)
+            source.advance()
+            return presentationTimeUs
+        }
+
+        @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+        private fun queueBatch(index: Int, buffer: ByteBuffer): Long {
+            batchInfos.clear()
+            while (batchInfos.size < MAX_ACCESS_UNITS_PER_INPUT && appendNextUnit(buffer)) {
+                source.advance()
+            }
+            if (batchInfos.isEmpty()) {
+                queueEndOfStream(index)
+                return -1L
+            }
+            decoder.queueInputBuffers(index, batchInfos)
+            return batchInfos.last.presentationTimeUs
+        }
+
+        /** Appends the current access unit after the bytes already in [buffer]; false if it ended or cannot fit. */
+        @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+        private fun appendNextUnit(buffer: ByteBuffer): Boolean {
+            val sampleSize = source.sampleSize
+            val offset = buffer.position()
+            // An oversized first unit is still read, so it fails exactly as it would unbatched.
+            val fits = sampleSize >= 0 && (batchInfos.isEmpty() || sampleSize <= buffer.capacity() - offset)
+            val size = if (fits) source.readSampleData(buffer, offset) else -1
+            if (size < 0) return false
+            batchInfos.add(MediaCodec.BufferInfo().apply { set(offset, size, source.sampleTime, 0) })
+            buffer.limit(buffer.capacity())
+            buffer.position(offset + size)
+            return true
+        }
+
+        private fun queueEndOfStream(index: Int) {
+            decoder.queueInputBuffer(index, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+            endOfStreamQueued = true
+        }
     }
 
     private suspend fun updateProgress(
@@ -322,30 +407,6 @@ object HardwareAudioConverter {
             return ProgressState(progress, nowNs)
         }
         return state
-    }
-
-    private fun handleDecoderOutput(
-        decoder: MediaCodec,
-        info: MediaCodec.BufferInfo,
-        timeoutUs: Long,
-        state: DecoderState,
-        scratchBuffers: ScratchBuffers,
-    ): DecoderOutput = when (val outputIndex = decoder.dequeueOutputBuffer(info, timeoutUs)) {
-        MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-            updateDecoderState(decoder.outputFormat, state)
-            DecoderOutput.PRODUCED
-        }
-        MediaCodec.INFO_TRY_AGAIN_LATER -> DecoderOutput.NONE
-        else -> if (outputIndex < 0) {
-            DecoderOutput.NONE
-        } else {
-            processOutputBuffer(decoder, outputIndex, info, state, scratchBuffers)
-            if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
-                DecoderOutput.END_OF_STREAM
-            } else {
-                DecoderOutput.PRODUCED
-            }
-        }
     }
 
     private fun updateDecoderState(outputFormat: MediaFormat, state: DecoderState) {
@@ -370,30 +431,35 @@ object HardwareAudioConverter {
         encoding == AudioFormat.ENCODING_PCM_FLOAT ||
         PcmIntegerSampleReader.bytesPerSample(encoding) != null
 
+    /** Writes every access unit in the output buffer, releases it, and reports whether it ended the stream. */
     private fun processOutputBuffer(
         decoder: MediaCodec,
-        outputIndex: Int,
-        info: MediaCodec.BufferInfo,
+        output: DecoderEvent.OutputAvailable,
         state: DecoderState,
         scratchBuffers: ScratchBuffers,
-    ) {
-        val outputBuffer = requireNotNull(decoder.getOutputBuffer(outputIndex))
-        if (info.size > 0) {
-            outputBuffer.position(info.offset)
-            outputBuffer.limit(info.offset + info.size)
-            outputBuffer.order(ByteOrder.LITTLE_ENDIAN)
-            when {
-                state.pcmEncoding == AudioFormat.ENCODING_PCM_FLOAT ->
-                    processFloatOutput(outputBuffer, info, state, scratchBuffers)
-                canWritePcm16Direct(state) ->
-                    writePcm16Direct(outputBuffer, info, state)
-                state.pcmEncoding == AudioFormat.ENCODING_PCM_16BIT ->
-                    processPcm16Output(outputBuffer, info, state, scratchBuffers)
-                else ->
-                    processIntegerPcmOutput(outputBuffer, info, state, scratchBuffers)
+    ): Boolean {
+        var endOfStream = false
+        val outputBuffer = requireNotNull(decoder.getOutputBuffer(output.index))
+        outputBuffer.order(ByteOrder.LITTLE_ENDIAN)
+        for (info in output.infos) {
+            if (info.size > 0) {
+                outputBuffer.limit(info.offset + info.size)
+                outputBuffer.position(info.offset)
+                when {
+                    state.pcmEncoding == AudioFormat.ENCODING_PCM_FLOAT ->
+                        processFloatOutput(outputBuffer, info, state, scratchBuffers)
+                    canWritePcm16Direct(state) ->
+                        writePcm16Direct(outputBuffer, info, state)
+                    state.pcmEncoding == AudioFormat.ENCODING_PCM_16BIT ->
+                        processPcm16Output(outputBuffer, info, state, scratchBuffers)
+                    else ->
+                        processIntegerPcmOutput(outputBuffer, info, state, scratchBuffers)
+                }
             }
+            if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) endOfStream = true
         }
-        decoder.releaseOutputBuffer(outputIndex, false)
+        decoder.releaseOutputBuffer(output.index, false)
+        return endOfStream
     }
 
     private fun canWritePcm16Direct(state: DecoderState): Boolean =

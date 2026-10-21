@@ -252,6 +252,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.core)
     // WorkManager
     implementation(libs.androidx.work.runtime.ktx)
+    // Media3's in-process MediaExtractorCompat reads encoded samples far faster than the platform extractor.
+    implementation(libs.androidx.media3.inspector)
     testImplementation(libs.junit)
     // JVM stand-in for the platform org.json API, which is stubbed in local unit tests.
     testImplementation(libs.org.json)
