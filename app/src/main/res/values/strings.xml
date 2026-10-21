@@ -262,6 +262,13 @@
     <!-- Microsoft Speech configuration -->
     <string name="microsoft_speech_unauthorized">Unauthorized. Check your Azure Speech key for Microsoft MAI Transcribe.</string>
     <string name="microsoft_speech_endpoint_not_found">Microsoft MAI Transcribe endpoint not found. Check the configured Speech region or custom endpoint.</string>
+    <string name="microsoft_speech_audio_format_unsupported">Microsoft MAI Transcribe does not support this audio format. Try another file format or a Gemini model.</string>
+    <string name="microsoft_speech_audio_empty">Microsoft MAI Transcribe received an empty audio file.</string>
+    <string name="microsoft_speech_language_not_identified">Microsoft MAI Transcribe could not identify the spoken language. Choose the recording language in Settings and retry.</string>
+    <string name="microsoft_speech_language_unsupported">Microsoft MAI Transcribe does not support the selected recording language. Choose another language or Detect automatically in Settings.</string>
+    <string name="microsoft_speech_model_unavailable">MAI-Transcribe-2 is not available for this Speech resource. Check that its region supports MAI Transcribe.</string>
+    <string name="microsoft_speech_quota_exhausted">Quota exhausted for Microsoft Speech. Check your Azure resource\'s pricing tier or wait for the quota to reset.</string>
+    <string name="microsoft_speech_access_denied">Microsoft Speech denied access. Check that the key\'s Speech resource is active and can use MAI Transcribe.</string>
     <string name="microsoft_speech_request_rejected">Microsoft MAI Transcribe rejected the request (HTTP %1$d): %2$s</string>
     <string name="microsoft_speech_resource_exhausted">Microsoft Speech resource exhausted. The app will retry automatically.</string>
     <string name="microsoft_speech_key_missing">Azure Speech key for Microsoft MAI Transcribe missing or corrupted.</string>
