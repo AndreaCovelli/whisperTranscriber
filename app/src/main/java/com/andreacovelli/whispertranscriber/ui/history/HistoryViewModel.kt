@@ -219,7 +219,7 @@ class HistoryViewModel @Inject constructor(
         if (text.isEmpty()) return
         _transcriptEditor.value = null
         viewModelScope.launch {
-            historyRepository.updateText(editor.historyId, text)
+            queueService.updateHistoryTranscript(editor.historyId, text)
             _uiEvents.send(HistoryUiEvent.Toast(R.string.history_transcript_updated))
         }
     }

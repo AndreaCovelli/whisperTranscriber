@@ -296,6 +296,29 @@ interface TranscriptionJobDao {
     @Query("SELECT id AS jobId, stagedFilePath FROM active_jobs WHERE historyId = :historyId")
     suspend fun getJobCleanupByHistoryId(historyId: Int): List<HistoryJobCleanup>
 
+    @Query(
+        """
+        SELECT id FROM active_jobs
+        WHERE historyId = :historyId
+          AND summaryAttemptId != ''
+          AND isRunning = 0
+        """,
+    )
+    suspend fun getManualSummaryJobIdsByHistoryId(historyId: Int): List<Int>
+
+    @Query(
+        """
+        UPDATE active_jobs
+        SET isSummarizing = 0,
+            summaryStatus = '$SUMMARY_STATUS_CANCELLED',
+            summaryError = NULL,
+            summaryAttemptId = ''
+        WHERE historyId = :historyId
+          AND summaryAttemptId != ''
+        """,
+    )
+    suspend fun cancelSummarizationByHistoryId(historyId: Int): Int
+
     @Query("SELECT id AS jobId, stagedFilePath FROM active_jobs WHERE historyId IS NOT NULL")
     suspend fun getAllHistoryLinkedJobCleanup(): List<HistoryJobCleanup>
 

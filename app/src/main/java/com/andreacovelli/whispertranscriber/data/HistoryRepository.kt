@@ -38,7 +38,11 @@ interface HistoryRepository {
 
     suspend fun updateSummaryByJobId(jobId: Int, summary: String, summaryProviderName: String, summaryModel: String)
 
-    suspend fun updateText(id: Int, text: String)
+    /**
+     * Replaces the transcript and cancels summaries still being generated from the old text. Returns the linked
+     * jobs whose summary ran outside a transcription, so their local work can be stopped.
+     */
+    suspend fun updateTranscript(id: Int, text: String): List<Int>
 
     suspend fun clearContent(id: Int, field: HistoryContentField): List<HistoryJobCleanup>
 
@@ -145,8 +149,11 @@ class RoomHistoryRepository @Inject constructor(
         historyDao.updateSummaryByJobId(jobId, summary, summaryProviderName, summaryModel)
     }
 
-    override suspend fun updateText(id: Int, text: String) {
+    override suspend fun updateTranscript(id: Int, text: String): List<Int> = db.withTransaction {
+        val manualSummaryJobIds = jobDao.getManualSummaryJobIdsByHistoryId(id)
+        jobDao.cancelSummarizationByHistoryId(id)
         historyDao.updateText(id, text)
+        manualSummaryJobIds
     }
 
     override suspend fun clearContent(id: Int, field: HistoryContentField): List<HistoryJobCleanup> =

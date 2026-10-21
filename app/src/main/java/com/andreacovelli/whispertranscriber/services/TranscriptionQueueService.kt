@@ -226,6 +226,12 @@ class TranscriptionQueueService @Inject constructor(
         cancelRemovedHistoryJobs(historyRepository.clearContent(historyId, field))
     }
 
+    // A summary already running inside a transcription is only invalidated: cancelling its operation would stop
+    // the transcription that owns it.
+    suspend fun updateHistoryTranscript(historyId: Int, text: String) = operations.withClaimLock {
+        historyRepository.updateTranscript(historyId, text).forEach(operations::cancel)
+    }
+
     suspend fun retryJob(jobId: Int): RetryResult {
         executionCoordinator.awaitRecovery()
         val snapshot = settings.getTranscriptionQueueSettings()
