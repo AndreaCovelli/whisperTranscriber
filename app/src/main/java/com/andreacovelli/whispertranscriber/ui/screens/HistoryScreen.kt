@@ -69,6 +69,7 @@ import com.andreacovelli.whispertranscriber.history.suggestedTextExportFileName
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCard
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCardActions
 import com.andreacovelli.whispertranscriber.ui.components.TextSaveTarget
+import com.andreacovelli.whispertranscriber.ui.components.TranscriptEditDialog
 import com.andreacovelli.whispertranscriber.ui.components.rememberTextFileSaveLauncher
 import com.andreacovelli.whispertranscriber.ui.copyTextWithFeedback
 import com.andreacovelli.whispertranscriber.ui.history.HistoryMsg
@@ -123,6 +124,15 @@ fun HistoryScreen(historyViewModel: HistoryViewModel = hiltViewModel(), onNaviga
                 historyViewModel.dispatch(HistoryMsg.DeleteAll)
                 showDeleteAllDialog = false
             },
+        )
+    }
+    val transcriptEditor by historyViewModel.transcriptEditor.collectAsStateWithLifecycle()
+    transcriptEditor?.let { editor ->
+        TranscriptEditDialog(
+            text = editor.text,
+            hasSummary = editor.hasSummary,
+            onSave = { historyViewModel.dispatch(HistoryMsg.SaveTranscriptEdit) },
+            onCancel = { historyViewModel.dispatch(HistoryMsg.CancelTranscriptEdit) },
         )
     }
     if (showExportDialog) {
@@ -399,6 +409,7 @@ private fun ColumnScope.HistoryContent(
                         suggestedTextExportFileName(item.displayName, HistoryContentField.SUMMARY),
                     )
                 },
+                editTranscript = { historyViewModel.dispatch(HistoryMsg.EditTranscript(item)) },
             )
         }
     }

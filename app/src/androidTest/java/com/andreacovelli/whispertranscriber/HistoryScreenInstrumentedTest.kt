@@ -7,6 +7,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
@@ -17,6 +18,7 @@ import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.history.HistoryDateSource
 import com.andreacovelli.whispertranscriber.history.HistoryGroupingContext
 import com.andreacovelli.whispertranscriber.ui.TextTransfer
+import com.andreacovelli.whispertranscriber.ui.components.TRANSCRIPT_EDIT_FIELD_TAG
 import com.andreacovelli.whispertranscriber.ui.history.HistoryViewModel
 import com.andreacovelli.whispertranscriber.ui.screens.HistoryScreen
 import java.time.LocalDate
@@ -107,6 +109,21 @@ class HistoryScreenInstrumentedTest {
         composeRule.onNodeWithText(dialogTitle).assertDoesNotExist()
         composeRule.onNodeWithContentDescription(deleteAll).assertDoesNotExist()
         assertFalse(runBlocking { fixture.history.hasHistory() })
+    }
+
+    @Test
+    fun editTranscriptDialog_savesTheCorrectedTranscript() {
+        insertHistory("Transcript with a typpo")
+        setHistoryScreen()
+        awaitText("Transcript with a typpo")
+
+        composeRule.onNodeWithText(context.getString(R.string.history_edit_transcript)).performClick()
+        composeRule.onNodeWithTag(TRANSCRIPT_EDIT_FIELD_TAG).performTextReplacement("Transcript with a typo")
+        composeRule.onNodeWithText(context.getString(R.string.history_edit_transcript_save)).performClick()
+
+        awaitText("Transcript with a typo")
+        composeRule.onNodeWithTag(TRANSCRIPT_EDIT_FIELD_TAG).assertDoesNotExist()
+        awaitGone("typpo")
     }
 
     @Test

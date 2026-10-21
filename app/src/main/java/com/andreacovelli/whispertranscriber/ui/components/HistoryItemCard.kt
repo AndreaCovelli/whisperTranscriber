@@ -280,20 +280,32 @@ private fun HistoryItemBody(
             actions = actions,
         )
     }
-    if (showExpandControl) {
+    val editTranscript = actions.editTranscript.takeIf { hasTranscript }
+    if (showExpandControl || editTranscript != null) {
         Spacer(Modifier.height(4.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            TextButton(onClick = onToggleExpand) {
-                Text(
-                    text = stringResource(
-                        if (expanded) {
-                            R.string.history_item_show_less
-                        } else {
-                            R.string.history_item_show_more
-                        },
-                    ),
-                    style = MaterialTheme.typography.labelLarge,
-                )
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            if (editTranscript != null) {
+                TextButton(onClick = editTranscript) {
+                    Text(
+                        text = stringResource(R.string.history_edit_transcript),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            if (showExpandControl) {
+                TextButton(onClick = onToggleExpand) {
+                    Text(
+                        text = stringResource(
+                            if (expanded) {
+                                R.string.history_item_show_less
+                            } else {
+                                R.string.history_item_show_more
+                            },
+                        ),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
             }
         }
     }

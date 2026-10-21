@@ -18,6 +18,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -27,6 +28,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCard
 import com.andreacovelli.whispertranscriber.ui.components.HistoryItemCardActions
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -169,6 +171,33 @@ class HistoryItemCardInstrumentedTest {
         val size = Formatter.formatShortFileSize(context, item.sourceSizeBytes)
         val speakerLabels = context.getString(R.string.history_item_speaker_labels)
         composeRule.onNodeWithText("2:05 · $size · $speakerLabels").assertExists()
+    }
+
+    @Test
+    fun historyItemWithTranscript_offersEditOnlyWhenTheTranscriptExists() {
+        var edits = 0
+        val withTranscript = TranscriptionHistory(id = 4, text = "Short", language = "en", displayName = "a.wav")
+        val summaryOnly = withTranscript.copy(id = 5, text = "", summary = "Summary", displayName = "b.wav")
+        val editLabel = context.getString(R.string.history_edit_transcript)
+
+        composeRule.setContent {
+            MaterialTheme {
+                androidx.compose.foundation.layout.Column {
+                    listOf(withTranscript, summaryOnly).forEach { item ->
+                        HistoryItemCard(
+                            item = item,
+                            expanded = false,
+                            onToggleExpand = {},
+                            actions = noOpActions().copy(editTranscript = { edits++ }),
+                        )
+                    }
+                }
+            }
+        }
+
+        composeRule.onAllNodesWithText(editLabel).assertCountEquals(1)
+        composeRule.onNodeWithText(editLabel).performClick()
+        composeRule.runOnIdle { assertEquals(1, edits) }
     }
 
     @Test

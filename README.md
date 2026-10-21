@@ -253,7 +253,7 @@ The main screen shows every active job and up to the 100 most recent terminal ca
 
 ### History
 
-A searchable list of all past transcriptions. Each item can be expanded to reveal the full text and any summary. Clearing a transcript preserves its summary and metadata. Clearing either field cancels pending summarization so late results cannot restore cleared content. Items transcribed by this version also show the recording length, the original file size, and whether speaker labels were requested; older items leave these details blank. Individual items or the entire history can be deleted. TXT, CSV, and JSON exports read a consistent database snapshot and include the provider and the same recording details.
+A searchable list of all past transcriptions. Each item can be expanded to reveal the full text and any summary. Transcripts can be corrected with **Edit transcript**; search uses the corrected text, and an existing summary is left as it was. Clearing a transcript preserves its summary and metadata. Clearing either field cancels pending summarization so late results cannot restore cleared content. Items transcribed by this version also show the recording length, the original file size, and whether speaker labels were requested; older items leave these details blank. Individual items or the entire history can be deleted. TXT, CSV, and JSON exports read a consistent database snapshot and include the provider and the same recording details.
 
 Text sharing uses inline text below 128 KiB UTF-8 and a temporary text file for larger results. Shared text files expire after 24 hours and are removed during maintenance or the next file share. Oversized clipboard requests show an error with a sharing alternative.
 

@@ -15,6 +15,9 @@ sealed interface HistoryMsg {
     data class SaveContent(val historyId: Int, val field: HistoryContentField, val destination: Uri) : HistoryMsg
     data class ClearSummary(val item: TranscriptionHistory) : HistoryMsg
     data class ClearTranscript(val item: TranscriptionHistory) : HistoryMsg
+    data class EditTranscript(val item: TranscriptionHistory) : HistoryMsg
+    data object SaveTranscriptEdit : HistoryMsg
+    data object CancelTranscriptEdit : HistoryMsg
     data class DeleteItem(val item: TranscriptionHistory) : HistoryMsg
     data object DeleteAll : HistoryMsg
 }

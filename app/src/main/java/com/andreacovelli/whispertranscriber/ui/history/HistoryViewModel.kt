@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.annotation.StringRes
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
@@ -48,6 +49,14 @@ sealed interface HistoryUiEvent {
     data class Toast(@param:StringRes val messageId: Int) : HistoryUiEvent
 }
 
+/**
+ * A transcript being corrected. The draft lives in the view model rather than in saved instance state, so a
+ * long transcript survives rotation without being written into a Bundle.
+ */
+class TranscriptEditor(val historyId: Int, originalText: String, val hasSummary: Boolean) {
+    val text = TextFieldState(originalText)
+}
+
 @HiltViewModel
 class HistoryViewModel @Inject constructor(
     @param:ApplicationContext private val appContext: Context,
@@ -61,6 +70,9 @@ class HistoryViewModel @Inject constructor(
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _transcriptEditor = MutableStateFlow<TranscriptEditor?>(null)
+    val transcriptEditor: StateFlow<TranscriptEditor?> = _transcriptEditor.asStateFlow()
 
     private val _uiEvents = Channel<HistoryUiEvent>()
     val uiEvents = _uiEvents.receiveAsFlow()
@@ -136,6 +148,11 @@ class HistoryViewModel @Inject constructor(
             is HistoryMsg.SaveContent -> saveContent(msg.historyId, msg.field, msg.destination)
             is HistoryMsg.ClearSummary -> clearSummary(msg.item)
             is HistoryMsg.ClearTranscript -> clearTranscript(msg.item)
+            is HistoryMsg.EditTranscript ->
+                _transcriptEditor.value =
+                    TranscriptEditor(msg.item.id, msg.item.text, hasSummary = msg.item.summary.isNotBlank())
+            HistoryMsg.SaveTranscriptEdit -> saveTranscriptEdit()
+            HistoryMsg.CancelTranscriptEdit -> _transcriptEditor.value = null
             is HistoryMsg.DeleteItem -> deleteHistoryItem(msg.item)
             HistoryMsg.DeleteAll -> deleteAllHistory()
         }
@@ -177,6 +194,19 @@ class HistoryViewModel @Inject constructor(
     fun clearTranscript(item: TranscriptionHistory) {
         viewModelScope.launch {
             queueService.clearHistoryContent(item.id, HistoryContentField.TRANSCRIPT)
+        }
+    }
+
+    // A blank draft is rejected rather than saved: clearing a transcript has its own action, which also
+    // cancels pending summarization.
+    private fun saveTranscriptEdit() {
+        val editor = _transcriptEditor.value ?: return
+        val text = editor.text.text.toString().trim()
+        if (text.isEmpty()) return
+        _transcriptEditor.value = null
+        viewModelScope.launch {
+            historyRepository.updateText(editor.historyId, text)
+            _uiEvents.send(HistoryUiEvent.Toast(R.string.history_transcript_updated))
         }
     }
 

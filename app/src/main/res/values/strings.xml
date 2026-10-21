@@ -154,6 +154,11 @@
     <string name="history_item_speaker_labels">Speaker labels</string>
     <string name="history_item_show_more">Show more</string>
     <string name="history_item_show_less">Show less</string>
+    <string name="history_edit_transcript">Edit transcript</string>
+    <string name="history_edit_transcript_label">Transcript</string>
+    <string name="history_edit_transcript_summary_note">The summary is not updated to match your changes.</string>
+    <string name="history_edit_transcript_save">Save</string>
+    <string name="history_transcript_updated">Transcript updated.</string>
     <string name="history_item_summary_model">Summary model: %1$s</string>
     <string name="api_key_replace_saved_optional">Replace saved key (optional)</string>
     <string name="api_key_hide">Hide API key</string>

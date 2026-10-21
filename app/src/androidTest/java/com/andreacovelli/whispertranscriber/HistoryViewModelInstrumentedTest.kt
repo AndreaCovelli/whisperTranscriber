@@ -1,5 +1,6 @@
 package com.andreacovelli.whispertranscriber
 
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.core.net.toUri
 import androidx.lifecycle.viewModelScope
 import androidx.paging.AsyncPagingDataDiffer
@@ -159,6 +160,44 @@ class HistoryViewModelInstrumentedTest {
         }.orEmpty()
         assertEquals("Summary one", items.single { it.id == transcriptCleared }.summary)
         assertEquals("Transcript two", items.single { it.id == summaryCleared }.text)
+    }
+
+    @Test
+    fun editTranscript_savesTheTrimmedDraftAndReindexesSearch() = runBlocking {
+        val edited = insertHistory("Teh quarterly revue", summary = "Kept summary")
+        awaitVisible(edited)
+
+        dispatch(HistoryMsg.EditTranscript(checkNotNull(history(edited))))
+        val editor = checkNotNull(viewModel.transcriptEditor.value)
+        assertEquals("Teh quarterly revue", editor.text.text.toString())
+        assertTrue(editor.hasSummary)
+        withContext(Dispatchers.Main) { editor.text.setTextAndPlaceCursorAtEnd("  The quarterly review\n") }
+        dispatch(HistoryMsg.SaveTranscriptEdit)
+
+        assertEquals(HistoryUiEvent.Toast(R.string.history_transcript_updated), awaitEvent())
+        assertNull(viewModel.transcriptEditor.value)
+        assertEquals("The quarterly review", history(edited)?.text)
+        assertEquals("Kept summary", history(edited)?.summary)
+        dispatch(HistoryMsg.SetSearchQuery("review"))
+        awaitVisible(edited)
+        dispatch(HistoryMsg.SetSearchQuery("revue"))
+        awaitVisible()
+    }
+
+    @Test
+    fun editTranscript_keepsTheOriginalWhenCancelledOrBlank() = runBlocking {
+        val item = insertHistory("Original transcript")
+
+        dispatch(HistoryMsg.EditTranscript(checkNotNull(history(item))))
+        withContext(Dispatchers.Main) {
+            checkNotNull(viewModel.transcriptEditor.value).text.setTextAndPlaceCursorAtEnd("   ")
+        }
+        dispatch(HistoryMsg.SaveTranscriptEdit)
+        assertTrue(viewModel.transcriptEditor.value != null)
+
+        dispatch(HistoryMsg.CancelTranscriptEdit)
+        assertNull(viewModel.transcriptEditor.value)
+        assertEquals("Original transcript", history(item)?.text)
     }
 
     @Test
