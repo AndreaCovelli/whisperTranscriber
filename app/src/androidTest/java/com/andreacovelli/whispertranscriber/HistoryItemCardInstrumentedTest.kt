@@ -149,28 +149,43 @@ class HistoryItemCardInstrumentedTest {
     }
 
     @Test
-    fun historyItemWithRecordingDetails_showsDurationSizeAndSpeakerLabels() {
+    fun historyItemWithRecordingDetails_showsProviderDurationSizeAndSpeakerLabels() {
         val item = TranscriptionHistory(
             id = 3,
             text = "Speaker A: Hello",
             language = "en",
             model = "MAI-Transcribe-2",
             displayName = "details.wav",
+            providerName = "MICROSOFT_MAI_TRANSCRIBE",
             durationMs = 125_000L,
             sourceSizeBytes = 3_000_000L,
             speakerLabels = true,
         )
+        val unknownProvider = item.copy(
+            id = 6,
+            displayName = "older.wav",
+            providerName = "RETIRED_PROVIDER",
+            durationMs = 60_000L,
+            sourceSizeBytes = 0L,
+            speakerLabels = false,
+        )
 
         composeRule.setContent {
             MaterialTheme {
-                HistoryItemCard(item = item, expanded = false, onToggleExpand = {}, actions = noOpActions())
+                androidx.compose.foundation.layout.Column {
+                    listOf(item, unknownProvider).forEach { history ->
+                        HistoryItemCard(item = history, expanded = false, onToggleExpand = {}, actions = noOpActions())
+                    }
+                }
             }
         }
         composeRule.waitForIdle()
 
+        val provider = context.getString(R.string.provider_label_microsoft)
         val size = Formatter.formatShortFileSize(context, item.sourceSizeBytes)
         val speakerLabels = context.getString(R.string.history_item_speaker_labels)
-        composeRule.onNodeWithText("2:05 · $size · $speakerLabels").assertExists()
+        composeRule.onNodeWithText("$provider · 2:05 · $size · $speakerLabels").assertExists()
+        composeRule.onNodeWithText("1:00").assertExists()
     }
 
     @Test

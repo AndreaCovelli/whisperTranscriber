@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.data.TranscriptionHistory
 import com.andreacovelli.whispertranscriber.history.formatRecordingDuration
+import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -178,13 +179,17 @@ fun HistoryItemCard(
     }
 }
 
-/** Duration, original size, and speaker labels, as far as they were recorded. The model line names the provider. */
+/** Provider, duration, original size, and speaker labels, as far as they were recorded. */
 @Composable
 private fun RecordingDetailsLine(item: TranscriptionHistory) {
     val context = LocalContext.current
+    // Older items have no provider, and an unrecognized name is hidden rather than guessed.
+    val provider = TranscriptionProvider.entries.find { it.name == item.providerName }
+        ?.let { stringResource(providerFamilyLabel(it)) }
     val speakerLabels = stringResource(R.string.history_item_speaker_labels).takeIf { item.speakerLabels }
-    val details = remember(item.durationMs, item.sourceSizeBytes, speakerLabels) {
+    val details = remember(provider, item.durationMs, item.sourceSizeBytes, speakerLabels) {
         listOfNotNull(
+            provider,
             item.durationMs.takeIf { it > 0 }?.let(::formatRecordingDuration),
             item.sourceSizeBytes.takeIf { it > 0 }?.let { Formatter.formatShortFileSize(context, it) },
             speakerLabels,
