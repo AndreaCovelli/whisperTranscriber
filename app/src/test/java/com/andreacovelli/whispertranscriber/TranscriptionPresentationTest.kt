@@ -278,24 +278,61 @@ class TranscriptionPresentationTest {
     }
 
     @Test
-    fun resolveMicrosoftSpeechErrorMessage_showsServiceReasonForRejectedRequest() {
+    fun resolveMicrosoftSpeechErrorMessage_mapsDetailedCodeOfTopLevelError() {
         assertEquals(
-            UserMessage(R.string.microsoft_speech_request_rejected, listOf(400, "Invalid definition.")),
+            UserMessage(R.string.microsoft_speech_audio_format_unsupported),
             resolveMicrosoftSpeechErrorMessage(
                 400,
-                """{"error":{"code":"InvalidArgument","message":" Invalid definition. "}}""",
+                """{"code":"InvalidRequest","message":"Audio format not supported.",""" +
+                    """"innerError":{"code":"InvalidAudioFormat","message":"Unsupported format."}}""",
             ),
         )
     }
 
     @Test
-    fun resolveMicrosoftSpeechErrorMessage_usesInnerErrorReasonWhenTopLevelMessageIsMissing() {
+    fun resolveMicrosoftSpeechErrorMessage_mapsCodeOfWrappedError() {
         assertEquals(
-            UserMessage(R.string.microsoft_speech_request_rejected, listOf(400, "Unsupported audio format.")),
+            UserMessage(R.string.microsoft_speech_access_denied),
+            resolveMicrosoftSpeechErrorMessage(403, """{"error":{"code":"Forbidden","message":"Access denied."}}"""),
+        )
+    }
+
+    @Test
+    fun resolveMicrosoftSpeechErrorMessage_prefersMostDetailedKnownCode() {
+        assertEquals(
+            UserMessage(R.string.microsoft_speech_language_not_identified),
             resolveMicrosoftSpeechErrorMessage(
                 400,
-                """{"error":{"innerError":{"message":"Unsupported audio format."}}}""",
+                """{"code":"UnsupportedMediaType","innerError":{"code":"InvalidPayload",""" +
+                    """"innerError":{"code":"NoLanguageIdentified"}}}""",
             ),
+        )
+    }
+
+    @Test
+    fun resolveMicrosoftSpeechErrorMessage_keepsGenericMessageForUnmappedCode() {
+        assertEquals(
+            UserMessage(
+                R.string.http_error_unexpected,
+                listOf(400, UserMessage(R.string.provider_name_microsoft_speech)),
+            ),
+            resolveMicrosoftSpeechErrorMessage(400, """{"code":"InvalidArgument","message":"Invalid definition."}"""),
+        )
+    }
+
+    @Test
+    fun resolveMicrosoftSpeechErrorMessage_keepsRetryableMessagesForRetriedStatuses() {
+        assertEquals(
+            UserMessage(R.string.http_error_rate_limited),
+            resolveMicrosoftSpeechErrorMessage(429, """{"code":"TooManyRequests","message":"Slow down."}"""),
+        )
+        assertEquals(
+            UserMessage(R.string.microsoft_speech_resource_exhausted),
+            resolveMicrosoftSpeechErrorMessage(429, """{"code":"QuotaViolation","message":"Quota exceeded."}"""),
+        )
+        assertEquals(
+            UserMessage(R.string.http_error_server, listOf(503, UserMessage(R.string.provider_name_microsoft_speech))),
+            resolveMicrosoftSpeechErrorMessage(503, """{"code":"InvalidAudioFormat"}"""),
         )
     }
 

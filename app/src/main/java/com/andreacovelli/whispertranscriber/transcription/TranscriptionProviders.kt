@@ -319,23 +319,64 @@ internal fun friendlyHttpError(code: Int, provider: UserMessage): UserMessage = 
     else -> UserMessage(R.string.http_error_unexpected, listOf(code, provider))
 }
 
-private const val MAX_MICROSOFT_SPEECH_SERVICE_MESSAGE_LENGTH = 300
-
 internal fun resolveMicrosoftSpeechErrorMessage(code: Int, bodyText: String): UserMessage {
-    val serviceMessage = extractMicrosoftSpeechServiceMessage(bodyText)
+    val serviceError = parseMicrosoftSpeechServiceError(bodyText)
     return when {
         code == 401 -> UserMessage(R.string.microsoft_speech_unauthorized)
         code == 404 -> UserMessage(R.string.microsoft_speech_endpoint_not_found)
-        code == 429 && isMicrosoftSpeechResourceExhaustedMessage(serviceMessage) ->
+        code == 429 && isMicrosoftSpeechResourceExhaustedMessage(serviceError?.message) ->
             UserMessage(R.string.microsoft_speech_resource_exhausted)
-        // Rejected requests are not retried, so show Microsoft's reason instead of a bare status code.
-        code in 400..499 && code != 429 && serviceMessage != null -> UserMessage(
-            R.string.microsoft_speech_request_rejected,
-            listOf(code, serviceMessage.trim().take(MAX_MICROSOFT_SPEECH_SERVICE_MESSAGE_LENGTH)),
-        )
+        // 429 and 5xx responses are retried, so only terminal rejections take the service's reason.
+        code in 400..499 && code != 429 ->
+            serviceError?.codes?.firstNotNullOfOrNull(MICROSOFT_SPEECH_ERROR_MESSAGES::get)
+                ?: friendlyHttpError(code, UserMessage(R.string.provider_name_microsoft_speech))
         else -> friendlyHttpError(code, UserMessage(R.string.provider_name_microsoft_speech))
     }
 }
+
+/** App messages for Microsoft Speech error codes, both high-level codes and detailed inner codes. */
+private val MICROSOFT_SPEECH_ERROR_MESSAGES: Map<String, UserMessage> = buildMap {
+    val audioFormat = UserMessage(R.string.microsoft_speech_audio_format_unsupported)
+    val languageNotIdentified = UserMessage(R.string.microsoft_speech_language_not_identified)
+    val languageUnsupported = UserMessage(R.string.microsoft_speech_language_unsupported)
+    val modelUnavailable = UserMessage(R.string.microsoft_speech_model_unavailable)
+    val accessDenied = UserMessage(R.string.microsoft_speech_access_denied)
+    listOf("InvalidAudioFormat", "UnsupportedMediaType", "BadChannelConfiguration").forEach { put(it, audioFormat) }
+    put("EmptyAudioFile", UserMessage(R.string.microsoft_speech_audio_empty))
+    put("AudioLengthLimitExceeded", UserMessage(R.string.microsoft_speech_audio_too_long))
+    listOf("NoLanguageIdentified", "MultipleLanguagesIdentified").forEach { put(it, languageNotIdentified) }
+    listOf("InvalidLocale", "UnsupportedLanguageCode").forEach { put(it, languageUnsupported) }
+    listOf("InvalidModel", "ModelDeprecated").forEach { put(it, modelUnavailable) }
+    put("QuotaViolation", UserMessage(R.string.microsoft_speech_quota_exhausted))
+    listOf("Forbidden", "InvalidPermissions", "InvalidSubscription", "SubscriptionNotFound").forEach {
+        put(it, accessDenied)
+    }
+}
+
+/** A Microsoft Speech error: [codes] runs from the most detailed inner code to the high-level code. */
+internal data class MicrosoftSpeechServiceError(val codes: List<String>, val message: String?)
+
+/**
+ * Reads the error in a Microsoft Speech response body, or null when the body is not a JSON error. The
+ * transcription API returns the error object at the top level, while gateway errors wrap it in "error".
+ */
+internal fun parseMicrosoftSpeechServiceError(bodyText: String): MicrosoftSpeechServiceError? {
+    val body = try {
+        JSONObject(bodyText)
+    } catch (_: JSONException) {
+        return null
+    }
+    val errors = generateSequence(body.optJSONObject("error") ?: body) { it.optJSONObject("innerError") }
+        .take(MAX_MICROSOFT_SPEECH_INNER_ERROR_DEPTH)
+        .toList()
+    val codes = errors.mapNotNull { it.optNonBlankString("code") }.asReversed()
+    val message = errors.firstNotNullOfOrNull { it.optNonBlankString("message") }
+    return if (codes.isEmpty() && message == null) null else MicrosoftSpeechServiceError(codes, message)
+}
+
+private const val MAX_MICROSOFT_SPEECH_INNER_ERROR_DEPTH = 8
+
+private fun JSONObject.optNonBlankString(name: String): String? = (opt(name) as? String)?.takeIf(String::isNotBlank)
 
 internal fun parseMicrosoftSpeechTranscriptText(response: JSONObject): String {
     if (!response.has("combinedPhrases") && !response.has("phrases")) {
@@ -436,16 +477,6 @@ internal fun parseMicrosoftSpeechLanguage(response: JSONObject): String = respon
     ?.let(::selectDominantMicrosoftSpeechLocale)
     .orEmpty()
     .ifBlank { "und" }
-
-internal fun extractMicrosoftSpeechServiceMessage(bodyText: String): String? = runCatching {
-    val body = JSONObject(bodyText)
-    val error = body.optJSONObject("error")
-    error?.optString("message")
-        ?.takeIf(String::isNotBlank)
-        ?: error?.optJSONObject("innerError")
-            ?.optString("message")
-            ?.takeIf(String::isNotBlank)
-}.getOrNull()
 
 internal fun isMicrosoftSpeechResourceExhaustedMessage(message: String?): Boolean {
     val normalized = message.orEmpty().lowercase()
