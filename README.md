@@ -9,6 +9,7 @@ Share one or more audio files from a file manager or audio player to queue them 
 
 - **Multi-provider transcription** — choose between Microsoft MAI Transcribe 2 or Gemini (Flash Lite, Flash, Pro, or a custom model)
 - **Batch processing** — share multiple audio files at once; jobs are staged locally, queued, and processed sequentially
+- **Long recordings** — audio longer than a provider handles well in one request is split at pauses and transcribed in parts
 - **AI summarization** — generate summaries manually or automatically after transcription, with a separately selected Gemini model (requires a Gemini API key)
 - **Speaker labels** — optionally label distinguishable speakers in Microsoft MAI Transcribe or Gemini transcripts
 - **Background sharing** — stay in the sharing app while audio is queued, and receive the transcript or summary in a result notification
@@ -200,7 +201,7 @@ The Microsoft endpoint setting accepts either an Azure Speech region such as `ea
 3. The API processes the audio and returns the full transcript in the response.
 4. The finished transcript is saved to local history.
 
-Microsoft MAI inputs must be strictly smaller than **250,000,000 bytes** and shorter than **two hours**. The app inspects both native and converted inputs before upload.
+Each Microsoft MAI request must be strictly smaller than **250,000,000 bytes** and shorter than **two hours**. The app inspects both native and converted inputs before upload. Recordings of two hours or more are split into parts (see below).
 
 ### Gemini flow
 
@@ -211,6 +212,15 @@ Microsoft MAI inputs must be strictly smaller than **250,000,000 bytes** and sho
 Measurable native and converted audio is limited to 9.5 hours. Blocked, truncated,
 or malformed responses preserve staged audio for retry. Transient failures allow
 up to three automatic retries.
+
+### Long recordings
+
+Recordings of one hour or more (Gemini) or two hours or more (Microsoft) are converted
+to 16 kHz mono WAV and split into balanced parts of at most 60 minutes (Gemini) or
+110 minutes (Microsoft), up to 9.5 hours in total. Each cut is placed at the quietest
+moment within two minutes of its ideal position. Parts are transcribed one at a time
+and joined in order. Speaker labels restart in each part, so diarized transcripts mark
+where each part begins. A failed part retries the whole recording.
 
 ### Audio conversion
 
