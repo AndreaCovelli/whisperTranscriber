@@ -79,9 +79,11 @@ class TranscriptionAudioPreparer @Inject constructor(
         usingMicrosoftSpeech: Boolean,
         listener: AudioPreparationListener,
     ): PreparedAudioInput {
-        val conversionNeeded = inputMimeType == null ||
-            (usingMicrosoftSpeech && shouldConvertForMicrosoftSpeech(inputMimeType)) ||
-            (!usingMicrosoftSpeech && inputMimeType !in TranscriptionMimeSupport.geminiNativeUploadMimeTypes)
+        // Checked on every run, so jobs queued under a mislabeled type are corrected on retry.
+        val mimeType = TranscriptionMimeSupport.resolveUploadMimeType(inputMimeType, readContainerHeader(uri))
+        val conversionNeeded = mimeType == null ||
+            (usingMicrosoftSpeech && shouldConvertForMicrosoftSpeech(mimeType)) ||
+            (!usingMicrosoftSpeech && mimeType !in TranscriptionMimeSupport.geminiNativeUploadMimeTypes)
         val policy = AudioChunkingPolicy.forProvider(usingMicrosoftSpeech)
         // Splitting works on decoded PCM, so long recordings are converted even when the format is supported.
         val chunkingNeeded = !conversionNeeded && policy.requiresChunking(
@@ -89,9 +91,29 @@ class TranscriptionAudioPreparer @Inject constructor(
                 ?: -1L,
         )
         return if (conversionNeeded || chunkingNeeded) {
-            prepareConvertedAudio(jobId, uri, inputMimeType, usingMicrosoftSpeech, chunkingNeeded, listener)
+            prepareConvertedAudio(jobId, uri, mimeType, usingMicrosoftSpeech, chunkingNeeded, listener)
         } else {
-            prepareNativeAudio(jobId, uri, inputMimeType, usingMicrosoftSpeech, listener)
+            prepareNativeAudio(jobId, uri, mimeType, usingMicrosoftSpeech, listener)
+        }
+    }
+
+    /** Reads the first bytes of [uri]; an unreadable input yields none and fails later with its real error. */
+    private suspend fun readContainerHeader(uri: Uri): ByteArray = withContext(ioDispatcher) {
+        try {
+            applicationContext.contentResolver.openInputStream(uri)?.use { input ->
+                val header = ByteArray(TranscriptionMimeSupport.CONTAINER_SIGNATURE_BYTES)
+                var bytesRead = 0
+                while (bytesRead < header.size) {
+                    val count = input.read(header, bytesRead, header.size - bytesRead)
+                    if (count < 0) break
+                    bytesRead += count
+                }
+                header.copyOf(bytesRead)
+            } ?: ByteArray(0)
+        } catch (_: IOException) {
+            ByteArray(0)
+        } catch (_: SecurityException) {
+            ByteArray(0)
         }
     }
 

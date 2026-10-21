@@ -1,11 +1,13 @@
 package com.andreacovelli.whispertranscriber
 
+import android.net.Uri
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.andreacovelli.whispertranscriber.media.AudioChunk
 import com.andreacovelli.whispertranscriber.media.CONVERTED_AUDIO_SAMPLE_RATE
 import com.andreacovelli.whispertranscriber.media.PCM16_BYTES_PER_SAMPLE
 import com.andreacovelli.whispertranscriber.media.Pcm16WavWriter
+import com.andreacovelli.whispertranscriber.transcription.AudioPreparationListener
 import com.andreacovelli.whispertranscriber.transcription.PreparedAudioInput
 import com.andreacovelli.whispertranscriber.transcription.TranscriptionAudioPreparer
 import com.andreacovelli.whispertranscriber.transcription.inspectAudioFile
@@ -73,6 +75,38 @@ class AudioChunkPreparationInstrumentedTest {
             part?.tempFileToClean?.let(preparer::deleteTemporaryFile)
             source.delete()
         }
+    }
+
+    @Test
+    fun prepare_usesDetectedContainerWhenDeclaredTypeIsWrong() = runBlocking {
+        val source = File.createTempFile("mislabeled_source_", ".mp3", context.cacheDir)
+        var prepared: PreparedAudioInput? = null
+        try {
+            writeSilentWav(source, sampleCount = second)
+
+            // Uploaded as-is, WAV bytes declared as MP3 are rejected by Microsoft; WAV input is re-encoded.
+            prepared = preparer.prepare(
+                jobId = 7,
+                uri = Uri.fromFile(source),
+                inputMimeType = "audio/mpeg",
+                usingMicrosoftSpeech = true,
+                listener = NoOpPreparationListener,
+            )
+
+            val microsoftInput = prepared as PreparedAudioInput.MicrosoftSpeech
+            assertEquals("audio/wav", microsoftInput.mimeType)
+            assertTrue(microsoftInput.file != source)
+            assertEquals(microsoftInput.file, microsoftInput.tempFileToClean)
+        } finally {
+            prepared?.tempFileToClean?.let(preparer::deleteTemporaryFile)
+            source.delete()
+        }
+    }
+
+    private object NoOpPreparationListener : AudioPreparationListener {
+        override suspend fun onStatus(status: UserMessage, progress: Float?) = Unit
+
+        override suspend fun onNotification(text: UserMessage) = Unit
     }
 
     private fun writeSilentWav(file: File, sampleCount: Long) {
