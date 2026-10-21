@@ -4,6 +4,7 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.UserMessage
+import com.andreacovelli.whispertranscriber.media.firstAudioTrack
 import com.andreacovelli.whispertranscriber.requireUserFacing
 import java.io.File
 
@@ -56,10 +57,7 @@ internal fun inspectAudioFile(file: File): AudioInspection {
     val extractor = MediaExtractor()
     return try {
         extractor.setDataSource(file.absolutePath)
-        val durationUs = (0 until extractor.trackCount)
-            .asSequence()
-            .map(extractor::getTrackFormat)
-            .firstOrNull { format -> format.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true }
+        val durationUs = extractor.firstAudioTrack()?.value
             ?.takeIf { format -> format.containsKey(MediaFormat.KEY_DURATION) }
             ?.getLong(MediaFormat.KEY_DURATION)
             ?: -1L

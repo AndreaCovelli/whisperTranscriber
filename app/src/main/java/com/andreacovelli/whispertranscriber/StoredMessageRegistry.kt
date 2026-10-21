@@ -17,6 +17,7 @@ internal object StoredMessageRegistry {
         "background_share_waiting_to_start_notification_body" to
             R.string.background_share_waiting_to_start_notification_body,
         "conversion_audio_too_long" to R.string.conversion_audio_too_long,
+        "conversion_audio_unreadable" to R.string.conversion_audio_unreadable,
         "conversion_insufficient_storage" to R.string.conversion_insufficient_storage,
         "conversion_no_audio_track" to R.string.conversion_no_audio_track,
         "conversion_no_decoder" to R.string.conversion_no_decoder,

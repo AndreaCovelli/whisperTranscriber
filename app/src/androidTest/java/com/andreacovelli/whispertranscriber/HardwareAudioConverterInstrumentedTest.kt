@@ -20,6 +20,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -34,6 +36,7 @@ class HardwareAudioConverterInstrumentedTest {
         private const val AAC_INPUT_SAMPLE_RATE = 48_000
         private const val AAC_INPUT_CHANNELS = 2
         private const val OPUS_INPUT_SAMPLE_RATE = 48_000
+        private const val AMR_INPUT_SAMPLE_RATE = 8_000
     }
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -200,6 +203,142 @@ class HardwareAudioConverterInstrumentedTest {
         }
     }
 
+    @Test
+    fun convertTo16kMonoWav_reportsProgressForRawAdtsAacInput() = runBlocking {
+        val inputFile = File.createTempFile("converter_input_", ".aac", context.cacheDir)
+        val outputFile = File.createTempFile("converter_output_", ".wav", context.cacheDir)
+        try {
+            val amplitudes = doubleArrayOf(0.2, 0.4, 0.6, 0.8)
+            writeAdtsAac(inputFile, generateSteppedSine(AAC_INPUT_SAMPLE_RATE, AAC_INPUT_CHANNELS, amplitudes))
+            val progress = mutableListOf<Float>()
+
+            val result = HardwareAudioConverter.convertTo16kMonoWav(
+                context = context,
+                inputUri = inputFile.toUri(),
+                outputFile = outputFile,
+                ioDispatcher = Dispatchers.IO,
+                onProgress = { value -> progress += value },
+            )
+
+            // Progress needs the duration, which ADTS only reveals by scanning every frame.
+            assertEquals(0f, progress.first())
+            assertTrue("Progress $progress", progress.any { value -> value > 0f && value < 1f })
+            assertEquals(1f, progress.last())
+            val expectedDurationUs = amplitudes.size * 1_000_000L
+            assertTrue(
+                "Converted ${result.durationUs} us of $expectedDurationUs us",
+                abs(result.durationUs - expectedDurationUs) <= 100_000L,
+            )
+            assertSecondsGetLouder(readWavInfo(outputFile), amplitudes.size)
+        } finally {
+            inputFile.delete()
+            outputFile.delete()
+        }
+    }
+
+    @Test
+    fun convertTo16kMonoWav_rejectsTooLongRawAdtsAacBeforeDecoding() {
+        val inputFile = File.createTempFile("converter_input_", ".aac", context.cacheDir)
+        try {
+            writeAdtsAac(
+                inputFile,
+                generatePcm16SineWave(AAC_INPUT_SAMPLE_RATE, AAC_INPUT_CHANNELS, durationMs = 4_000),
+            )
+
+            assertRejectedAsTooLong(inputFile, maximumDurationUsExclusive = 2_000_000L)
+        } finally {
+            inputFile.delete()
+        }
+    }
+
+    @Test
+    fun convertTo16kMonoWav_convertsRawAmrNbInputWithProgress() = runBlocking {
+        val inputFile = File.createTempFile("converter_input_", ".amr", context.cacheDir)
+        val outputFile = File.createTempFile("converter_output_", ".wav", context.cacheDir)
+        try {
+            writeAmrNb(inputFile, generatePcm16SineWave(AMR_INPUT_SAMPLE_RATE, OUTPUT_CHANNELS, durationMs = 3_000))
+            val progress = mutableListOf<Float>()
+
+            val result = HardwareAudioConverter.convertTo16kMonoWav(
+                context = context,
+                inputUri = inputFile.toUri(),
+                outputFile = outputFile,
+                ioDispatcher = Dispatchers.IO,
+                onProgress = { value -> progress += value },
+            )
+
+            assertEquals(0f, progress.first())
+            assertEquals(1f, progress.last())
+            assertEquals(OUTPUT_SAMPLE_RATE, readWavInfo(outputFile).sampleRate)
+            assertTrue("Converted ${result.durationUs} us", abs(result.durationUs - 3_000_000L) <= 100_000L)
+        } finally {
+            inputFile.delete()
+            outputFile.delete()
+        }
+    }
+
+    @Test
+    fun convertTo16kMonoWav_rejectsTooLongRawAmrNbBeforeDecoding() {
+        val inputFile = File.createTempFile("converter_input_", ".amr", context.cacheDir)
+        try {
+            writeAmrNb(inputFile, generatePcm16SineWave(AMR_INPUT_SAMPLE_RATE, OUTPUT_CHANNELS, durationMs = 4_000))
+
+            assertRejectedAsTooLong(inputFile, maximumDurationUsExclusive = 2_000_000L)
+        } finally {
+            inputFile.delete()
+        }
+    }
+
+    @Test
+    fun convertTo16kMonoWav_keepsTheAudioBeforeTheCutInATruncatedRecording() = runBlocking {
+        val inputFile = File.createTempFile("converter_input_", ".aac", context.cacheDir)
+        val outputFile = File.createTempFile("converter_output_", ".wav", context.cacheDir)
+        try {
+            writeAdtsAac(
+                inputFile,
+                generatePcm16SineWave(AAC_INPUT_SAMPLE_RATE, AAC_INPUT_CHANNELS, durationMs = 4_000),
+            )
+            // Cut a few bytes into a frame, like a recording interrupted mid-write.
+            val bytes = inputFile.readBytes()
+            inputFile.writeBytes(bytes.copyOf(bytes.size / 2 + 3))
+
+            val result = HardwareAudioConverter.convertTo16kMonoWav(
+                context = context,
+                inputUri = inputFile.toUri(),
+                outputFile = outputFile,
+                ioDispatcher = Dispatchers.IO,
+            )
+
+            assertTrue("Converted ${result.durationUs} us", result.durationUs in 1_700_000L..2_300_000L)
+        } finally {
+            inputFile.delete()
+            outputFile.delete()
+        }
+    }
+
+    /** Without a duration the converter would decode until the output cap and report a different error. */
+    private fun assertRejectedAsTooLong(inputFile: File, maximumDurationUsExclusive: Long) {
+        val outputFile = File.createTempFile("converter_output_", ".wav", context.cacheDir)
+        try {
+            val error = assertThrows(UserFacingIllegalArgumentException::class.java) {
+                runBlocking {
+                    HardwareAudioConverter.convertTo16kMonoWav(
+                        context = context,
+                        inputUri = inputFile.toUri(),
+                        outputFile = outputFile,
+                        ioDispatcher = Dispatchers.IO,
+                        maximumDurationUsExclusive = maximumDurationUsExclusive,
+                    )
+                }
+            }
+
+            assertEquals(R.string.conversion_audio_too_long, error.userMessage.id)
+            assertFalse(outputFile.exists())
+        } finally {
+            outputFile.delete()
+        }
+    }
+
     /** A 440 Hz tone whose amplitude steps to the next value of [amplitudes] every second. */
     private fun generateSteppedSine(sampleRate: Int, channelCount: Int, amplitudes: DoubleArray): ByteArray {
         val frameCount = sampleRate * amplitudes.size
@@ -311,6 +450,54 @@ class HardwareAudioConverterInstrumentedTest {
         )
     }
 
+    /** Raw ADTS AAC, as some recorders save .aac files: each access unit behind its own 7-byte header. */
+    private fun writeAdtsAac(file: File, pcm16: ByteArray) {
+        FileOutputStream(file).use { output ->
+            encodeAudio(
+                pcm16 = pcm16,
+                mimeType = MediaFormat.MIMETYPE_AUDIO_AAC,
+                sampleRate = AAC_INPUT_SAMPLE_RATE,
+                channelCount = AAC_INPUT_CHANNELS,
+                onOutputFormat = {},
+                onAccessUnit = { accessUnit, _ ->
+                    output.write(adtsHeader(accessUnit.size))
+                    output.write(accessUnit)
+                },
+            )
+        }
+    }
+
+    private fun adtsHeader(payloadBytes: Int): ByteArray {
+        val frameBytes = payloadBytes + 7
+        val profile = 1 // AAC LC
+        val sampleRateIndex = 3 // 48 kHz
+        val channels = AAC_INPUT_CHANNELS
+        return byteArrayOf(
+            0xFF.toByte(),
+            0xF1.toByte(),
+            ((profile shl 6) or (sampleRateIndex shl 2) or (channels shr 2)).toByte(),
+            (((channels and 3) shl 6) or (frameBytes shr 11)).toByte(),
+            (frameBytes shr 3).toByte(),
+            (((frameBytes and 7) shl 5) or 0x1F).toByte(),
+            0xFC.toByte(),
+        )
+    }
+
+    /** Raw AMR-NB storage format: the magic number, then the encoder's frames with their header bytes. */
+    private fun writeAmrNb(file: File, pcm16: ByteArray) {
+        FileOutputStream(file).use { output ->
+            output.write("#!AMR\n".toByteArray(Charsets.US_ASCII))
+            encodeAudio(
+                pcm16 = pcm16,
+                mimeType = MediaFormat.MIMETYPE_AUDIO_AMR_NB,
+                sampleRate = AMR_INPUT_SAMPLE_RATE,
+                channelCount = OUTPUT_CHANNELS,
+                onOutputFormat = {},
+                onAccessUnit = { accessUnit, _ -> output.write(accessUnit) },
+            )
+        }
+    }
+
     private fun writeEncodedAudio(
         file: File,
         pcm16: ByteArray,
@@ -319,17 +506,53 @@ class HardwareAudioConverterInstrumentedTest {
         sampleRate: Int,
         channelCount: Int,
     ) {
+        val muxer = MediaMuxer(file.absolutePath, muxerFormat)
+        var trackIndex = -1
+        val bufferInfo = MediaCodec.BufferInfo()
+        try {
+            encodeAudio(
+                pcm16 = pcm16,
+                mimeType = mimeType,
+                sampleRate = sampleRate,
+                channelCount = channelCount,
+                onOutputFormat = { format ->
+                    trackIndex = muxer.addTrack(format)
+                    muxer.start()
+                },
+                onAccessUnit = { accessUnit, presentationTimeUs ->
+                    bufferInfo.set(0, accessUnit.size, presentationTimeUs, 0)
+                    muxer.writeSampleData(trackIndex, ByteBuffer.wrap(accessUnit), bufferInfo)
+                },
+            )
+        } finally {
+            if (trackIndex >= 0) {
+                runCatching { muxer.stop() }
+            }
+            runCatching { muxer.release() }
+        }
+    }
+
+    private fun encodeAudio(
+        pcm16: ByteArray,
+        mimeType: String,
+        sampleRate: Int,
+        channelCount: Int,
+        onOutputFormat: (MediaFormat) -> Unit,
+        onAccessUnit: (accessUnit: ByteArray, presentationTimeUs: Long) -> Unit,
+    ) {
         val format = MediaFormat.createAudioFormat(mimeType, sampleRate, channelCount).apply {
             if (mimeType == MediaFormat.MIMETYPE_AUDIO_AAC) {
                 setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
             }
-            setInteger(MediaFormat.KEY_BIT_RATE, if (mimeType == MediaFormat.MIMETYPE_AUDIO_AAC) 128_000 else 64_000)
+            val bitRate = when (mimeType) {
+                MediaFormat.MIMETYPE_AUDIO_AAC -> 128_000
+                MediaFormat.MIMETYPE_AUDIO_AMR_NB -> 12_200
+                else -> 64_000
+            }
+            setInteger(MediaFormat.KEY_BIT_RATE, bitRate)
             setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 16_384)
         }
         val encoder = MediaCodec.createEncoderByType(mimeType)
-        val muxer = MediaMuxer(file.absolutePath, muxerFormat)
-        var muxerStarted = false
-        var trackIndex = -1
         val bytesPerFrame = channelCount * 2
         try {
             encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
@@ -371,11 +594,7 @@ class HardwareAudioConverterInstrumentedTest {
 
                 when (val outputIndex = encoder.dequeueOutputBuffer(bufferInfo, 10_000)) {
                     MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
-                    MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                        trackIndex = muxer.addTrack(encoder.outputFormat)
-                        muxer.start()
-                        muxerStarted = true
-                    }
+                    MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> onOutputFormat(encoder.outputFormat)
                     else -> {
                         if (outputIndex >= 0) {
                             val outputBuffer = requireNotNull(encoder.getOutputBuffer(outputIndex))
@@ -385,7 +604,8 @@ class HardwareAudioConverterInstrumentedTest {
                             if (bufferInfo.size > 0) {
                                 outputBuffer.position(bufferInfo.offset)
                                 outputBuffer.limit(bufferInfo.offset + bufferInfo.size)
-                                muxer.writeSampleData(trackIndex, outputBuffer, bufferInfo)
+                                val accessUnit = ByteArray(bufferInfo.size).also(outputBuffer::get)
+                                onAccessUnit(accessUnit, bufferInfo.presentationTimeUs)
                             }
                             encoder.releaseOutputBuffer(outputIndex, false)
                             if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
@@ -398,10 +618,6 @@ class HardwareAudioConverterInstrumentedTest {
         } finally {
             runCatching { encoder.stop() }
             runCatching { encoder.release() }
-            if (muxerStarted) {
-                runCatching { muxer.stop() }
-            }
-            runCatching { muxer.release() }
         }
     }
 
