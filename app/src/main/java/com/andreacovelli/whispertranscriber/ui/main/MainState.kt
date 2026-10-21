@@ -1,11 +1,14 @@
 package com.andreacovelli.whispertranscriber.ui.main
 
 import android.net.Uri
+import com.andreacovelli.whispertranscriber.QuantityText
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.summary.SummaryStyle
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
+import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_RETRY_SCHEDULED
 import com.andreacovelli.whispertranscriber.ui.components.SummaryStyleChoices
 import com.andreacovelli.whispertranscriber.ui.screens.BatchProgressState
 
@@ -97,8 +100,26 @@ internal object MainReducer {
                 batchProgressState = msg.batchProgressState,
                 jobsLoaded = true,
             ),
-        )
+        ).let(::clearStaleQueuedStatus)
         else -> state
+    }
+
+    // "Queued N files." describes the queue, so it stops applying once nothing is waiting or running.
+    // A pending reveal means the queued jobs may not have reached the presented list yet.
+    private fun clearStaleQueuedStatus(state: MainUiState): MainUiState {
+        val queuedStatus = state.status.args.singleOrNull() as? QuantityText
+        val showsQueuedFiles = state.status.id == R.string.verbatim_text &&
+            queuedStatus?.id == R.plurals.main_queued_files
+        val revealPending = state.jobRevealRequest is JobRevealRequest.AwaitingCreation ||
+            state.jobRevealRequest is JobRevealRequest.AwaitingPresentation
+        val queueActive = state.jobs.any {
+            it.isRunning || it.status == JOB_STATUS_QUEUED || it.status == JOB_STATUS_RETRY_SCHEDULED
+        }
+        return if (showsQueuedFiles && !revealPending && !queueActive) {
+            state.copy(status = UserMessage(R.string.main_waiting_for_audios))
+        } else {
+            state
+        }
     }
 
     private fun requestForegroundShare(state: MainUiState, msg: MainMsg.SharedAudioReceived): MainUiState {
