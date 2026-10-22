@@ -57,8 +57,13 @@
         <item quantity="one">Processing %1$d of %2$d file…</item>
         <item quantity="other">Processing %1$d of %2$d files…</item>
     </plurals>
-    <string name="main_empty_jobs">Pick or share one or more audio files to start transcribing.</string>
+    <string name="main_empty_jobs">Record, pick, or share audio to start transcribing.</string>
     <string name="main_pick_audio">Transcribe file</string>
+    <string name="main_record_audio">Record</string>
+    <string name="main_stop_recording">Stop %1$s</string>
+    <string name="main_stop_recording_description">Stop recording and transcribe</string>
+    <string name="main_discard_recording">Discard recording</string>
+    <string name="main_saving_recording">Saving recording…</string>
     <string name="main_waiting_for_audios">Waiting for audios…</string>
     <plurals name="main_queuing_files">
         <item quantity="one">Queuing %1$d file…</item>
@@ -314,6 +319,17 @@
     <string name="share_read_failed">Failed to read shared audio. Share it again.</string>
     <string name="background_share_interrupted_body">Sharing was interrupted before the audio was saved. Share it again.</string>
 
+    <!-- In-app recording -->
+    <string name="recording_file_label">Recording</string>
+    <string name="recording_saved_to_recordings">Recording saved to Recordings/WhisperTranscriber.</string>
+    <string name="recording_saved_to_music">Recording saved to Music/WhisperTranscriber.</string>
+    <string name="recording_discarded">Recording discarded.</string>
+    <string name="recording_start_failed">Could not start recording. Another app may be using the microphone.</string>
+    <string name="recording_finish_failed">The recording could not be finished. It may have been too short.</string>
+    <string name="recording_save_failed">Could not save the recording to this device.</string>
+    <string name="recording_microphone_permission_denied">Allow microphone access to record audio.</string>
+    <string name="recording_storage_permission_denied">Allow storage access to save recordings on this device.</string>
+
     <!-- Audio conversion -->
     <string name="conversion_no_decoder">No decoder supports the selected audio format.</string>
     <string name="conversion_no_audio_track">No audio track found.</string>
@@ -331,6 +347,10 @@
     <!-- Notifications -->
     <string name="notification_channel_results">Shared audio results</string>
     <string name="notification_channel_transcription">Transcription Service</string>
+    <string name="notification_channel_recording">Audio recording</string>
+    <string name="notification_recording_title">Recording audio</string>
+    <string name="notification_recording_body">Stop to save the recording and transcribe it.</string>
+    <string name="notification_recording_stop">Stop and transcribe</string>
     <string name="notification_public_transcription_ready">Transcription ready</string>
     <string name="notification_public_summary_ready">Summary ready</string>
     <string name="notification_public_failed">Transcription needs attention</string>

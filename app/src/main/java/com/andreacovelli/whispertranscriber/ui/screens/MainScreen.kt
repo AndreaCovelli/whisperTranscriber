@@ -1,6 +1,8 @@
 package com.andreacovelli.whispertranscriber.ui.screens
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -23,7 +25,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -46,6 +47,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -54,9 +56,11 @@ import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.history.suggestedTextExportFileName
+import com.andreacovelli.whispertranscriber.recording.requiredRecordingPermissions
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_RETRY_SCHEDULED
 import com.andreacovelli.whispertranscriber.ui.asString
+import com.andreacovelli.whispertranscriber.ui.components.MainActionButtons
 import com.andreacovelli.whispertranscriber.ui.components.SummaryStyleChoices
 import com.andreacovelli.whispertranscriber.ui.components.TextSaveTarget
 import com.andreacovelli.whispertranscriber.ui.components.TranscriptionJobCard
@@ -86,6 +90,23 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit, onNavi
     val saveTextFile = rememberTextFileSaveLauncher { target, destination ->
         viewModel.dispatch(MainMsg.SaveJobContent(target.id, target.field, destination))
     }
+    val canRecord = remember(context) {
+        context.packageManager.hasSystemFeature(PackageManager.FEATURE_MICROPHONE)
+    }
+    val recordingPermissions = remember { requiredRecordingPermissions() }
+    val recordingPermissionLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+            val deniedMessage = when {
+                results[Manifest.permission.RECORD_AUDIO] == false -> R.string.recording_microphone_permission_denied
+                results.containsValue(false) -> R.string.recording_storage_permission_denied
+                else -> null
+            }
+            if (deniedMessage == null) {
+                viewModel.dispatch(MainMsg.StartRecording)
+            } else {
+                Toast.makeText(context, deniedMessage, Toast.LENGTH_LONG).show()
+            }
+        }
 
     Scaffold(
         topBar = {
@@ -108,10 +129,22 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToHistory: () -> Unit, onNavi
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { audioPicker.launch(arrayOf(AUDIO_MIME_TYPE_FILTER)) },
-                icon = { Icon(painterResource(R.drawable.ic_upload), contentDescription = null) },
-                text = { Text(stringResource(R.string.main_pick_audio)) },
+            MainActionButtons(
+                recording = uiState.recording,
+                canRecord = canRecord,
+                onRecord = {
+                    val granted = recordingPermissions.all { permission ->
+                        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+                    }
+                    if (granted) {
+                        viewModel.dispatch(MainMsg.StartRecording)
+                    } else {
+                        recordingPermissionLauncher.launch(recordingPermissions)
+                    }
+                },
+                onStopRecording = { viewModel.dispatch(MainMsg.StopRecording) },
+                onDiscardRecording = { viewModel.dispatch(MainMsg.DiscardRecording) },
+                onPickAudio = { audioPicker.launch(arrayOf(AUDIO_MIME_TYPE_FILTER)) },
             )
         },
     ) { paddingValues ->
@@ -198,8 +231,8 @@ internal fun MainJobList(
     LazyColumn(
         state = listState,
         modifier = modifier.fillMaxSize(),
-        // Extra bottom space keeps the last card's actions clear of the floating action button.
-        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
+        // Extra bottom space keeps the last card's actions clear of the stacked floating action buttons.
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 168.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {

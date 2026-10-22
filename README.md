@@ -1,13 +1,14 @@
 # WhisperTranscriber
 
 An Android app that transcribes audio files using AI — powered by [Microsoft Azure Speech MAI Transcribe](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/mai-transcribe) or [Google Gemini](https://ai.google.dev/).
-Share one or more audio files from a file manager or audio player to queue them for transcription.
+Share one or more audio files from a file manager or audio player, pick them in the app, or record audio in the app to queue it for transcription.
 
 ---
 
 ## Features
 
 - **Multi-provider transcription** — choose between Microsoft MAI Transcribe 2 or Gemini (Flash Lite, Flash, Pro, or a custom model)
+- **In-app recording** — record from the microphone, including with the screen off; the recording is saved to `Recordings/WhisperTranscriber` (`Music/WhisperTranscriber` before Android 12) and queued for transcription
 - **Batch processing** — share multiple audio files at once; jobs are staged locally, queued, and processed sequentially
 - **Long recordings** — audio longer than a provider handles well in one request is split at pauses and transcribed in parts
 - **AI summarization** — generate summaries manually or automatically after transcription, with a separately selected Gemini model and a choice of summary styles or a custom prompt (requires a Gemini API key)
@@ -270,6 +271,7 @@ Configure the transcription and summarizer models, manage API keys, enter a Micr
 ## Architecture
 
 - `MainActivity` hosts Compose navigation; `ShareReceiverActivity` accepts Android share intents through a retained intake ViewModel.
+- `AudioRecordingController` records AAC/M4A with `MediaRecorder` while `AudioRecordingService` holds a microphone foreground service. Finished recordings are copied to shared storage by `RecordingLibrary` and then enter the queue like a picked file.
 - Main, Settings, and History ViewModels expose immutable state through `StateFlow` and use unidirectional data flow: screens dispatch messages, pure reducers compute state, and ViewModels run side effects. History uses Room-backed Paging with date grouping.
 - `TranscriptionQueueService`, `QueueExecutionCoordinator`, and `TranscriptionExecutionRunner` stage, recover, serialize, and persist work across WorkManager and the Android job service.
 - Room stores history, FTS search, and persistent queue state (schema v20). Job progress, errors, and summary errors are stored as message codes and arguments, then translated when shown. Content mutations and claims are transactional; prior-process claims recover independently of surviving scheduler entries.
@@ -316,8 +318,11 @@ Versions below match the checked-in [version catalog](gradle/libs.versions.toml)
 | `android.permission.FOREGROUND_SERVICE`         | Continue user-requested transcription in background |
 | `android.permission.FOREGROUND_SERVICE_DATA_SYNC` | Declare the foreground data-sync service type     |
 | `android.permission.RUN_USER_INITIATED_JOBS`    | Use Android 14 user-initiated jobs when available   |
+| `android.permission.RECORD_AUDIO`               | Record audio in the app (requested on first use)    |
+| `android.permission.FOREGROUND_SERVICE_MICROPHONE` | Keep recording with the screen off or another app open |
+| `android.permission.WRITE_EXTERNAL_STORAGE` (Android 9 and below) | Save recordings to the shared Music folder |
 
-Audio files are accessed via Android share intents — no `READ_EXTERNAL_STORAGE` permission is needed.
+Audio files are accessed via Android share intents — no `READ_EXTERNAL_STORAGE` permission is needed. Recordings are saved through MediaStore on Android 10 and later, which needs no storage permission.
 
 ## Repository security
 
