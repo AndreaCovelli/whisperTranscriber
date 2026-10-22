@@ -8,6 +8,8 @@ import com.andreacovelli.whispertranscriber.background.SummaryScheduler
 import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.queue.MAX_NONTERMINAL_JOBS
+import com.andreacovelli.whispertranscriber.recording.AudioRecordingController
+import com.andreacovelli.whispertranscriber.recording.RecordingLibrary
 import com.andreacovelli.whispertranscriber.settings.SummarizationSettings
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.summary.SummaryStyle
@@ -26,6 +28,7 @@ import java.io.File
 import java.util.Collections
 import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
@@ -68,6 +71,11 @@ class MainViewModelInstrumentedTest {
             fixture.queue,
             TextTransfer(context, Dispatchers.IO),
             summaries,
+            AudioRecordingController(
+                context,
+                RecordingLibrary(context, Dispatchers.IO),
+                CoroutineScope(Dispatchers.IO),
+            ),
             Dispatchers.IO,
         )
     }

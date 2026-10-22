@@ -7,6 +7,17 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" tools:ignore="ForegroundServicePermission" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RUN_USER_INITIATED_JOBS" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Saving recordings to shared storage needs this only before scoped storage. -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
+    <!-- Recording is optional; the app still transcribes picked and shared audio without a microphone. -->
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="false" />
     
     <application
         android:name=".WhisperTranscriberApp"
@@ -58,6 +69,11 @@
             android:name=".BackgroundShareJobService"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <service
+            android:name=".AudioRecordingService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
         <receiver
             android:name=".CancelTranscriptionNotificationReceiver"

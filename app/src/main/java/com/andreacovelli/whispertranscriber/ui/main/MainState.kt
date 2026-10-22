@@ -5,6 +5,7 @@ import com.andreacovelli.whispertranscriber.QuantityText
 import com.andreacovelli.whispertranscriber.R
 import com.andreacovelli.whispertranscriber.UserMessage
 import com.andreacovelli.whispertranscriber.data.HistoryContentField
+import com.andreacovelli.whispertranscriber.recording.RecordingState
 import com.andreacovelli.whispertranscriber.settings.TranscriptionProvider
 import com.andreacovelli.whispertranscriber.summary.SummaryStyle
 import com.andreacovelli.whispertranscriber.transcription.JOB_STATUS_QUEUED
@@ -31,6 +32,7 @@ data class MainUiState(
     val latestRevealRequestToken: Long = 0L,
     val mainNavigationRequest: MainNavigationRequest? = null,
     val jobRevealRequest: JobRevealRequest? = null,
+    val recording: RecordingState = RecordingState.Idle,
 )
 
 data class MainNavigationRequest(val token: Long)
@@ -64,9 +66,13 @@ sealed interface MainMsg {
     data class CancelJob(val jobId: Int) : MainMsg
     data class CancelSummary(val jobId: Int) : MainMsg
     data class DeleteJob(val jobId: Int) : MainMsg
+    data object StartRecording : MainMsg
+    data object StopRecording : MainMsg
+    data object DiscardRecording : MainMsg
 
     data class StatusChanged(val status: UserMessage) : MainMsg
     data class ProviderSummaryChanged(val summary: ProviderSummary) : MainMsg
+    data class RecordingStateChanged(val state: RecordingState) : MainMsg
     data class JobPresentationChanged(
         val jobs: List<TranscriptionJobState>,
         val batchProgressState: BatchProgressState?,
@@ -94,6 +100,7 @@ internal object MainReducer {
         }
         is MainMsg.StatusChanged -> state.copy(status = msg.status)
         is MainMsg.ProviderSummaryChanged -> state.copy(providerSummary = msg.summary)
+        is MainMsg.RecordingStateChanged -> state.copy(recording = msg.state)
         is MainMsg.JobPresentationChanged -> resolveJobRevealAfterPresentation(
             state.copy(
                 jobs = msg.jobs,

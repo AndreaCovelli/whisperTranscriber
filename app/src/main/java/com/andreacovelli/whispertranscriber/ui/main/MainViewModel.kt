@@ -15,6 +15,8 @@ import com.andreacovelli.whispertranscriber.data.HistoryContentField
 import com.andreacovelli.whispertranscriber.data.TranscriptionJob
 import com.andreacovelli.whispertranscriber.di.IoDispatcher
 import com.andreacovelli.whispertranscriber.queue.RetryResult
+import com.andreacovelli.whispertranscriber.recording.AudioRecordingController
+import com.andreacovelli.whispertranscriber.recording.RecordingOutcome
 import com.andreacovelli.whispertranscriber.services.TranscriptionQueueService
 import com.andreacovelli.whispertranscriber.settings.ApiKeyManager
 import com.andreacovelli.whispertranscriber.settings.ApiKeyState
@@ -123,6 +125,7 @@ class MainViewModel @Inject constructor(
     private val queueService: TranscriptionQueueService,
     private val textTransfer: TextTransfer,
     private val summaryScheduler: SummaryScheduler,
+    private val audioRecorder: AudioRecordingController,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
     suspend fun shareText(text: String, title: String, launch: (Intent) -> Unit): Boolean =
@@ -167,6 +170,12 @@ class MainViewModel @Inject constructor(
                     )
                 }
             }
+            launch {
+                audioRecorder.state.collect { state -> reduce(MainMsg.RecordingStateChanged(state)) }
+            }
+            launch {
+                audioRecorder.outcomes.collect(::handleRecordingOutcome)
+            }
         }
 
         viewModelScope.launch {
@@ -197,6 +206,12 @@ class MainViewModel @Inject constructor(
             is MainMsg.CancelJob -> viewModelScope.launch { queueService.cancelJob(msg.jobId) }
             is MainMsg.CancelSummary -> cancelSummary(msg.jobId)
             is MainMsg.DeleteJob -> viewModelScope.launch { queueService.deleteJob(msg.jobId) }
+            MainMsg.StartRecording -> audioRecorder.start()
+            MainMsg.StopRecording -> audioRecorder.stop()
+            MainMsg.DiscardRecording -> {
+                audioRecorder.discard()
+                viewModelScope.launch { _events.send(R.string.recording_discarded) }
+            }
             else -> Unit
         }
     }
@@ -230,6 +245,17 @@ class MainViewModel @Inject constructor(
                 reportShareQueueFailure(e)
             }
             reduce(MainMsg.SharedAudioQueueFinished(requestToken, firstCreatedJobId))
+        }
+    }
+
+    // A saved recording joins the queue exactly like a picked file, so retries and history behave the same.
+    private suspend fun handleRecordingOutcome(outcome: RecordingOutcome) {
+        when (outcome) {
+            is RecordingOutcome.Saved -> {
+                _events.send(outcome.savedMessage)
+                dispatch(MainMsg.SharedAudioReceived(listOf(outcome.uri)))
+            }
+            is RecordingOutcome.Failed -> reduce(MainMsg.StatusChanged(outcome.message))
         }
     }
 
