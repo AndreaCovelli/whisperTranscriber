@@ -343,7 +343,7 @@ Dependency updates are configured through [Renovate](renovate.json), which exten
 the shared `AndreaCovelli/renovate-config` preset. CI runs quality checks, the debug
 build and unit tests, separate `debug` and `minifiedSmoke` device suites, security
 scans, and actionlint for `.github/` changes. Path filters select applicable checks;
-manual CI runs execute all checks. `CI Gate` aggregates the results. See [the release guide](release-guide.txt) for
+manual CI runs execute all checks. `Validate` aggregates the results. See [the release guide](release-guide.txt) for
 signing setup and tag-triggered releases.
 
 ---
