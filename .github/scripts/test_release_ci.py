@@ -359,7 +359,7 @@ class ReleaseCiTest(unittest.TestCase):
 
     def ci_gate(self, **results):
         workflow = (Path(__file__).parent.parent / "workflows" / "ci.yml").read_text()
-        gate = workflow.split("\n  ci-gate:\n", 1)[1]
+        gate = workflow.split("\n  validate:\n", 1)[1]
         script = textwrap.dedent(gate.split("        run: |\n", 1)[1])
         environment = {
             "CHANGES_RESULT": "success",

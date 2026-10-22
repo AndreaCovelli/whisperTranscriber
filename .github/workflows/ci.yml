@@ -44,15 +44,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          # Push comparisons need the previous commit without an authenticated fetch.
           fetch-depth: 0
-          # paths-filter may need to fetch the pre-push commit after a history rewrite.
-          persist-credentials: true
+          persist-credentials: false
 
       - name: Test release CI selection
         run: python3 -B -m unittest discover --start-directory .github/scripts --pattern 'test_*.py' --verbose
 
+      # A force push discards the previous head, so there is nothing to compare against:
+      # run every check, as for manual runs.
       - name: Detect Android-relevant changes
-        if: ${{ !inputs.force && github.event_name != 'workflow_dispatch' }}
+        if: ${{ !inputs.force && github.event_name != 'workflow_dispatch' && !github.event.forced }}
         id: changes
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
@@ -87,7 +89,7 @@ jobs:
       - name: Select jobs to run
         id: select
         env:
-          RUN_ALL: ${{ inputs.force || github.event_name == 'workflow_dispatch' }}
+          RUN_ALL: ${{ inputs.force || github.event_name == 'workflow_dispatch' || github.event.forced }}
           ANDROID: ${{ steps.changes.outputs.android }}
           INSTRUMENTATION: ${{ steps.changes.outputs.instrumentation }}
           WORKFLOWS: ${{ steps.changes.outputs.workflows }}
@@ -425,8 +427,8 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  ci-gate:
-    name: CI Gate
+  validate:
+    name: Validate
     if: always()
     needs: [changes, workflow-lint, quality-build, instrumentation, security]
     runs-on: ubuntu-26.04

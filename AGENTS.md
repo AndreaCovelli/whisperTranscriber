@@ -286,7 +286,7 @@ checks and report exactly what was not run and why.
   alongside managed-device instrumentation (`debug` and `minifiedSmoke` suites),
   security scans, and actionlint for `.github/` changes. Path filters select
   applicable checks; manual CI runs execute all checks.
-  `CI Gate` is the required aggregate check.
+  `Validate` is the required aggregate check.
 - Dependency updates use `renovate.json`, which extends the shared
   `AndreaCovelli/renovate-config` preset.
 - Use the checked-in `.gitleaks.toml` for Gitleaks filesystem scans so generated
