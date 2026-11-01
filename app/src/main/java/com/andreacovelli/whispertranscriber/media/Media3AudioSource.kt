@@ -130,6 +130,7 @@ internal class Media3AudioSource(
                 reader.position = positionHolder.position
                 input = DefaultExtractorInput(reader, positionHolder.position, reader.length)
             }
+
             Extractor.RESULT_END_OF_INPUT -> inputEnded = true
         }
     }

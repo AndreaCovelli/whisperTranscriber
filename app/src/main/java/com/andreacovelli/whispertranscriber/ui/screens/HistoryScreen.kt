@@ -223,7 +223,9 @@ private fun ObserveHistoryEvents(
             historyViewModel.uiEvents.collect { event ->
                 when (event) {
                     is HistoryUiEvent.LaunchExport -> onLaunchExport(event.format)
+
                     is HistoryUiEvent.ItemDeleted -> onItemDeleted(event.historyId)
+
                     is HistoryUiEvent.Share -> {
                         if (!historyViewModel.shareText(
                                 event.content,
@@ -234,6 +236,7 @@ private fun ObserveHistoryEvents(
                             Toast.makeText(context, R.string.text_share_failed, Toast.LENGTH_SHORT).show()
                         }
                     }
+
                     is HistoryUiEvent.Toast -> {
                         Toast.makeText(context, event.messageId, Toast.LENGTH_SHORT).show()
                     }
@@ -459,9 +462,12 @@ private fun ColumnScope.HistoryContent(
     }
     when {
         pagedItems.isInitialLoad() -> LoadingHistoryState()
+
         pagedItems.loadState.refresh is LoadState.Error && pagedItems.itemCount == 0 ->
             HistoryLoadError(onRetry = pagedItems::retry)
+
         pagedItems.itemCount == 0 -> EmptyHistoryState(searchQuery)
+
         else -> HistoryRowList(
             pagedItems = pagedItems,
             searchTokens = searchTokens,
@@ -521,7 +527,9 @@ internal fun ColumnScope.HistoryRowList(
         items(count = pagedItems.itemCount, key = pagedItems.itemKey { it.stableKey }) { index ->
             when (val row = pagedItems[index]) {
                 null -> HistoryItemPlaceholderCard()
+
                 is HistoryListRow.Header -> HistoryDateHeaderRow(bucket = row.bucket)
+
                 is HistoryListRow.Item -> {
                     val item = row.history
                     val actions = remember(item, actionFactory) { actionFactory(item) }
@@ -582,7 +590,9 @@ private fun HistoryDateHeaderRow(bucket: HistoryDateBucket) {
     val context = LocalContext.current
     val text = when (val label = bucket.label) {
         HistoryDateLabel.Today -> stringResource(R.string.history_group_today)
+
         HistoryDateLabel.Yesterday -> stringResource(R.string.history_group_yesterday)
+
         is HistoryDateLabel.Month -> remember(label.yearMonth, bucket.zoneId, context) {
             DateUtils.formatDateTime(
                 context,

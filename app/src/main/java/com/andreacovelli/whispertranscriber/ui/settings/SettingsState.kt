@@ -97,27 +97,38 @@ sealed interface SettingsMsg {
 internal object SettingsReducer {
     fun reduce(state: SettingsUiState, msg: SettingsMsg): SettingsUiState = when (msg) {
         is SettingsMsg.SetProvider -> state.copy(provider = msg.provider)
+
         is SettingsMsg.SetSummarizerProvider -> state.copy(summarizerProvider = msg.provider)
+
         is SettingsMsg.SetAutomaticSummarization -> state.copy(automaticSummarizationEnabled = msg.enabled)
+
         is SettingsMsg.SetBackgroundShareSummaryNotificationsEnabled -> state.copy(
             backgroundShareSummaryNotificationsEnabled = msg.enabled,
         )
+
         is SettingsMsg.SetSpeakerDiarization -> state.copy(speakerDiarizationEnabled = msg.enabled)
+
         is SettingsMsg.SetTranscriptionLanguage -> state.copy(transcriptionLanguage = msg.languageCode)
+
         is SettingsMsg.SetTranscriptionVocabulary -> state.copy(transcriptionVocabulary = msg.vocabulary.trim())
+
         is SettingsMsg.SetSummaryStyle -> state.copy(summaryStyle = msg.style)
+
         is SettingsMsg.SetSummaryCustomPrompt -> state.copy(
             summaryCustomPrompt = normalizeSummaryCustomPrompt(msg.prompt),
         )
+
         is SettingsMsg.SetMicrosoftSpeechRegion -> state.copy(
             microsoftSpeechRegion = msg.region,
             microsoftSpeechKeyValidation = KeyValidationState.Idle,
         )
+
         is SettingsMsg.SaveMicrosoftSpeechKey,
         is SettingsMsg.SaveGeminiKey,
         is SettingsMsg.ValidateTranscriptionModel,
         is SettingsMsg.ValidateSummarizerModel,
         -> state
+
         is SettingsMsg.TranscriptionSettingsLoaded -> state.copy(
             provider = msg.settings.provider,
             transcriptionCustomGeminiModelName = msg.settings.customModelName,
@@ -125,19 +136,27 @@ internal object SettingsReducer {
             transcriptionLanguage = msg.settings.languageHint,
             transcriptionVocabulary = msg.settings.vocabulary,
         )
+
         is SettingsMsg.SummarizationSettingsLoaded -> state.copy(
             summarizerProvider = msg.settings.provider,
             summarizerCustomGeminiModelName = msg.settings.customModelName,
             summaryStyle = msg.settings.style,
             summaryCustomPrompt = msg.settings.customPrompt,
         )
+
         is SettingsMsg.MicrosoftSpeechApiKeyStateChanged -> state.copy(microsoftSpeechApiKeyState = msg.state)
+
         is SettingsMsg.GeminiApiKeyStateChanged -> state.copy(geminiApiKeyState = msg.state)
+
         is SettingsMsg.MicrosoftSpeechRegionLoaded -> state.copy(microsoftSpeechRegion = msg.region)
+
         is SettingsMsg.AutomaticSummarizationLoaded -> state.copy(automaticSummarizationEnabled = msg.enabled)
+
         is SettingsMsg.BackgroundShareSummaryNotificationsLoaded ->
             state.copy(backgroundShareSummaryNotificationsEnabled = msg.enabled)
+
         SettingsMsg.ClearValidationResults -> clearValidationResults(state)
+
         else -> reduceValidation(state, msg)
     }
 
@@ -161,29 +180,37 @@ internal object SettingsReducer {
         SettingsMsg.ResetMicrosoftSpeechRegionValidation -> state.copy(
             microsoftSpeechRegionValidation = RegionValidationState.Idle,
         )
+
         SettingsMsg.ResetTranscriptionModelValidation -> state.copy(
             transcriptionCustomModelValidation = CustomModelValidation.Idle,
         )
+
         SettingsMsg.ResetSummarizerModelValidation -> state.copy(
             summarizerCustomModelValidation = CustomModelValidation.Idle,
         )
+
         SettingsMsg.ResetMicrosoftSpeechKeyValidation,
         SettingsMsg.ForgetMicrosoftSpeechKey,
         -> state.copy(microsoftSpeechKeyValidation = KeyValidationState.Idle)
+
         SettingsMsg.ResetGeminiKeyValidation,
         SettingsMsg.ForgetGeminiKey,
         -> state.copy(geminiKeyValidation = KeyValidationState.Idle)
+
         is SettingsMsg.ApiKeyValidationStateChanged -> if (msg.isGemini) {
             state.copy(geminiKeyValidation = msg.validation)
         } else {
             state.copy(microsoftSpeechKeyValidation = msg.validation)
         }
+
         is SettingsMsg.RegionValidationStateChanged -> state.copy(microsoftSpeechRegionValidation = msg.validation)
+
         is SettingsMsg.ModelValidationStateChanged -> if (msg.isSummarizer) {
             state.copy(summarizerCustomModelValidation = msg.validation)
         } else {
             state.copy(transcriptionCustomModelValidation = msg.validation)
         }
+
         is SettingsMsg.ValidatedModelPersisted -> if (msg.isSummarizer) {
             state.copy(
                 summarizerCustomGeminiModelName = msg.modelName,
@@ -195,10 +222,12 @@ internal object SettingsReducer {
                 transcriptionCustomModelValidation = CustomModelValidation.Valid(msg.displayName),
             )
         }
+
         is SettingsMsg.PersistedMicrosoftSpeechRegion -> state.copy(
             microsoftSpeechRegion = msg.region,
             microsoftSpeechRegionValidation = RegionValidationState.Valid(msg.region),
         )
+
         else -> state
     }
 }

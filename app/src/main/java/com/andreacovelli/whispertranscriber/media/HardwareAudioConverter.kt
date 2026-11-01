@@ -287,18 +287,22 @@ object HardwareAudioConverter {
                     android.util.Log.w(TAG, "Decoder stalled after end of input")
                     outputEos = true
                 }
+
                 is DecoderEvent.InputAvailable -> {
                     val presentationTimeUs = input.queue(event.index)
                     progressState = updateProgress(durationUs, presentationTimeUs, progressState, onProgress)
                 }
+
                 is DecoderEvent.OutputAvailable -> {
                     drainWatchdog.onOutput()
                     outputEos = processOutputBuffer(decoder, event, state, scratchBuffers)
                 }
+
                 is DecoderEvent.FormatChanged -> {
                     drainWatchdog.onOutput()
                     updateDecoderState(event.format, state)
                 }
+
                 is DecoderEvent.Failed -> throw event.error
             }
         }
@@ -509,10 +513,13 @@ object HardwareAudioConverter {
                 when {
                     state.pcmEncoding == AudioFormat.ENCODING_PCM_FLOAT ->
                         processFloatOutput(outputBuffer, info, state, scratchBuffers)
+
                     canWritePcm16Direct(state) ->
                         writePcm16Direct(outputBuffer, info, state)
+
                     state.pcmEncoding == AudioFormat.ENCODING_PCM_16BIT ->
                         processPcm16Output(outputBuffer, info, state, scratchBuffers)
+
                     else ->
                         processIntegerPcmOutput(outputBuffer, info, state, scratchBuffers)
                 }

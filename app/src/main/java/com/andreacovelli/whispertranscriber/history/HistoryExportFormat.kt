@@ -75,11 +75,13 @@ internal class HistoryExportWriter(private val writer: Writer, private val forma
                 if (wroteAny) writer.write("\n\n---\n\n")
                 writer.write(buildTxtHistoryItem(item))
             }
+
             HistoryExportFormat.CSV -> {
                 if (!wroteAny) writer.write(csvHeaderRow.joinToString(",", transform = ::escapeCsvValue))
                 writer.write("\r\n")
                 writer.write(csvRowFor(item).joinToString(",", transform = ::escapeCsvValue))
             }
+
             HistoryExportFormat.JSON -> {
                 val output = requireNotNull(json)
                 if (!wroteAny) output.beginArray()

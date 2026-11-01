@@ -43,14 +43,18 @@ internal object PcmChannelMask {
         FRONT_LEFT_OF_CENTER,
         FRONT_RIGHT_OF_CENTER,
         -> 0.5f
+
         FRONT_CENTER -> PcmMonoDownmixer.CENTER_GAIN
+
         LOW_FREQUENCY -> 0f
+
         BACK_LEFT,
         BACK_RIGHT,
         BACK_CENTER,
         SIDE_LEFT,
         SIDE_RIGHT,
         -> 0.353_553_38f
+
         else -> 0.25f
     }
 }
@@ -166,12 +170,14 @@ internal object PcmIntegerSampleReader {
         repeat(sampleCount) { index ->
             destination[index] = when (encoding) {
                 ENCODING_PCM_8BIT -> ((source.get(position).toInt() and 0xff) - PCM8_OFFSET) * PCM8_TO_FLOAT
+
                 ENCODING_PCM_24BIT_PACKED -> {
                     val sample = (source.get(position).toInt() and 0xff) or
                         ((source.get(position + 1).toInt() and 0xff) shl 8) or
                         (source.get(position + 2).toInt() shl 16)
                     sample * PCM24_TO_FLOAT
                 }
+
                 else -> source.getInt(position) * PCM32_TO_FLOAT
             }
             position += bytesPerSample

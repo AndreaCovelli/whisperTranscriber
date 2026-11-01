@@ -83,13 +83,17 @@ sealed interface MainMsg {
 internal object MainReducer {
     fun reduce(state: MainUiState, msg: MainMsg): MainUiState = when (msg) {
         is MainMsg.SharedAudioReceived -> requestForegroundShare(state, msg)
+
         is MainMsg.SharedAudioQueueFinished -> finishForegroundShare(state, msg)
+
         is MainMsg.BackgroundShareResultOpened -> requestBackgroundResultReveal(state, msg.jobId)
+
         is MainMsg.MainNavigationHandled -> if (state.mainNavigationRequest?.token == msg.requestToken) {
             state.copy(mainNavigationRequest = null)
         } else {
             state
         }
+
         is MainMsg.JobRevealHandled -> if (
             state.jobRevealRequest is JobRevealRequest.Ready &&
             state.jobRevealRequest.token == msg.requestToken
@@ -98,9 +102,13 @@ internal object MainReducer {
         } else {
             state
         }
+
         is MainMsg.StatusChanged -> state.copy(status = msg.status)
+
         is MainMsg.ProviderSummaryChanged -> state.copy(providerSummary = msg.summary)
+
         is MainMsg.RecordingStateChanged -> state.copy(recording = msg.state)
+
         is MainMsg.JobPresentationChanged -> resolveJobRevealAfterPresentation(
             state.copy(
                 jobs = msg.jobs,
@@ -108,6 +116,7 @@ internal object MainReducer {
                 jobsLoaded = true,
             ),
         ).let(::clearStaleQueuedStatus)
+
         else -> state
     }
 
@@ -178,13 +187,17 @@ internal object MainReducer {
         val request = state.jobRevealRequest ?: return state
         return when (request) {
             is JobRevealRequest.AwaitingCreation -> state
+
             is JobRevealRequest.AwaitingPresentation -> when {
                 state.jobs.any { it.id == request.jobId } -> state.copy(
                     jobRevealRequest = JobRevealRequest.Ready(request.token, request.jobId),
                 )
+
                 state.jobsLoaded && request.clearWhenAbsent -> state.copy(jobRevealRequest = null)
+
                 else -> state
             }
+
             is JobRevealRequest.Ready -> if (state.jobs.any { it.id == request.jobId }) {
                 state
             } else {

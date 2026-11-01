@@ -122,9 +122,13 @@ internal fun buildGeminiSummaryPrompt(
 ): String {
     val instructions = when (style) {
         SummaryStyle.AUTOMATIC -> null
+
         SummaryStyle.BULLET_POINTS -> BULLET_POINTS_INSTRUCTIONS
+
         SummaryStyle.ACTION_ITEMS -> ACTION_ITEMS_INSTRUCTIONS
+
         SummaryStyle.MEETING_MINUTES -> MEETING_MINUTES_INSTRUCTIONS
+
         SummaryStyle.CUSTOM -> normalizeSummaryCustomPrompt(customPrompt)
             .takeIf(String::isNotEmpty)
             ?.let(::customSummaryInstructions)
@@ -295,9 +299,11 @@ class SummarizationService @Inject constructor(
                 }
                 SummarizerSelection(provider = provider, modelName = modelName)
             }
+
             provider.isGemini() -> {
                 SummarizerSelection(provider = provider, modelName = requireNotNull(provider.modelName))
             }
+
             else -> {
                 val defaultProvider = TranscriptionProvider.GEMINI_FLASH
                 SummarizerSelection(

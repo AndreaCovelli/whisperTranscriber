@@ -165,6 +165,7 @@ class RoomHistoryRepository @Inject constructor(
                         job.jobId,
                         System.currentTimeMillis(),
                     )
+
                     HistoryContentField.SUMMARY -> jobDao.clearSummaryResult(job.jobId, System.currentTimeMillis())
                 }
             }

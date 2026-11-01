@@ -152,21 +152,35 @@ class HistoryViewModel @Inject constructor(
     fun dispatch(msg: HistoryMsg) {
         when (msg) {
             is HistoryMsg.SetSearchQuery -> _searchQuery.value = msg.query
+
             is HistoryMsg.PrepareShareTranscript -> prepareShareTranscript(msg.item)
+
             is HistoryMsg.PrepareShareSummary -> prepareShareSummary(msg.item)
+
             is HistoryMsg.PrepareExport -> prepareExport(msg.format)
+
             is HistoryMsg.ExportHistory -> exportHistory(msg.uri, msg.format)
+
             is HistoryMsg.SaveContent -> saveContent(msg.historyId, msg.field, msg.destination)
+
             is HistoryMsg.ClearSummary -> clearSummary(msg.item)
+
             is HistoryMsg.ClearTranscript -> clearTranscript(msg.item)
+
             is HistoryMsg.EditTranscript ->
                 _transcriptEditor.value =
                     TranscriptEditor(msg.item.id, msg.item.text, hasSummary = msg.item.summary.isNotBlank())
+
             HistoryMsg.SaveTranscriptEdit -> saveTranscriptEdit()
+
             HistoryMsg.CancelTranscriptEdit -> _transcriptEditor.value = null
+
             is HistoryMsg.DeleteItem -> deleteHistoryItem(msg.item)
+
             is HistoryMsg.UndoDeleteItem -> pendingDeletions.update { it - msg.historyId }
+
             is HistoryMsg.FinishDeleteItem -> finishDeletion(msg.historyId)
+
             HistoryMsg.DeleteAll -> deleteAllHistory()
         }
     }

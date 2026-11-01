@@ -129,7 +129,7 @@ class TranscriptionQueueService @Inject constructor(
                 notifyResult = persistedPostTranscriptionConfig.notifyResult,
                 queuedSummarizerProviderName = persistedPostTranscriptionConfig.queuedSummarizerProviderName,
                 queuedSummarizerCustomModelName =
-                persistedPostTranscriptionConfig.queuedSummarizerCustomModelName,
+                    persistedPostTranscriptionConfig.queuedSummarizerCustomModelName,
                 queuedSummaryStyle = persistedPostTranscriptionConfig.queuedSummaryStyle,
                 queuedSummaryCustomPrompt = persistedPostTranscriptionConfig.queuedSummaryCustomPrompt,
                 batchId = batchId,
@@ -274,6 +274,7 @@ class TranscriptionQueueService @Inject constructor(
             TranscriptionProvider.GEMINI_FLASH,
             TranscriptionProvider.GEMINI_PRO,
             -> provider.modelName
+
             TranscriptionProvider.GEMINI_CUSTOM -> customModelName.ifBlank { null }
         }
 
@@ -407,6 +408,7 @@ class TranscriptionQueueService @Inject constructor(
 
         return when (backend) {
             JobExecutionBackend.WORK_MANAGER -> scheduler.enqueueWorker(job)
+
             JobExecutionBackend.USER_INITIATED_JOB -> {
                 if (scheduler.enqueueUserInitiatedJob(job)) {
                     true

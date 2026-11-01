@@ -83,7 +83,9 @@ data class SummarizationSettings(
 
 internal fun decodeTranscriptionProvider(name: String?): TranscriptionProvider = when (name) {
     null -> TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE
+
     "GEMINI_25_FLASH" -> TranscriptionProvider.GEMINI_FLASH
+
     else -> runCatching { TranscriptionProvider.valueOf(name) }
         .getOrDefault(TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE)
 }

@@ -101,10 +101,13 @@ class TranscriptionExecutionRunner @Inject constructor(
             )
                 ?: return when (val current = repository.getJob(jobId)) {
                     null -> JobRunOutcome.Failure
+
                     else -> when {
                         current.executionOwnerId.isNotEmpty() && current.executionOwnerId != executionOwnerId ->
                             JobRunOutcome.Superseded
+
                         current.status == JOB_STATUS_CANCELLED -> JobRunOutcome.Success
+
                         else -> JobRunOutcome.Skipped
                     }
                 }
@@ -204,6 +207,7 @@ class TranscriptionExecutionRunner @Inject constructor(
         }
         val stagedUri = when (val resolution = QueuedAudioInputResolver.resolve(job)) {
             is QueuedAudioInputResolution.Ready -> resolution.uri
+
             QueuedAudioInputResolution.MissingStagedFile -> {
                 val message = UserMessage(R.string.queued_audio_unavailable)
                 requireOwnedUpdate(
@@ -313,6 +317,7 @@ class TranscriptionExecutionRunner @Inject constructor(
                     speakerDiarizationEnabled = speakerDiarizationEnabled,
                     transcribeInput = transcribeInput,
                 )
+
                 else -> transcribeInput(input, null)
             }
             val transcript = result.copy(
