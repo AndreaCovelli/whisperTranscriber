@@ -51,6 +51,7 @@ class AndroidQueueScheduler @Inject constructor(
                     workInfo.state == WorkInfo.State.RUNNING ||
                     workInfo.state == WorkInfo.State.BLOCKED
             }
+
         JobExecutionBackend.USER_INITIATED_JOB -> {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 false

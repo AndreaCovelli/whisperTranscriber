@@ -26,7 +26,7 @@ spotless = "8.10.4"
 serialization = "1.11.0"
 jackson = "2.22.4"
 cyclonedx = "3.5.1"
-ktlint = "1.7.1"
+ktlint = "1.8.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }

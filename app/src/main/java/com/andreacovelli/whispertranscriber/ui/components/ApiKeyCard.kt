@@ -230,6 +230,7 @@ private fun ApiKeyIdleState(apiKeyState: ApiKeyState) {
                 )
             }
         }
+
         is ApiKeyState.Error -> {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -248,6 +249,7 @@ private fun ApiKeyIdleState(apiKeyState: ApiKeyState) {
                 )
             }
         }
+
         else -> Unit
     }
 }

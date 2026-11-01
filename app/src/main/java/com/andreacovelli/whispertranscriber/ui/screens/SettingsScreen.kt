@@ -349,6 +349,7 @@ private fun MicrosoftSpeechRegionCard(uiState: SettingsUiState, dispatch: (Setti
                         )
                     }
                 }
+
                 is RegionValidationState.Valid -> {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -367,6 +368,7 @@ private fun MicrosoftSpeechRegionCard(uiState: SettingsUiState, dispatch: (Setti
                         )
                     }
                 }
+
                 is RegionValidationState.Error -> {
                     Text(
                         validation.message.asString(),
@@ -374,6 +376,7 @@ private fun MicrosoftSpeechRegionCard(uiState: SettingsUiState, dispatch: (Setti
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
+
                 else -> Unit
             }
         }

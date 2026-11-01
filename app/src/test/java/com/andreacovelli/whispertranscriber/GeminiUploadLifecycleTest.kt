@@ -88,6 +88,7 @@ class GeminiUploadLifecycleTest {
                     response.header("X-Goog-Upload-URL", "https://upload.example.test/session")
                     "{}"
                 }
+
                 request.url.encodedPath == "/session" -> {
                     response.header("X-Goog-Upload-Status", "final")
                     """
@@ -95,15 +96,18 @@ class GeminiUploadLifecycleTest {
                         "uri":"https://generativelanguage.googleapis.com/v1beta/files/test"}}
                     """.trimIndent()
                 }
+
                 request.method == "DELETE" -> {
                     deleted.complete(Unit)
                     "{}"
                 }
+
                 request.url.encodedPath.contains(":generateContent") -> {
                     generating.complete(Unit)
                     if (blockGeneration) check(release.await(10, TimeUnit.SECONDS))
                     "{}"
                 }
+
                 else -> error("Unexpected test request: ${request.method} ${request.url.encodedPath}")
             }
             return response.body(body.toResponseBody()).build()

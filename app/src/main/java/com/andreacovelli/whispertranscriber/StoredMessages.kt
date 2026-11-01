@@ -43,11 +43,15 @@ internal object StoredMessages {
 
     private fun encodeArgument(arg: Any): JSONObject = when (arg) {
         is UserMessage -> JSONObject().put(MESSAGE, encodeMessage(arg))
+
         is QuantityText -> StoredMessageRegistry.pluralCode(arg.id)
             ?.let { code -> JSONObject().put(PLURAL, code).put(QUANTITY, arg.quantity) }
             ?: JSONObject().put(INTEGER, arg.quantity.toLong())
+
         is Byte, is Short, is Int, is Long -> JSONObject().put(INTEGER, (arg as Number).toLong())
+
         is Float, is Double -> JSONObject().put(DECIMAL, (arg as Number).toDouble())
+
         else -> JSONObject().put(STRING, arg.toString())
     }
 
@@ -60,15 +64,19 @@ internal object StoredMessages {
 
     private fun decodeArgument(json: JSONObject): Any = when {
         json.has(MESSAGE) -> decodeMessage(json.getJSONObject(MESSAGE))
+
         json.has(PLURAL) -> {
             val quantity = json.getInt(QUANTITY)
             StoredMessageRegistry.pluralId(json.getString(PLURAL))?.let { id -> QuantityText(id, quantity) }
                 ?: quantity
         }
+
         json.has(INTEGER) -> json.getLong(INTEGER).let { value ->
             if (value in Int.MIN_VALUE..Int.MAX_VALUE) value.toInt() else value
         }
+
         json.has(DECIMAL) -> json.getDouble(DECIMAL)
+
         else -> json.getString(STRING)
     }
 

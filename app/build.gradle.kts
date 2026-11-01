@@ -274,6 +274,8 @@ dependencies {
         // Keep Room migration testing and AndroidX saved state/navigation on one serialization runtime.
         implementation(libs.kotlinx.serialization.core)
         implementation(libs.kotlinx.serialization.json)
+        // google-genai pulls in guava 33.4.0, which has advisory GHSA-xxph-c9ww-hj94.
+        implementation("com.google.guava:guava:33.7.2-jre")
         // AGP's lint tool brings older build-only transitives; keep them on patched releases.
         "androidLintTool"("org.bouncycastle:bcpkix-jdk18on:1.86")
         "androidLintTool"("org.bouncycastle:bcprov-jdk18on:1.86")

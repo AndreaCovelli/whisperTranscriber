@@ -298,6 +298,7 @@ private fun buildResultNotificationTitle(
 ): String = when (resultKind) {
     BackgroundShareResultKind.TRANSCRIPTION ->
         context.getString(R.string.background_share_transcription_ready_title, displayName)
+
     BackgroundShareResultKind.SUMMARY ->
         context.getString(R.string.background_share_summary_ready_title, displayName)
 }

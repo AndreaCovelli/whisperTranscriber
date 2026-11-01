@@ -73,11 +73,14 @@ internal suspend fun awaitGeminiFileActive(
                 if (file.uri().orElse("").isBlank()) throw ProviderResponseException(R.string.provider_response_invalid)
                 return file
             }
+
             "FAILED" -> throw ProviderResponseException(R.string.provider_file_failed)
+
             "PROCESSING" -> {
                 delay(pollIntervalMillis)
                 file = refresh(name)
             }
+
             else -> throw ProviderResponseException(R.string.provider_response_invalid)
         }
     }

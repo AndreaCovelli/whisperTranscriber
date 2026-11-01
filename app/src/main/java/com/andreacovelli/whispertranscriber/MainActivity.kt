@@ -61,6 +61,7 @@ internal object SharedAudioIntentHandler {
                     }
                 listOfNotNull(single)
             }
+
             Intent.ACTION_SEND_MULTIPLE -> {
                 val clipUris = intent.clipData?.let { clip ->
                     (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }
@@ -73,6 +74,7 @@ internal object SharedAudioIntentHandler {
                 }
                 (clipUris + extraUris).distinct()
             }
+
             else -> emptyList()
         }
     }
@@ -221,7 +223,7 @@ class MainActivity : ComponentActivity() {
                             viewModel = settingsViewModel,
                             onNavigateBack = { navController.popBackStack() },
                             onBackgroundShareSummaryNotificationsChange =
-                            ::handleBackgroundShareSummaryNotificationsToggle,
+                                ::handleBackgroundShareSummaryNotificationsToggle,
                         )
                     }
                 }
