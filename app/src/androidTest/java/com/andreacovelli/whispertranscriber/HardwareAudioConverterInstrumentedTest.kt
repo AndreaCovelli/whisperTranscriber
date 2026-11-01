@@ -594,7 +594,9 @@ class HardwareAudioConverterInstrumentedTest {
 
                 when (val outputIndex = encoder.dequeueOutputBuffer(bufferInfo, 10_000)) {
                     MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
+
                     MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> onOutputFormat(encoder.outputFormat)
+
                     else -> {
                         if (outputIndex >= 0) {
                             val outputBuffer = requireNotNull(encoder.getOutputBuffer(outputIndex))

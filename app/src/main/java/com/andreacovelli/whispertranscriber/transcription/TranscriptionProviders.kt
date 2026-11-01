@@ -323,13 +323,17 @@ internal fun resolveMicrosoftSpeechErrorMessage(code: Int, bodyText: String): Us
     val serviceError = parseMicrosoftSpeechServiceError(bodyText)
     return when {
         code == 401 -> UserMessage(R.string.microsoft_speech_unauthorized)
+
         code == 404 -> UserMessage(R.string.microsoft_speech_endpoint_not_found)
+
         code == 429 && isMicrosoftSpeechResourceExhaustedMessage(serviceError?.message) ->
             UserMessage(R.string.microsoft_speech_resource_exhausted)
+
         // 429 and 5xx responses are retried, so only terminal rejections take the service's reason.
         code in 400..499 && code != 429 ->
             serviceError?.codes?.firstNotNullOfOrNull(MICROSOFT_SPEECH_ERROR_MESSAGES::get)
                 ?: friendlyHttpError(code, UserMessage(R.string.provider_name_microsoft_speech))
+
         else -> friendlyHttpError(code, UserMessage(R.string.provider_name_microsoft_speech))
     }
 }

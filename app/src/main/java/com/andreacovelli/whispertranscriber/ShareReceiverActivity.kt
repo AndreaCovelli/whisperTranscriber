@@ -23,7 +23,9 @@ class ShareReceiverActivity : ComponentActivity() {
             intake.state.collect { state ->
                 when (state) {
                     ShareIntakeState.Preparing -> Unit
+
                     ShareIntakeState.Finished -> finish()
+
                     is ShareIntakeState.ForwardToMain -> {
                         startActivity(
                             Intent(state.intent).apply {

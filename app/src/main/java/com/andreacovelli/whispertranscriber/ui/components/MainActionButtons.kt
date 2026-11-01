@@ -59,6 +59,7 @@ fun MainActionButtons(
                     text = { Text(stringResource(R.string.main_pick_audio)) },
                 )
             }
+
             RecordingState.Starting, is RecordingState.Recording -> {
                 val startedAt = (recording as? RecordingState.Recording)?.startedAtElapsedMillis
                 val stopDescription = stringResource(R.string.main_stop_recording_description)
@@ -77,6 +78,7 @@ fun MainActionButtons(
                     contentColor = MaterialTheme.colorScheme.onErrorContainer,
                 )
             }
+
             RecordingState.Saving -> {
                 ExtendedFloatingActionButton(
                     onClick = {},

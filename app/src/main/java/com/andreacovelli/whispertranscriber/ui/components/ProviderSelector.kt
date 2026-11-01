@@ -139,6 +139,7 @@ fun ProviderSelector(
                                     )
                                 }
                             }
+
                             is CustomModelValidation.Valid -> {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -159,6 +160,7 @@ fun ProviderSelector(
                                     )
                                 }
                             }
+
                             is CustomModelValidation.Error -> {
                                 Text(
                                     customModelValidation.message.asString(),
@@ -166,6 +168,7 @@ fun ProviderSelector(
                                     color = MaterialTheme.colorScheme.error,
                                 )
                             }
+
                             else -> Unit
                         }
                     }

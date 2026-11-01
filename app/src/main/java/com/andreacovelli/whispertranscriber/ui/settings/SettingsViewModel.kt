@@ -64,31 +64,52 @@ class SettingsViewModel @Inject constructor(
         reduce(msg)
         when (msg) {
             is SettingsMsg.SetProvider -> launchSafely { settings.saveProvider(msg.provider) }
+
             is SettingsMsg.SetSummarizerProvider -> launchSafely { settings.saveSummarizerProvider(msg.provider) }
+
             // Jobs still being transcribed pick this up; finished jobs are never summarized retroactively.
             is SettingsMsg.SetAutomaticSummarization ->
                 launchSafely { settings.saveAutomaticSummarization(msg.enabled) }
+
             is SettingsMsg.SetBackgroundShareSummaryNotificationsEnabled ->
                 launchSafely { settings.saveBackgroundShareSummaryNotificationsEnabled(msg.enabled) }
+
             is SettingsMsg.SetSpeakerDiarization -> launchSafely { settings.saveSpeakerDiarization(msg.enabled) }
+
             is SettingsMsg.SetTranscriptionLanguage ->
                 launchSafely { settings.saveTranscriptionLanguage(msg.languageCode) }
+
             is SettingsMsg.SetTranscriptionVocabulary ->
                 launchSafely { settings.saveTranscriptionVocabulary(msg.vocabulary) }
+
             is SettingsMsg.SetSummaryStyle -> launchSafely { settings.saveSummaryStyle(msg.style) }
+
             is SettingsMsg.SetSummaryCustomPrompt -> launchSafely { settings.saveSummaryCustomPrompt(msg.prompt) }
+
             is SettingsMsg.SetMicrosoftSpeechRegion -> updateMicrosoftSpeechRegion(msg.region)
+
             is SettingsMsg.SaveMicrosoftSpeechKey -> validateAndSaveKey(msg.key, isGemini = false)
+
             is SettingsMsg.SaveGeminiKey -> validateAndSaveKey(msg.key, isGemini = true)
+
             is SettingsMsg.ValidateTranscriptionModel -> validateCustomGeminiModel(msg.modelName, isSummarizer = false)
+
             is SettingsMsg.ValidateSummarizerModel -> validateCustomGeminiModel(msg.modelName, isSummarizer = true)
+
             SettingsMsg.ResetMicrosoftSpeechRegionValidation -> microsoftRegionValidationJob?.cancel()
+
             SettingsMsg.ResetTranscriptionModelValidation -> transcriptionModelValidationJob?.cancel()
+
             SettingsMsg.ResetSummarizerModelValidation -> summarizerModelValidationJob?.cancel()
+
             SettingsMsg.ResetMicrosoftSpeechKeyValidation -> resetKeyValidation(isGemini = false)
+
             SettingsMsg.ResetGeminiKeyValidation -> resetKeyValidation(isGemini = true)
+
             SettingsMsg.ForgetMicrosoftSpeechKey -> forgetApiKey(isGemini = false)
+
             SettingsMsg.ForgetGeminiKey -> forgetApiKey(isGemini = true)
+
             else -> Unit
         }
     }

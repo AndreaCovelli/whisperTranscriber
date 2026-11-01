@@ -27,6 +27,12 @@
       "enabled": false
     },
     {
+      "description": "ktlint releases can change formatting rules: open them alone so a reformat does not block the monthly group",
+      "matchPackageNames": ["com.pinterest.ktlint:ktlint-cli"],
+      "groupName": "ktlint",
+      "automerge": false
+    },
+    {
       "description": "New API versions can change request or response formats that CI cannot exercise; review manually",
       "matchDepNames": ["azure-speech-transcription-api"],
       "groupName": "azure speech api version",

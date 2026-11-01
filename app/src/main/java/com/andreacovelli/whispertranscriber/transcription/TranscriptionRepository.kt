@@ -38,8 +38,6 @@ private fun checkQueueCapacity(requestedNonterminalJobs: Int, maximumNonterminal
     }
 }
 
-/** Details of the transcribed recording stored with its history entry; 0 or "" when unknown. */
-
 /** What the runner measured about a finished recording; the provider comes from the job row. */
 data class RecordingDetails(val durationMs: Long = 0, val sourceSizeBytes: Long = 0)
 

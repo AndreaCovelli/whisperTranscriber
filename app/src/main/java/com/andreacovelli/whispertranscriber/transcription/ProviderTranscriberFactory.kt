@@ -38,10 +38,12 @@ class ProviderTranscriberFactory @Inject constructor(
         when (val provider = decodeTranscriptionProvider(providerName)) {
             TranscriptionProvider.MICROSOFT_MAI_TRANSCRIBE,
             -> ProviderExecution.MicrosoftSpeech(resolveMicrosoftSpeechExecutionModel(requestedModel))
+
             TranscriptionProvider.GEMINI_FLASH_LITE,
             TranscriptionProvider.GEMINI_FLASH,
             TranscriptionProvider.GEMINI_PRO,
             -> ProviderExecution.Gemini(requestedModel ?: requireNotNull(provider.modelName))
+
             TranscriptionProvider.GEMINI_CUSTOM -> ProviderExecution.Gemini(
                 modelName = requestedModel?.takeIf(String::isNotBlank)
                     ?: throw UserFacingIllegalStateException(UserMessage(R.string.gemini_model_not_specified)),
@@ -93,6 +95,7 @@ class ProviderTranscriberFactory @Inject constructor(
                 }
             }
         }
+
         is ProviderExecution.Gemini -> {
             val geminiInput = checkNotNull(preparedInput as? PreparedAudioInput.Gemini) {
                 "Internal error: Gemini audio data missing."

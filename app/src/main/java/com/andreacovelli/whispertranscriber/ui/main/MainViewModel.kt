@@ -192,26 +192,39 @@ class MainViewModel @Inject constructor(
                     enqueueSharedAudio(msg.uris, requestToken)
                 }
             }
+
             MainMsg.ClearCompletedJobs -> viewModelScope.launch { queueService.clearCompletedJobs() }
+
             is MainMsg.SummarizeJob -> requestSummary(msg.jobId, msg.style)
+
             is MainMsg.ClearSummary -> viewModelScope.launch {
                 queueService.clearJobContent(
                     msg.jobId,
                     HistoryContentField.SUMMARY,
                 )
             }
+
             is MainMsg.ClearTranscript -> viewModelScope.launch { queueService.clearJobTranscription(msg.jobId) }
+
             is MainMsg.SaveJobContent -> saveJobContent(msg.jobId, msg.field, msg.destination)
+
             is MainMsg.RetryJob -> retryJob(msg.jobId)
+
             is MainMsg.CancelJob -> viewModelScope.launch { queueService.cancelJob(msg.jobId) }
+
             is MainMsg.CancelSummary -> cancelSummary(msg.jobId)
+
             is MainMsg.DeleteJob -> viewModelScope.launch { queueService.deleteJob(msg.jobId) }
+
             MainMsg.StartRecording -> audioRecorder.start()
+
             MainMsg.StopRecording -> audioRecorder.stop()
+
             MainMsg.DiscardRecording -> {
                 audioRecorder.discard()
                 viewModelScope.launch { _events.send(R.string.recording_discarded) }
             }
+
             else -> Unit
         }
     }
@@ -255,6 +268,7 @@ class MainViewModel @Inject constructor(
                 _events.send(outcome.savedMessage)
                 dispatch(MainMsg.SharedAudioReceived(listOf(outcome.uri)))
             }
+
             is RecordingOutcome.Failed -> reduce(MainMsg.StatusChanged(outcome.message))
         }
     }

@@ -49,11 +49,16 @@ internal object TranscriptionMimeSupport {
 
     private fun detectContainerMimeTypes(header: ByteArray): Set<String>? = when {
         header.hasAsciiAt(0, "RIFF") && header.hasAsciiAt(8, "WAVE") -> wavMimeTypes
+
         header.hasAsciiAt(0, "fLaC") -> flacMimeTypes
+
         header.hasAsciiAt(0, "OggS") -> oggMimeTypes
+
         header.hasAsciiAt(0, "FORM") && (header.hasAsciiAt(8, "AIFF") || header.hasAsciiAt(8, "AIFC")) ->
             aiffMimeTypes
+
         header.hasAsciiAt(4, "ftyp") -> mp4MimeTypes
+
         else -> null
     }
 
