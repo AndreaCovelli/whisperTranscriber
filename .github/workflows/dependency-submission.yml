@@ -3,12 +3,12 @@ name: Dependency Submission
 on:
   push:
     branches: ["main"]
-    # Only build inputs change the dependency graph. This workflow is not a required check.
+    # Only dependency declarations change the graph. This workflow is not a required check;
+    # run it manually after editing the workflow itself.
     paths:
-      - ".github/workflows/dependency-submission.yml"
       - "**/*.gradle.kts"
-      - "gradle.properties"
-      - "gradle/**"
+      - "gradle/libs.versions.toml"
+      - "gradle/wrapper/**"
   workflow_dispatch:
 
 concurrency:
@@ -21,7 +21,7 @@ jobs:
   dependency-submission:
     name: Submit Gradle dependency graph
     runs-on: ubuntu-26.04
-    timeout-minutes: 15
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:

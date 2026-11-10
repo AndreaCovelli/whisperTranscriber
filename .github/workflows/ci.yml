@@ -7,6 +7,9 @@ on:
     branches: ["main"]
     types: [opened, reopened, synchronize]
   workflow_dispatch:
+  # Weekly dependency scan: new advisories appear without any dependency file changing.
+  schedule:
+    - cron: "17 5 * * 1"
   workflow_call:
     inputs:
       force:
@@ -23,8 +26,9 @@ on:
         default: '["debug", "minifiedSmoke"]'
 
 concurrency:
-  group: ci-${{ github.ref }}
-  # Every main commit needs a completed run for path selection and release reuse.
+  # Every main commit needs its own completed run for path selection and release reuse, and
+  # GitHub replaces a pending run in a shared group, so main pushes group per commit.
+  group: ci-${{ github.ref }}${{ github.event_name == 'push' && format('-{0}', github.sha) || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -36,9 +40,16 @@ jobs:
     name: Detect relevant changes
     runs-on: ubuntu-26.04
     timeout-minutes: 5
+    permissions:
+      checks: read
+      contents: read
+      pull-requests: read
     outputs:
       android: ${{ steps.select.outputs.android }}
       instrumentation: ${{ steps.select.outputs.instrumentation }}
+      suites: ${{ steps.select.outputs.suites }}
+      validated: ${{ steps.select.outputs.validated }}
+      sbom: ${{ steps.select.outputs.sbom }}
       workflows: ${{ steps.select.outputs.workflows }}
     steps:
       - name: Checkout
@@ -54,7 +65,13 @@ jobs:
       # A force push discards the previous head, so there is nothing to compare against:
       # run every check, as for manual runs.
       - name: Detect Android-relevant changes
-        if: ${{ !inputs.force && github.event_name != 'workflow_dispatch' && !github.event.forced }}
+        if: >-
+          ${{
+            !inputs.force &&
+            github.event_name != 'workflow_dispatch' &&
+            github.event_name != 'schedule' &&
+            !github.event.forced
+          }}
         id: changes
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
@@ -70,8 +87,9 @@ jobs:
               - "gradlew"
               - "gradlew.bat"
               - "settings.gradle.kts"
+            # CI edits do not run the emulators; run CI manually (workflow_dispatch) after
+            # changing the emulator steps themselves.
             instrumentation:
-              - ".github/workflows/ci.yml"
               - "app/build.gradle.kts"
               - "app/*.pro"
               - "app/schemas/**"
@@ -83,23 +101,76 @@ jobs:
               - "gradlew"
               - "gradlew.bat"
               - "settings.gradle.kts"
+            # The minified suite only covers history export under R8, so it needs the R8,
+            # export, and build configuration inputs, not every UI change.
+            minified:
+              - "app/*.pro"
+              - "app/build.gradle.kts"
+              - "app/schemas/**"
+              - "app/src/androidTest/export/**"
+              - "app/src/main/AndroidManifest.xml"
+              - "app/src/main/java/**/data/**"
+              - "app/src/main/java/**/history/**"
+              - "build.gradle.kts"
+              - "gradle/**"
+              - "gradle.properties"
+              - "gradlew"
+              - "gradlew.bat"
+              - "settings.gradle.kts"
+            # SBOM and Grype scans only change with the dependency graph.
+            sbom:
+              - "app/build.gradle.kts"
+              - "build.gradle.kts"
+              - "gradle/**"
+              - "gradle.properties"
+              - "settings.gradle.kts"
             workflows:
               - ".github/**"
+
+      # A push that a pull request already validated needs no second emulator run, but the
+      # debug leg still seeds the managed-device snapshot cache, which only main can save.
+      - name: Look for an earlier validation
+        id: earlier
+        if: ${{ github.event_name == 'push' && !inputs.force && !github.event.forced }}
+        uses: AndreaCovelli/repo-baseline/.github/actions/tree-validated@a9310352317e707bffc0e031caf29d3c48d7eb97 # v1.1.0
 
       - name: Select jobs to run
         id: select
         env:
           RUN_ALL: ${{ inputs.force || github.event_name == 'workflow_dispatch' || github.event.forced }}
+          SCHEDULED: ${{ github.event_name == 'schedule' }}
           ANDROID: ${{ steps.changes.outputs.android }}
           INSTRUMENTATION: ${{ steps.changes.outputs.instrumentation }}
+          MINIFIED: ${{ steps.changes.outputs.minified }}
+          SBOM: ${{ steps.changes.outputs.sbom }}
           WORKFLOWS: ${{ steps.changes.outputs.workflows }}
+          VALIDATED: ${{ steps.earlier.outputs.validated }}
+          # Set only when a release asks for specific suites.
+          REQUESTED_SUITES: ${{ inputs.instrumentation-suites }}
         run: |
           if [ "$RUN_ALL" = "true" ]; then
-            ANDROID=true INSTRUMENTATION=true WORKFLOWS=true
+            ANDROID=true INSTRUMENTATION=true MINIFIED=true SBOM=true WORKFLOWS=true
+          fi
+          if [ "$SCHEDULED" = "true" ]; then
+            SBOM=true
+          fi
+          VALIDATED=${VALIDATED:-false}
+          SUITES='[]'
+          if [ "$INSTRUMENTATION" = "true" ]; then
+            if [ -n "$REQUESTED_SUITES" ]; then
+              SUITES=$REQUESTED_SUITES
+            elif [ "$MINIFIED" = "true" ] && [ "$VALIDATED" != "true" ]; then
+              SUITES='["debug", "minifiedSmoke"]'
+            else
+              SUITES='["debug"]'
+            fi
           fi
           {
             echo "android=${ANDROID:-false}"
             echo "instrumentation=${INSTRUMENTATION:-false}"
+            echo "suites=$SUITES"
+            echo "validated=$VALIDATED"
+            echo "sbom=${SBOM:-false}"
             echo "workflows=${WORKFLOWS:-false}"
           } >> "$GITHUB_OUTPUT"
 
@@ -127,7 +198,7 @@ jobs:
         needs.changes.outputs.android == 'true'
       }}
     runs-on: ubuntu-26.04
-    timeout-minutes: 35
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -157,17 +228,13 @@ jobs:
   instrumentation:
     name: Instrumentation (${{ matrix.suite }})
     needs: changes
-    if: >-
-      ${{
-        inputs.instrumentation-suites != '[]' &&
-        needs.changes.outputs.instrumentation == 'true'
-      }}
+    if: ${{ needs.changes.outputs.suites != '[]' }}
     runs-on: ubuntu-26.04
-    timeout-minutes: 30
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        suite: ${{ fromJSON(inputs.instrumentation-suites || '["debug", "minifiedSmoke"]') }}
+        suite: ${{ fromJSON(needs.changes.outputs.suites) }}
     env:
       # Leave room for the Android emulator and runner on private-repository VMs.
       GRADLE_OPTS: >-
@@ -189,6 +256,9 @@ jobs:
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
           add-job-summary: "on-failure"
+          # A seeding-only run compiles almost nothing, so its entry must not replace the
+          # full one that later pull requests restore.
+          cache-read-only: ${{ needs.changes.outputs.validated == 'true' || github.ref != 'refs/heads/main' }}
 
       - name: Reserve disk space for the API 34 managed device
         run: |
@@ -223,20 +293,46 @@ jobs:
           "$ANDROID_HOME/emulator/emulator" -accel-check
 
       # pixel6Api34Setup reuses a restored AVD and recreates its snapshot if it cannot load.
+      # AGP keeps Gradle-managed AVDs in ~/.android/gradle/avd.
       - name: Restore managed device snapshot
         id: restore_managed_device
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.android/avd/gradle-managed
+          path: ~/.android/gradle/avd
           key: ${{ steps.emulator.outputs.avd-cache-key }}
 
+      # A push that a pull request validated only seeds the cache: set the device up
+      # when the snapshot is missing and run no tests.
       - name: Prepare managed device
         id: prepare_managed_device
+        if: >-
+          ${{
+            needs.changes.outputs.validated != 'true' ||
+            steps.restore_managed_device.outputs.cache-hit != 'true'
+          }}
         timeout-minutes: 5
         run: >-
           ./gradlew pixel6Api34Setup
           -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
           --console=plain
+
+      # TEMPORARY DIAGNOSTIC: remove before merge.
+      - name: Diagnose managed device location
+        run: |
+          env | grep -i 'ANDROID' || true
+          ls -la ~/.android ~/.android/avd ~/.android/gradle ~/.android/gradle/avd 2>&1 || true
+          find ~ /root -maxdepth 6 \( -name 'pixel6Api34*' -o -name 'gradle-managed' \) 2>/dev/null || true
+
+      # actions/cache/save only warns when its path is missing, which silently disabled
+      # this cache before, so fail instead.
+      - name: Require the managed device files
+        if: >-
+          ${{
+            github.ref == 'refs/heads/main' &&
+            matrix.suite == 'debug' &&
+            steps.restore_managed_device.outputs.cache-hit != 'true'
+          }}
+        run: test -n "$(ls -A ~/.android/gradle/avd)"
 
       # Save before tests touch the device. Only main writes, so PRs reuse one shared entry.
       - name: Save managed device snapshot
@@ -248,7 +344,7 @@ jobs:
           }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.android/avd/gradle-managed
+          path: ~/.android/gradle/avd
           key: ${{ steps.emulator.outputs.avd-cache-key }}
 
       - name: Diagnose managed-device setup failure
@@ -267,15 +363,15 @@ jobs:
           --console=plain
 
       - name: Verify notification permission recreation
-        if: ${{ matrix.suite == 'debug' }}
-        timeout-minutes: 15
+        if: ${{ matrix.suite == 'debug' && needs.changes.outputs.validated != 'true' }}
+        timeout-minutes: 10
         run: >-
           ./gradlew pixel6Api34DebugAndroidTest --console=plain
           -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
           -Pandroid.testInstrumentationRunnerArguments.class=com.andreacovelli.whispertranscriber.NotificationPermissionRecreationInstrumentedTest
 
       - name: Run managed-device tests
-        if: ${{ matrix.suite == 'debug' }}
+        if: ${{ matrix.suite == 'debug' && needs.changes.outputs.validated != 'true' }}
         timeout-minutes: 10
         run: >-
           ./gradlew pixel6Api34DebugAndroidTest
@@ -284,7 +380,7 @@ jobs:
 
       - name: Verify minified JSON exports
         if: ${{ matrix.suite == 'minifiedSmoke' }}
-        timeout-minutes: 20
+        timeout-minutes: 10
         run: >-
           ./gradlew pixel6Api34MinifiedSmokeAndroidTest --console=plain
           -PinstrumentationBuildType=minifiedSmoke
@@ -324,7 +420,7 @@ jobs:
     needs: changes
     if: ${{ !contains(fromJSON(inputs.skip-jobs || '[]'), 'security') }}
     runs-on: ubuntu-26.04
-    timeout-minutes: 25
+    timeout-minutes: 10
     steps:
       - name: Checkout full history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -343,32 +439,32 @@ jobs:
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
 
       - name: Set up JDK 21
-        if: ${{ needs.changes.outputs.android == 'true' }}
+        if: ${{ needs.changes.outputs.sbom == 'true' }}
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: "21"
 
       - name: Setup Gradle
-        if: ${{ needs.changes.outputs.android == 'true' }}
+        if: ${{ needs.changes.outputs.sbom == 'true' }}
         uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
           add-job-summary: "on-failure"
 
       - name: Generate release runtime CycloneDX SBOM
-        if: ${{ needs.changes.outputs.android == 'true' }}
+        if: ${{ needs.changes.outputs.sbom == 'true' }}
         run: ./gradlew :app:cyclonedxDirectBom --console=plain
 
       # Grype publishes one DB a day, so a daily key lets later runs skip the download.
       # scan-action's cache-db input reuses one fixed key, which keeps the first DB forever.
       - name: Select Grype DB cache key
-        if: ${{ needs.changes.outputs.android == 'true' }}
+        if: ${{ needs.changes.outputs.sbom == 'true' }}
         id: grype_db_key
         run: echo "key=grype-db-v6-$(date -u +%F)" >> "$GITHUB_OUTPUT"
 
       - name: Restore Grype DB
-        if: ${{ needs.changes.outputs.android == 'true' }}
+        if: ${{ needs.changes.outputs.sbom == 'true' }}
         id: restore_grype_db
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -379,7 +475,7 @@ jobs:
           key: ${{ steps.grype_db_key.outputs.key }}
 
       - name: Report release runtime SBOM vulnerabilities
-        if: ${{ needs.changes.outputs.android == 'true' }}
+        if: ${{ needs.changes.outputs.sbom == 'true' }}
         uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
         with:
           # The SBOM input is mutually exclusive with a workspace path scan.
@@ -392,7 +488,7 @@ jobs:
       - name: Save Grype DB
         if: >-
           ${{
-            needs.changes.outputs.android == 'true' &&
+            needs.changes.outputs.sbom == 'true' &&
             github.ref == 'refs/heads/main' &&
             steps.restore_grype_db.outputs.cache-hit != 'true'
           }}
@@ -404,7 +500,7 @@ jobs:
           key: ${{ steps.grype_db_key.outputs.key }}
 
       - name: Gate fixed high and critical release runtime vulnerabilities
-        if: ${{ needs.changes.outputs.android == 'true' }}
+        if: ${{ needs.changes.outputs.sbom == 'true' }}
         uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
         with:
           # Keep Grype scoped to the release runtime dependency graph.
@@ -418,7 +514,7 @@ jobs:
         if: >-
           ${{
             always() &&
-            needs.changes.outputs.android == 'true'
+            needs.changes.outputs.sbom == 'true'
           }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -431,8 +527,8 @@ jobs:
     name: Validate
     if: always()
     needs: [changes, workflow-lint, quality-build, instrumentation, security]
-    runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    runs-on: ubuntu-slim
+    timeout-minutes: 3
     steps:
       - name: Require every applicable verification job
         env:

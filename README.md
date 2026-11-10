@@ -342,8 +342,10 @@ The checked-in wrapper uses Gradle 9.8.1 with Detekt 1.23.8. The tooling-only Gr
 Dependency updates are configured through [Renovate](renovate.json), which extends
 the shared `AndreaCovelli/renovate-config` preset. CI runs quality checks, the debug
 build and unit tests, separate `debug` and `minifiedSmoke` device suites, security
-scans, and actionlint for `.github/` changes. Path filters select applicable checks;
-manual CI runs execute all checks. `Validate` aggregates the results. See [the release guide](release-guide.txt) for
+scans, and actionlint for `.github/` changes. Path filters select applicable checks
+(`minifiedSmoke` only for R8, export, and build-configuration changes; SBOM and Grype
+scans for dependency changes and weekly); a push to main skips the device suites when a
+pull request already validated its tree; manual CI runs execute all checks. `Validate` aggregates the results. See [the release guide](release-guide.txt) for
 signing setup and tag-triggered releases.
 
 ---
