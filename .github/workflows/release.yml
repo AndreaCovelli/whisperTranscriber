@@ -20,6 +20,8 @@ jobs:
     permissions:
       contents: read
       actions: read
+      # Finds the pull request whose head validated the tagged tree.
+      pull-requests: read
     outputs:
       required: ${{ steps.ci.outputs.required }}
       skip-jobs: ${{ steps.ci.outputs.skip-jobs }}

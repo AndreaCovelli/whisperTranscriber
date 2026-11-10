@@ -78,6 +78,59 @@ def reusable_checks(jobs):
     return completed
 
 
+def tree(get, repository, commit):
+    return get(f"repos/{repository}/commits/{commit}")["commit"]["tree"]["sha"]
+
+
+def pull_request_checks(get, repository, commit):
+    """Checks that passed on the head of the pull request merged as this commit.
+
+    A push to main whose tree a pull request head already validated skips the
+    suites that ran there, so main's run alone would make every release repeat
+    them. Equal trees mean the same files were tested.
+    """
+    prefix = f"repos/{repository}/actions"
+    commit_tree = tree(get, repository, commit)
+    for pull in get(f"repos/{repository}/commits/{commit}/pulls"):
+        head = pull["head"]["sha"]
+        if (
+            pull.get("merged_at") is None
+            or pull["base"]["ref"] != "main"
+            or not re.fullmatch(r"[0-9a-f]{40}", head)
+            or tree(get, repository, head) != commit_tree
+        ):
+            continue
+        query = urlencode({"head_sha": head, "event": "pull_request"})
+        runs = [
+            run
+            for run in records(
+                get, f"{prefix}/workflows/ci.yml/runs?{query}", "workflow_runs"
+            )
+            if run["head_sha"] == head
+            and run["event"] == "pull_request"
+            and run["path"] == ".github/workflows/ci.yml"
+            and run["repository"]["full_name"].lower() == repository.lower()
+        ]
+        if not runs:
+            continue
+        run = max(runs, key=lambda candidate: candidate["id"])
+        if run["status"] != "completed" or run["conclusion"] != "success":
+            continue
+        jobs = list(
+            records(get, f"{prefix}/runs/{run['id']}/jobs?filter=latest", "jobs")
+        )
+        try:
+            completed = reusable_checks(jobs)
+        except RuntimeError:
+            continue
+        print(
+            f"Reusing {', '.join(sorted(completed)) or 'no checks'} from "
+            f"{run['html_url']}, the pull request head with the same tree"
+        )
+        return completed
+    return set()
+
+
 def verification_outputs(completed):
     return {
         "required": str(completed != set(CHECKS)).lower(),
@@ -149,6 +202,8 @@ def plan_verification(
             print(
                 f"Reusing {', '.join(sorted(completed)) or 'no checks'} from {run['html_url']}"
             )
+            if completed != set(CHECKS):
+                completed |= pull_request_checks(get, repository, commit)
             return verification_outputs(completed)
 
         if clock() - started >= discovery_seconds:

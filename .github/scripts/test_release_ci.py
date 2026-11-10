@@ -73,24 +73,61 @@ def successful_jobs():
     ]
 
 
+HEAD = "b" * 40
+
+
+def pull_request_run(**overrides):
+    return successful_run(
+        id=41,
+        head_sha=HEAD,
+        head_branch="feature",
+        event="pull_request",
+        html_url="https://github.com/example/transcriber/actions/runs/41",
+        **overrides,
+    )
+
+
+def merged_pull(**overrides):
+    return {
+        "merged_at": "2026-11-10T00:00:00Z",
+        "base": {"ref": "main"},
+        "head": {"sha": HEAD},
+        **overrides,
+    }
+
+
 class FakeGitHub:
-    def __init__(self, runs=None, jobs=None):
+    def __init__(self, runs=None, jobs=None, pulls=None, pr_runs=None, pr_jobs=None):
         self.runs = [successful_run()] if runs is None else runs
         self.jobs = successful_jobs() if jobs is None else jobs
+        self.pulls = [] if pulls is None else pulls
+        self.pr_runs = [pull_request_run()] if pr_runs is None else pr_runs
+        self.pr_jobs = successful_jobs() if pr_jobs is None else pr_jobs
+        self.trees = {COMMIT: "tree", HEAD: "tree"}
         self.on_jobs = lambda: None
 
     def __call__(self, path):
         query = parse_qs(urlsplit(path).query)
         if "/workflows/ci.yml/runs?" in path:
+            if query["event"] == ["pull_request"]:
+                assert query["head_sha"] == [HEAD]
+                return {"workflow_runs": deepcopy(self.pr_runs)}
             assert query["head_sha"] == [COMMIT]
             assert query["branch"] == ["main"]
             assert query["event"] == ["push"]
             return {"workflow_runs": deepcopy(self.runs)}
+        if path.endswith(f"/commits/{COMMIT}/pulls"):
+            return deepcopy(self.pulls)
+        for sha, tree_sha in self.trees.items():
+            if path.endswith(f"/commits/{sha}"):
+                return {"commit": {"tree": {"sha": tree_sha}}}
         if "/jobs?" in path:
             assert query["filter"] == ["latest"]
+            pr_ids = {f"/runs/{run['id']}/jobs?" for run in self.pr_runs}
+            source = self.pr_jobs if any(i in path for i in pr_ids) else self.jobs
             page = int(query["page"][0])
             offset = (page - 1) * 100
-            result = {"jobs": deepcopy(self.jobs[offset : offset + 100])}
+            result = {"jobs": deepcopy(source[offset : offset + 100])}
             self.on_jobs()
             return result
         for run in self.runs:
@@ -229,6 +266,73 @@ class ReleaseCiTest(unittest.TestCase):
                     self.assertEqual(
                         json.loads(result["skip-jobs"]), ["quality-build", "security"]
                     )
+
+    def validated_push_jobs(self):
+        # A push that a pull request already validated skips the device tests and,
+        # without dependency changes, the SBOM steps.
+        jobs = successful_jobs()
+        jobs[1] = job("Instrumentation (debug)")
+        jobs = [
+            entry
+            for entry in jobs
+            if entry["name"] != "Instrumentation (minifiedSmoke)"
+        ]
+        jobs[-1] = job("Security", "Scan new commits for secrets")
+        return jobs
+
+    def test_validated_push_reuses_the_pull_request_head_with_the_same_tree(self):
+        api = FakeGitHub(jobs=self.validated_push_jobs(), pulls=[merged_pull()])
+
+        result = self.plan(api)
+
+        self.assertEqual(result["required"], "false")
+
+    def test_pull_request_suites_that_did_not_run_are_still_verified(self):
+        pr_jobs = [
+            entry
+            for entry in successful_jobs()
+            if entry["name"] != "Instrumentation (minifiedSmoke)"
+        ]
+        api = FakeGitHub(
+            jobs=self.validated_push_jobs(), pulls=[merged_pull()], pr_jobs=pr_jobs
+        )
+
+        result = self.plan(api)
+
+        self.assertEqual(result["required"], "true")
+        self.assertEqual(
+            json.loads(result["instrumentation-suites"]), ["minifiedSmoke"]
+        )
+        self.assertEqual(json.loads(result["skip-jobs"]), ["quality-build", "security"])
+
+    def test_pull_request_head_cannot_authorize_a_different_or_unmerged_tree(self):
+        for case, change in (
+            ("different tree", lambda api: api.trees.update({HEAD: "other"})),
+            ("unmerged", lambda api: api.pulls[0].update(merged_at=None)),
+            ("other base", lambda api: api.pulls[0].update(base={"ref": "dev"})),
+            ("failed run", lambda api: api.pr_runs[0].update(conclusion="failure")),
+            ("unfinished run", lambda api: api.pr_runs[0].update(status="queued")),
+            (
+                "other repository",
+                lambda api: api.pr_runs[0].update(
+                    repository={"full_name": "someone/fork"}
+                ),
+            ),
+            ("no run", lambda api: api.pr_runs.clear()),
+            ("failed job", lambda api: api.pr_jobs[1].update(conclusion="failure")),
+        ):
+            with self.subTest(case=case):
+                api = FakeGitHub(jobs=self.validated_push_jobs(), pulls=[merged_pull()])
+                change(api)
+
+                result = self.plan(api)
+
+                self.assertEqual(result["required"], "true")
+                self.assertEqual(
+                    json.loads(result["instrumentation-suites"]),
+                    ["debug", "minifiedSmoke"],
+                )
+                self.assertEqual(json.loads(result["skip-jobs"]), ["quality-build"])
 
     def test_secret_scan_alone_does_not_count_as_full_security_verification(self):
         jobs = successful_jobs()
