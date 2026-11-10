@@ -293,12 +293,13 @@ jobs:
           "$ANDROID_HOME/emulator/emulator" -accel-check
 
       # pixel6Api34Setup reuses a restored AVD and recreates its snapshot if it cannot load.
-      # AGP keeps Gradle-managed AVDs in ~/.android/gradle/avd.
+      # On the hosted runner, AGP keeps Gradle-managed AVDs in ~/.config/.android/avd/gradle-managed
+      # (verified with a find after pixel6Api34Setup), not under ~/.android.
       - name: Restore managed device snapshot
         id: restore_managed_device
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.android/gradle/avd
+          path: ~/.config/.android/avd/gradle-managed
           key: ${{ steps.emulator.outputs.avd-cache-key }}
 
       # A push that a pull request validated only seeds the cache: set the device up
@@ -316,13 +317,6 @@ jobs:
           -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
           --console=plain
 
-      # TEMPORARY DIAGNOSTIC: remove before merge.
-      - name: Diagnose managed device location
-        run: |
-          env | grep -i 'ANDROID' || true
-          ls -la ~/.android ~/.android/avd ~/.android/gradle ~/.android/gradle/avd 2>&1 || true
-          find ~ /root -maxdepth 6 \( -name 'pixel6Api34*' -o -name 'gradle-managed' \) 2>/dev/null || true
-
       # actions/cache/save only warns when its path is missing, which silently disabled
       # this cache before, so fail instead.
       - name: Require the managed device files
@@ -332,7 +326,7 @@ jobs:
             matrix.suite == 'debug' &&
             steps.restore_managed_device.outputs.cache-hit != 'true'
           }}
-        run: test -n "$(ls -A ~/.android/gradle/avd)"
+        run: test -n "$(ls -A ~/.config/.android/avd/gradle-managed)"
 
       # Save before tests touch the device. Only main writes, so PRs reuse one shared entry.
       - name: Save managed device snapshot
@@ -344,7 +338,7 @@ jobs:
           }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.android/gradle/avd
+          path: ~/.config/.android/avd/gradle-managed
           key: ${{ steps.emulator.outputs.avd-cache-key }}
 
       - name: Diagnose managed-device setup failure
