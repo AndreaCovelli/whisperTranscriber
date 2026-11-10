@@ -285,8 +285,11 @@ checks and report exactly what was not run and why.
   debug build and JVM tests (`assembleDebug testDebugUnitTest`) in one job,
   alongside managed-device instrumentation (`debug` and `minifiedSmoke` suites),
   security scans, and actionlint for `.github/` changes. Path filters select
-  applicable checks; manual CI runs execute all checks.
-  `Validate` is the required aggregate check.
+  applicable checks; manual CI runs execute all checks. The `minifiedSmoke` suite
+  runs only for R8, export, and build-configuration changes, no emulator runs for
+  `ci.yml` edits alone, and SBOM and Grype scans run for dependency-file changes
+  and weekly. A push to main whose tree a pull request already validated skips
+  the emulator suites. `Validate` is the required aggregate check.
 - Dependency updates use `renovate.json`, which extends the shared
   `AndreaCovelli/renovate-config` preset.
 - Use the checked-in `.gitleaks.toml` for Gitleaks filesystem scans so generated
